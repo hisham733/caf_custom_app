@@ -6,11 +6,9 @@
 
 ### `DailyOutputRecord.process_all()`
 
-**What it does:** Core processing logic — iterates all rows in `self.items`:
+**What it does:** Called from the "Process All" button. Iterates all rows in `self.items`:
 - **Done rows** -> calls `_validate_row()` to check actual_qty vs produced_qty (warning + comment on mismatch), then skips processing
 - **Pending rows** -> processes each link_id through the full production pipeline: WIP WO (submit -> Transfer SE -> Job Cards -> Manufacture SE) -> Cook WO (submit -> Transfer SE -> Job Cards -> Recook -> Manufacture SE) -> Pack WO (submit -> Transfer SE -> Job Cards -> Manufacture SE with balance/actual_qty)
-
-Called directly by tests. In production, called by `run_process_all_background()` (RQ worker).
 
 **Links to:** 
 - `caf.caf.overrides.work_order.make_stock_entry()`
@@ -26,34 +24,6 @@ Called directly by tests. In production, called by `run_process_all_background()
 
 ---
 
-### `DailyOutputRecord.enqueue_process_all()`
-
-**What it does:** Called from the "Process All" button. Enqueues the processing as a background RQ job via `frappe.enqueue()`. Sets `processing_status` to "In Progress" and clears any previous error. Throws if already in progress.
-
-**Links to:** `frappe.enqueue()` -> `run_process_all_background()`
-
-**Inputs:** None (uses `self.name`)
-
-**Output / Return:** `{"queued": True}`
-
----
-
-### `run_process_all_background(name)` (module-level)
-
-**What it does:** Background worker function executed by the RQ queue. Loads the DOR by name, calls `process_all()`, and updates `processing_status`:
-- **Success** -> sets "Completed"
-- **Failure** (process_all returns `success: False`) -> sets "Failed", stores error in `processing_error`, adds a **comment** to the DOR timeline with the error
-- **Exception** -> sets "Failed", stores error, adds comment, logs traceback
-
-Uses `frappe.db.auto_commit_on_many_writes = 1` so status updates are visible immediately while the job runs.
-
-**Inputs:**
-- `name` (str) — Daily Output Record document name
-
-**Links to:** `DailyOutputRecord.process_all()`, `doc.add_comment()`, `frappe.log_error()`
-
----
-
 ### `DailyOutputRecord._process_row(row)`
 
 **What it does:** Processes a single row: WIP -> Cook -> Pack WO for that link_id. For Pack WOs, iterates pack slots (1..number_of_pack) matching each Pack WO by its production_item to the slot's pack_name / pack_name_N. Falls back to single-field mode if number_of_pack is 0 (legacy data). Before processing, if the slot has a pack_workstation set, it updates the Pack WO's operations that have an empty workstation.
@@ -61,6 +31,8 @@ Uses `frappe.db.auto_commit_on_many_writes = 1` so status updates are visible im
 **Pack slot matching logic:**
 - If `number_of_pack` > 0: iterates idx 0..N-1, matching `wo.production_item` against `row.pack_name` (idx=0) or `row.pack_name_{idx+1}` (idx>0). Uses the matched slot's `actual_qty` / `actual_qty_{idx+1}` and `pack_workstation` / `pack_workstation_{idx+1}`.
 - If `number_of_pack` = 0: legacy single-field mode using `row.pack_name`, `row.actual_qty`, `row.pack_workstation`.
+
+**Balance distribution:** Only the **last** Pack WO (in sorted order) receives `row.balance` as `total_balance` for its Manufacture SE. All earlier Pack WOs get `total_balance=0` (scrap items removed from their SE).
 
 **Inputs:**
 - `row` — Daily Output Item child table row
@@ -145,15 +117,9 @@ Uses `frappe.db.auto_commit_on_many_writes = 1` so status updates are visible im
 
 **What it does:** When the document is submitted and has items:
 1. Sets up **indicator colors** on the Status field in the child table grid via `grid.get_field("status").get_indicator` — blue for Done, red for Failed, orange for Pending
-2. Adds a **"Process All"** button (or **"Processing..."** if `processing_status` is "In Progress"):
-   - Normal -> clicking calls `enqueue_process_all()` to queue a background job, shows alert, starts polling
-   - In Progress -> button is disabled, polling starts automatically on form load
-3. **Polling** (`start_status_polling`): every 3 seconds checks `processing_status` via `frappe.db.get_value`:
-   - "Completed" -> shows success message, reloads form
-   - "Failed" -> shows error message, reloads form
-   - "In Progress" -> keeps polling
+2. Adds a **"Process All"** button that calls `process_all()` synchronously with a freeze overlay ("Processing Work Orders..."). On success -> shows "All rows processed successfully" + reloads. On failure -> shows error with row number + reloads.
 
-**Links to:** `DailyOutputRecord.enqueue_process_all()`, `frappe.db.get_value()`
+**Links to:** `DailyOutputRecord.process_all()`
 
 ---
 
@@ -176,11 +142,3 @@ Leaves recook, balance, actual_qty_N, raw_matl empty for user input.
 **What it does:** When the user changes Number Of Pack, clears unused pack slot fields (pack_name_N, actual_qty_N, pack_workstation_N for N > new value) to avoid stale data.
 
 **Links to:** `frappe.model.set_value()`
-
----
-
-### `start_status_polling(frm)` (module-level)
-
-**What it does:** Polls `processing_status` every 3 seconds via `frappe.db.get_value`. On "Completed" -> shows success msgprint + reloads form. On "Failed" -> shows error msgprint + reloads form. On "In Progress" -> keeps polling.
-
-**Links to:** `frappe.db.get_value()`, `frm.reload_doc()`

@@ -55,20 +55,9 @@ If you adjust **Number Of Pack** after auto-fetch, unused slot fields are automa
 
 Click **Save** then **Submit** to submit the document. The "Process All" button only appears on submitted documents.
 
-## Step 5: Process All (Background)
+## Step 5: Process All
 
-Click the **Process All** button in the toolbar. The job runs **in the background** — you can continue working on other things while it processes.
-
-**What happens:**
-1. A blue alert "Processing started in background" appears
-2. The button changes to **"Processing..."** and is disabled
-3. The **Processing Status** field (in the Background Processing section) shows "In Progress"
-4. The form polls every 3 seconds for updates
-5. When done -> the form auto-reloads and a message appears:
-   - **Success** -> "All rows processed successfully"
-   - **Failure** -> "Processing failed: <error details>" + a comment is added to the DOR timeline
-
-> Closing the browser tab does NOT cancel the job — it continues running in the RQ worker queue (up to 10 minutes timeout).
+Click the **Process All** button in the toolbar. A freeze overlay with "Processing Work Orders..." appears and blocks interaction until done.
 
 **For rows with Status = "Pending":** The system processes work orders per link_id in this order:
 
@@ -82,7 +71,8 @@ Click the **Process All** button in the toolbar. The job runs **in the backgroun
 3. **Pack WO(s)** -> Submit (if draft) -> Material Transfer SE -> Job Cards -> Manufacture SE
    - Each Pack WO is matched to its slot by **Pack Name** / **Pack Name N**
    - Pack Workstation is applied to empty operations before processing
-   - The slot's **Actual QTY** and row-level **Balance** are applied to the Manufacture SE only
+   - The slot's **Actual QTY** is applied to the Manufacture SE only
+   - **Balance** goes to the **last** Pack WO only — earlier Pack WOs get balance=0 (scrap items removed)
 
 **For rows with Status = "Done" (already processed):** The system does NOT re-process them. Instead it **validates** that the entered **Actual QTY** matches the Pack WO's `produced_qty`:
 - If they match -> silent pass
@@ -99,6 +89,4 @@ If a row fails:
 - Processing stops at the failed row (no remaining WOs in that row are processed)
 - The row shows status **Failed** (red)
 - The error message includes the Work Order name that caused the failure
-- The **Processing Status** field shows "Failed" with the error in **Processing Error**
-- A **comment** is added to the DOR timeline with the full error details
 - Fix the issue (e.g., insufficient stock, missing workstation) and try again with a new record

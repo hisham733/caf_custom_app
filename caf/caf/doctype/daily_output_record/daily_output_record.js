@@ -15,33 +15,25 @@ frappe.ui.form.on("Daily Output Record", {
                 };
             }
 
-            var in_progress = frm.doc.processing_status === "In Progress";
-
-            var btn = frm.add_custom_button(
-                in_progress ? __("Processing...") : __("Process All"),
-                function() {
-                    if (in_progress) return;
-                    frm.call({
-                        method: "enqueue_process_all",
-                        doc: frm.doc,
-                        callback: function(r) {
-                            if (r.message && r.message.queued) {
-                                frappe.show_alert({
-                                    message: __("Processing started in background"),
-                                    indicator: "blue"
-                                }, 5);
-                                frm.reload_doc();
-                                start_status_polling(frm);
-                            }
+            frm.add_custom_button(__("Process All"), function() {
+                frm.call({
+                    method: "process_all",
+                    doc: frm.doc,
+                    freeze: true,
+                    freeze_message: __("Processing Work Orders..."),
+                    callback: function(r) {
+                        if (r.message && r.message.success) {
+                            frappe.msgprint(__("All rows processed successfully"));
+                            frm.reload_doc();
+                        } else if (r.message) {
+                            frappe.msgprint(__("Failed at row {0}: {1}").format(
+                                r.message.failed_row, r.message.error
+                            ));
+                            frm.reload_doc();
                         }
-                    });
-                }
-            ).addClass("btn-primary");
-
-            if (in_progress) {
-                btn.prop("disabled", true).removeClass("btn-primary").addClass("btn-default");
-                start_status_polling(frm);
-            }
+                    }
+                });
+            }).addClass("btn-primary");
         }
     },
 
@@ -229,24 +221,3 @@ frappe.ui.form.on("Daily Output Item", {
         }
     }
 });
-
-function start_status_polling(frm) {
-    var poll = setInterval(function() {
-        frappe.db.get_value("Daily Output Record", frm.doc.name,
-            ["processing_status", "processing_error"])
-            .then(function(r) {
-                if (!r || !r.message) return;
-                var status = r.message.processing_status;
-                if (status === "Completed") {
-                    clearInterval(poll);
-                    frappe.msgprint(__("All rows processed successfully"));
-                    frm.reload_doc();
-                } else if (status === "Failed") {
-                    clearInterval(poll);
-                    frappe.msgprint(__("Processing failed: {0}")
-                        .format(r.message.processing_error || "Unknown error"));
-                    frm.reload_doc();
-                }
-            });
-    }, 3000);
-}

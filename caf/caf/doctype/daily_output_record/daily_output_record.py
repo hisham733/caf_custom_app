@@ -31,23 +31,6 @@ class DailyOutputRecord(Document):
                 }
         return {"success": True, "message": "All rows processed successfully"}
 
-    @frappe.whitelist()
-    def enqueue_process_all(self):
-        if self.processing_status == "In Progress":
-            frappe.throw(_("Processing already in progress"))
-
-        self.db_set("processing_status", "In Progress")
-        self.db_set("processing_error", None)
-        frappe.db.commit()
-
-        frappe.enqueue(
-            method="caf.caf.doctype.daily_output_record.daily_output_record.run_process_all_background",
-            queue="default",
-            timeout=600,
-            name=self.name,
-        )
-        return {"queued": True}
-
     def _process_row(self, row):
         link_id = row.link_id
 
@@ -63,7 +46,10 @@ class DailyOutputRecord(Document):
         type_order = {"WIP": 0, "Cook": 1, "Pack": 2}
         all_wos.sort(key=lambda w: type_order.get(w.get("custom_item_type", ""), 99))
 
-        for wo in all_wos:
+        pack_wo_indices = [i for i, w in enumerate(all_wos) if w.get("custom_item_type") == "Pack"]
+        last_pack_idx = pack_wo_indices[-1] if pack_wo_indices else -1
+
+        for wo_idx, wo in enumerate(all_wos):
             item_type = wo.get("custom_item_type")
             wo_name = wo["name"]
             try:
@@ -97,9 +83,10 @@ class DailyOutputRecord(Document):
                             break
                         if not matched:
                             continue
+                    balance_for_this_pack = flt(row.balance) if wo_idx == last_pack_idx else 0
                     self._process_single_wo(
                         wo_name,
-                        total_balance=flt(row.balance),
+                        total_balance=balance_for_this_pack,
                         total_pack_qty=pack_qty,
                     )
             except Exception as e:
@@ -257,26 +244,3 @@ class DailyOutputRecord(Document):
             })
             jc_doc.save()
             jc_doc.submit()
-
-
-@frappe.whitelist()
-def run_process_all_background(name):
-    dor = frappe.get_doc("Daily Output Record", name)
-    frappe.db.auto_commit_on_many_writes = 1
-    try:
-        result = dor.process_all()
-        if result.get("success"):
-            dor.db_set("processing_status", "Completed")
-        else:
-            error_msg = _("Row {0}: {1}").format(result.get("failed_row"), result.get("error"))
-            dor.db_set("processing_status", "Failed")
-            dor.db_set("processing_error", error_msg)
-            dor.add_comment(text=error_msg)
-    except Exception as e:
-        frappe.log_error(frappe.get_traceback(), "DOR background failed: {0}".format(name))
-        dor.db_set("processing_status", "Failed")
-        dor.db_set("processing_error", str(e))
-        dor.add_comment(text=str(e))
-    finally:
-        frappe.db.auto_commit_on_many_writes = 0
-        frappe.db.commit()

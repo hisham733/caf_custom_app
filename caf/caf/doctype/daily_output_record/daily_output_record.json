@@ -10,10 +10,7 @@
   "date_of_output",
   "naming_series",
   "items",
-  "amended_from",
-  "section_break_proc",
-  "processing_status",
-  "processing_error"
+  "amended_from"
  ],
  "fields": [
   {
@@ -46,25 +43,6 @@
    "print_hide": 1,
    "read_only": 1,
    "search_index": 1
-  },
-  {
-   "fieldname": "section_break_proc",
-   "fieldtype": "Section Break",
-   "label": "Background Processing"
-  },
-  {
-   "default": "Idle",
-   "fieldname": "processing_status",
-   "fieldtype": "Select",
-   "label": "Processing Status",
-   "options": "Idle\nIn Progress\nCompleted\nFailed",
-   "read_only": 1
-  },
-  {
-   "fieldname": "processing_error",
-   "fieldtype": "Small Text",
-   "label": "Processing Error",
-   "read_only": 1
   }
  ],
  "grid_page_length": 50,
