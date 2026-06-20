@@ -1,0 +1,55 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-04-20 13:59:28.734544",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "delete_items_section",
+  "item_short_name",
+  "notes",
+  "description"
+ ],
+ "fields": [
+  {
+   "fieldname": "delete_items_section",
+   "fieldtype": "Section Break",
+   "label": "Delete Items"
+  },
+  {
+   "fieldname": "item_short_name",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Item Name",
+   "options": "Item"
+  },
+  {
+   "fetch_from": "item_short_name.description",
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "Description"
+  },
+  {
+   "fieldname": "notes",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "Planner Notes"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-05-04 10:55:37.926060",
+ "modified_by": "mg@caffood.com",
+ "module": "Caf",
+ "name": "Requisition Delete Items Table",
+ "owner": "hisham@caffood.com",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

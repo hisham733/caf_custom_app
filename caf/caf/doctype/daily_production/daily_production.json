@@ -1,0 +1,155 @@
+{
+ "actions": [],
+ "allow_import": 1,
+ "allow_rename": 1,
+ "autoname": "naming_series:",
+ "creation": "2025-10-15 13:48:04.265023",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "daily_production_tab",
+  "daily_production_section",
+  "required_by",
+  "planner_name",
+  "production_table",
+  "naming_series",
+  "amended_from",
+  "single_work_order_tab",
+  "required_by_1",
+  "size_calculation",
+  "items",
+  "store_purchase_list_tab",
+  "store_purchase_items"
+ ],
+ "fields": [
+  {
+   "fieldname": "daily_production_section",
+   "fieldtype": "Section Break",
+   "label": "Daily Production"
+  },
+  {
+   "fieldname": "required_by",
+   "fieldtype": "Date",
+   "label": "Required By"
+  },
+  {
+   "fieldname": "planner_name",
+   "fieldtype": "Data",
+   "label": "Planner Name",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.required_by",
+   "fieldname": "production_table",
+   "fieldtype": "Table",
+   "label": "Production table",
+   "options": "Create ProExl Items"
+  },
+  {
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "label": "Series",
+   "options": "DP-.required_by.-"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Daily Production",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "daily_production_tab",
+   "fieldtype": "Tab Break",
+   "label": "Daily Production"
+  },
+  {
+   "fieldname": "single_work_order_tab",
+   "fieldtype": "Tab Break",
+   "label": "Single Work Order"
+  },
+  {
+   "fieldname": "required_by_1",
+   "fieldtype": "Date",
+   "label": "Required By"
+  },
+  {
+   "bold": 1,
+   "fieldname": "size_calculation",
+   "fieldtype": "Button",
+   "label": "Size Calculation",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.required_by_1",
+   "fieldname": "items",
+   "fieldtype": "Table",
+   "label": "Items",
+   "options": "Single WO Items"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "store_purchase_list_tab",
+   "fieldtype": "Tab Break",
+   "ignore_user_permissions": 1,
+   "label": "Store Purchase List"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "store_purchase_items",
+   "fieldtype": "Table",
+   "ignore_user_permissions": 1,
+   "label": "Store Purchase Items",
+   "options": "Store Purchase Balance"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_calendar_and_gantt": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-04-24 11:49:03.614675",
+ "modified_by": "hisham@caffood.com",
+ "module": "Caf",
+ "name": "Daily Production",
+ "naming_rule": "By \"Naming Series\" field",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Manufacturing Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1,
+ "track_seen": 1
+}

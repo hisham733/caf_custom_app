@@ -1,0 +1,269 @@
+{
+ "actions": [],
+ "allow_import": 1,
+ "allow_rename": 1,
+ "creation": "2025-02-25 10:59:55.934066",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_o0it",
+  "amended_from",
+  "log_date",
+  "employee",
+  "ftag_id",
+  "employee_name",
+  "shift_type",
+  "column_break_ww1j",
+  "work_date",
+  "day_type",
+  "department",
+  "ot_approval_section",
+  "ot_approval_id",
+  "has_overwrite",
+  "final_ot",
+  "section_break_ujv2",
+  "time_in",
+  "break",
+  "resume",
+  "out",
+  "work",
+  "column_break_1z2p",
+  "overtime",
+  "ot_in_hour",
+  "short",
+  "leave_taken",
+  "approval"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_o0it",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Finger Log",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "employee",
+   "fieldtype": "Data",
+   "label": "Employee",
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "ftag_id",
+   "fieldtype": "Data",
+   "label": "FTag ID",
+   "read_only": 1,
+   "set_only_once": 1
+  },
+  {
+   "fetch_from": "employee.employee_name",
+   "fetch_if_empty": 1,
+   "fieldname": "employee_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Employee Name",
+   "reqd": 1,
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "shift_type",
+   "fieldtype": "Data",
+   "label": "Shift Type"
+  },
+  {
+   "fieldname": "column_break_ww1j",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "work_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Work Date",
+   "read_only": 1,
+   "reqd": 1,
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "day_type",
+   "fieldtype": "Data",
+   "label": "Day Type",
+   "read_only": 1,
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "department",
+   "fieldtype": "Data",
+   "label": "Department"
+  },
+  {
+   "fieldname": "ot_approval_section",
+   "fieldtype": "Section Break",
+   "label": "OT Approval"
+  },
+  {
+   "fieldname": "ot_approval_id",
+   "fieldtype": "Link",
+   "label": "OT Approval ID",
+   "options": "OT Approval",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "has_overwrite",
+   "fieldtype": "Check",
+   "in_standard_filter": 1,
+   "label": "has Overwrite",
+   "read_only": 1
+  },
+  {
+   "fieldname": "final_ot",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Final OT",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_ujv2",
+   "fieldtype": "Section Break"
+  },
+  {
+   "default": "00:00:00",
+   "fieldname": "break",
+   "fieldtype": "Time",
+   "label": "Break"
+  },
+  {
+   "default": "00:00:00",
+   "fieldname": "resume",
+   "fieldtype": "Time",
+   "label": "Resume"
+  },
+  {
+   "default": "00:00:00",
+   "fieldname": "out",
+   "fieldtype": "Time",
+   "in_list_view": 1,
+   "label": "Out"
+  },
+  {
+   "default": "0",
+   "fieldname": "work",
+   "fieldtype": "Float",
+   "label": "Work"
+  },
+  {
+   "fieldname": "column_break_1z2p",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "overtime",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Overtime",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "ot_in_hour",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "OT in Hour",
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "short",
+   "fieldtype": "Float",
+   "label": "Short"
+  },
+  {
+   "fieldname": "leave_taken",
+   "fieldtype": "Data",
+   "label": "Leave Taken",
+   "read_only": 1
+  },
+  {
+   "default": "Today",
+   "fieldname": "log_date",
+   "fieldtype": "Date",
+   "label": "Posting Date"
+  },
+  {
+   "default": "00:00:00",
+   "fieldname": "time_in",
+   "fieldtype": "Time",
+   "label": "In"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "approval",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Approval"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2025-06-03 09:49:31.766328",
+ "modified_by": "Administrator",
+ "module": "Caf",
+ "name": "Finger Log",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "cancel": 1,
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "import": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "HR Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "All",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

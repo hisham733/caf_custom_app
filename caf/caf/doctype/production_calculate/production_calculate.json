@@ -1,0 +1,262 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "naming_series:",
+ "creation": "2025-12-08 15:38:31.990145",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "calculate_size_tab",
+  "related_recipe_boms_section",
+  "recipe_name",
+  "bom_name",
+  "bom",
+  "naming_series",
+  "s1",
+  "total_bom_qty",
+  "column_break_8y07",
+  "size",
+  "recipe_qty",
+  "calculate_size_or_qty_tab",
+  "recipe__wip",
+  "yeiled",
+  "qty",
+  "size2",
+  "c3",
+  "info",
+  "calculate_item_input_or_output_tab",
+  "output_item",
+  "raw_mat",
+  "c1",
+  "calculated_parent_qty",
+  "raw_qty",
+  "c2",
+  "info2",
+  "raw_size_tab",
+  "recipe_name1",
+  "size1",
+  "items"
+ ],
+ "fields": [
+  {
+   "fieldname": "calculate_size_tab",
+   "fieldtype": "Tab Break",
+   "label": "Calculate Pack QTY (Size)"
+  },
+  {
+   "fieldname": "related_recipe_boms_section",
+   "fieldtype": "Section Break",
+   "label": "Related Recipe BOMs"
+  },
+  {
+   "fieldname": "recipe_name",
+   "fieldtype": "Link",
+   "label": "Recipe Name",
+   "link_filters": "[[\"Item\",\"default_bom\",\"is\",\"set\"],[\"Item\",\"item_group\",\"=\",\"Recipe\"]]",
+   "options": "Item"
+  },
+  {
+   "fetch_from": "recipe_name.default_bom",
+   "fieldname": "bom_name",
+   "fieldtype": "Data",
+   "label": "BOM Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "bom",
+   "fieldtype": "Table",
+   "label": "BOMs",
+   "options": "Related Recipe BOM Items"
+  },
+  {
+   "fieldname": "naming_series",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Naming Series",
+   "options": "RECI-BOM-.YYYY.-"
+  },
+  {
+   "fieldname": "s1",
+   "fieldtype": "Section Break"
+  },
+  {
+   "bold": 1,
+   "fieldname": "total_bom_qty",
+   "fieldtype": "Float",
+   "label": "Total BOM QTY",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_8y07",
+   "fieldtype": "Column Break"
+  },
+  {
+   "bold": 1,
+   "fieldname": "size",
+   "fieldtype": "Float",
+   "label": "Size",
+   "read_only": 1
+  },
+  {
+   "fieldname": "recipe_qty",
+   "fieldtype": "Float",
+   "hidden": 1,
+   "label": "recipe_qty",
+   "read_only": 1
+  },
+  {
+   "fieldname": "calculate_size_or_qty_tab",
+   "fieldtype": "Tab Break",
+   "label": "Calculate Size or QTY"
+  },
+  {
+   "fieldname": "recipe__wip",
+   "fieldtype": "Link",
+   "label": "Recipe / WIP ",
+   "link_filters": "[[\"Item\",\"item_group\",\"in\",[\"Recipe\",\"WIP\"]],[\"Item\",\"name\",\"not like\",\"%TIM%\"]]",
+   "options": "Item"
+  },
+  {
+   "depends_on": "eval:doc.recipe__wip",
+   "fieldname": "yeiled",
+   "fieldtype": "Float",
+   "label": "Item Yeiled",
+   "precision": "3",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.recipe__wip",
+   "fieldname": "qty",
+   "fieldtype": "Float",
+   "label": "Manufacture QTY"
+  },
+  {
+   "depends_on": "eval:doc.recipe__wip",
+   "fieldname": "size2",
+   "fieldtype": "Float",
+   "label": "Size"
+  },
+  {
+   "fieldname": "c3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "bold": 1,
+   "default": "You only need to enter either Recipe or WIP then enter QTY or Size and  the system will automatically calculate the other value based on the item\u2019s default BOM and Yield",
+   "fieldname": "info",
+   "fieldtype": "Small Text",
+   "read_only": 1
+  },
+  {
+   "fieldname": "calculate_item_input_or_output_tab",
+   "fieldtype": "Tab Break",
+   "label": "Calculate Item Input or Output "
+  },
+  {
+   "fieldname": "output_item",
+   "fieldtype": "Link",
+   "label": "Output Item",
+   "options": "Item"
+  },
+  {
+   "depends_on": "eval:doc.output_item",
+   "fieldname": "raw_mat",
+   "fieldtype": "Select",
+   "label": "Raw Mat Item"
+  },
+  {
+   "depends_on": "eval: doc.output_item && doc.raw_mat",
+   "fieldname": "c1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval: doc.output_item && doc.raw_mat",
+   "fieldname": "calculated_parent_qty",
+   "fieldtype": "Float",
+   "label": "Calculated Parent QTY",
+   "precision": "3"
+  },
+  {
+   "depends_on": "eval: doc.output_item && doc.raw_mat",
+   "fieldname": "raw_qty",
+   "fieldtype": "Float",
+   "label": "Raw QTY",
+   "precision": "3"
+  },
+  {
+   "fieldname": "c2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "bold": 1,
+   "default": "This function is only used for items that have exactly one raw material** in their default BOM, and it lets you enter either the parent quantity or the raw material quantity so the system can calculate the other automatically.",
+   "fieldname": "info2",
+   "fieldtype": "Small Text",
+   "read_only": 1
+  },
+  {
+   "fieldname": "raw_size_tab",
+   "fieldtype": "Tab Break",
+   "label": "Raw Size"
+  },
+  {
+   "fieldname": "recipe_name1",
+   "fieldtype": "Link",
+   "label": "Recipe Name",
+   "link_filters": "[[\"Item\",\"item_group\",\"in\",[\"Recipe\",\"WIP\"]]]",
+   "options": "Item"
+  },
+  {
+   "fieldname": "size1",
+   "fieldtype": "Float",
+   "label": "Size",
+   "precision": "2"
+  },
+  {
+   "fieldname": "items",
+   "fieldtype": "Table",
+   "label": "items",
+   "options": "Bom Items for Size"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-03-02 16:13:12.720459",
+ "modified_by": "faten@caffood.com",
+ "module": "Caf",
+ "name": "Production Calculate",
+ "naming_rule": "By \"Naming Series\" field",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Manufacturing Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1,
+ "track_seen": 1
+}

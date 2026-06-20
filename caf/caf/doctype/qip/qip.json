@@ -1,0 +1,296 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "naming_series:",
+ "creation": "2025-06-03 15:12:06.005807",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "select_qip_section",
+  "qc_name",
+  "stock_entry",
+  "incoming_material_inspection_checklist_section",
+  "date_of_incoming",
+  "supplier_name",
+  "batch_number",
+  "do_number__invoice_number",
+  "c1",
+  "name_of_material",
+  "quantity_packing_size_weight",
+  "expiry_date",
+  "s2",
+  "qc_table",
+  "section_b_material_physical_inspection_section",
+  "qc_table1",
+  "s2_section",
+  "product_temperature",
+  "c2_column",
+  "passfailna",
+  "section_c_coa_section",
+  "coa",
+  "section_break_oyqw",
+  "accept",
+  "column_break_mgxb",
+  "quarantine",
+  "column_break_vtxn",
+  "reject",
+  "emp_section",
+  "remark",
+  "section_break_m082",
+  "checked_by_qc_inspector",
+  "c2",
+  "checked_by_qc_inspector_name",
+  "section_break_gpve",
+  "verified_by_qa_executive",
+  "c3",
+  "verified_by_qa_executive_name",
+  "naming_series"
+ ],
+ "fields": [
+  {
+   "fieldname": "incoming_material_inspection_checklist_section",
+   "fieldtype": "Section Break",
+   "label": "INCOMING MATERIAL INSPECTION CHECKLIST"
+  },
+  {
+   "default": "Today",
+   "fieldname": "date_of_incoming",
+   "fieldtype": "Date",
+   "label": "Date of Incoming"
+  },
+  {
+   "fieldname": "name_of_material",
+   "fieldtype": "Link",
+   "label": "Name of Material",
+   "options": "Item"
+  },
+  {
+   "fieldname": "supplier_name",
+   "fieldtype": "Data",
+   "label": "Supplier Name"
+  },
+  {
+   "fieldname": "quantity_packing_size_weight",
+   "fieldtype": "Data",
+   "label": "Quantity/ Packing Size/ Weight"
+  },
+  {
+   "fieldname": "batch_number",
+   "fieldtype": "Int",
+   "label": "Batch Number"
+  },
+  {
+   "fieldname": "expiry_date",
+   "fieldtype": "Date",
+   "label": " Expiry Date"
+  },
+  {
+   "fieldname": "c1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "do_number__invoice_number",
+   "fieldtype": "Data",
+   "label": "D/O Number / Invoice Number"
+  },
+  {
+   "fieldname": "qc_table",
+   "fieldtype": "Table",
+   "options": "QIP Table"
+  },
+  {
+   "fieldname": "s2",
+   "fieldtype": "Section Break",
+   "label": "SECTION (A) VEHICLE INSPECTION"
+  },
+  {
+   "fieldname": "qc_table1",
+   "fieldtype": "Table",
+   "options": "QIP Table1"
+  },
+  {
+   "description": "*For eggs, santan and chicken meat (Temperature spec: \u2264 4\u02daC)",
+   "fieldname": "product_temperature",
+   "fieldtype": "Percent",
+   "label": "Product temperature",
+   "precision": "2"
+  },
+  {
+   "fieldname": "passfailna",
+   "fieldtype": "Select",
+   "label": "Pass or Fail",
+   "options": "\nPass\nFail\nN/A"
+  },
+  {
+   "fieldname": "c2_column",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_c_coa_section",
+   "fieldtype": "Section Break",
+   "label": "SECTION (C) COA"
+  },
+  {
+   "fieldname": "coa",
+   "fieldtype": "Select",
+   "label": "COA",
+   "options": "\nReceived\nNot received\nN/A"
+  },
+  {
+   "fieldname": "s2_section",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "section_b_material_physical_inspection_section",
+   "fieldtype": "Section Break",
+   "label": "SECTION (B) MATERIAL PHYSICAL INSPECTION"
+  },
+  {
+   "default": "0",
+   "fieldname": "accept",
+   "fieldtype": "Check",
+   "label": "Accept"
+  },
+  {
+   "fieldname": "section_break_oyqw",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "column_break_mgxb",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "quarantine",
+   "fieldtype": "Check",
+   "label": "Quarantine"
+  },
+  {
+   "fieldname": "column_break_vtxn",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "reject",
+   "fieldtype": "Check",
+   "label": "Reject"
+  },
+  {
+   "fieldname": "emp_section",
+   "fieldtype": "Section Break",
+   "label": "EMP"
+  },
+  {
+   "fieldname": "remark",
+   "fieldtype": "Data",
+   "label": "Remark"
+  },
+  {
+   "fieldname": "checked_by_qc_inspector",
+   "fieldtype": "Link",
+   "label": "Checked by (QC Inspector)",
+   "options": "Employee"
+  },
+  {
+   "fieldname": "verified_by_qa_executive",
+   "fieldtype": "Link",
+   "label": "Verified by (QA Executive)",
+   "options": "Employee"
+  },
+  {
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "label": "Series",
+   "options": "QIP-.YYYY.-"
+  },
+  {
+   "fetch_from": "checked_by_qc_inspector.employee_name",
+   "fieldname": "checked_by_qc_inspector_name",
+   "fieldtype": "Data",
+   "label": "Checked by (QC Inspector) Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "c2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "c3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fetch_from": "verified_by_qa_executive.employee_name",
+   "fieldname": "verified_by_qa_executive_name",
+   "fieldtype": "Data",
+   "label": "Verified by (QA Executive) Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_m082",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "section_break_gpve",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "select_qip_section",
+   "fieldtype": "Section Break",
+   "label": "Select QIP"
+  },
+  {
+   "bold": 1,
+   "fieldname": "qc_name",
+   "fieldtype": "Select",
+   "label": "QC Name",
+   "options": "\nINCOMING MATERIAL INSPECTION CHECKLIST"
+  },
+  {
+   "fieldname": "stock_entry",
+   "fieldtype": "Link",
+   "label": "Stock Entry",
+   "options": "Stock Entry"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2025-06-05 09:43:46.132743",
+ "modified_by": "Administrator",
+ "module": "Caf",
+ "name": "QIP",
+ "naming_rule": "By \"Naming Series\" field",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Stock User",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "search_fields": "qc_name",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "qc_name"
+}

@@ -1,0 +1,466 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-10-15 13:46:28.809899",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "required_date",
+  "c1",
+  "production_type",
+  "urgent_check",
+  "s1",
+  "recipe_note",
+  "c2",
+  "pack_note",
+  "s2",
+  "recipe_name",
+  "size",
+  "qty",
+  "custom_yield",
+  "recipe_cook_workstaion",
+  "recipe_cook_round",
+  "recipe_cook_time",
+  "c3",
+  "number_of_pack",
+  "pack_name",
+  "pack_name_2",
+  "pack_name_3",
+  "pack_name_4",
+  "pack_name_5",
+  "pack_name_6",
+  "pack_name_7",
+  "column_break_xisw",
+  "produ_status",
+  "pack_qty",
+  "pack_qty_2",
+  "pack_qty_3",
+  "pack_qty_4",
+  "pack_qty_5",
+  "pack_qty_6",
+  "pack_qty_7",
+  "column_break_kjk2",
+  "pack_machine",
+  "pack_remark",
+  "pack_remark_2",
+  "pack_remark_3",
+  "pack_remark_4",
+  "pack_remark_5",
+  "pack_remark_6",
+  "pack_remark_7",
+  "pack_time",
+  "pack_round",
+  "section_break_hkut",
+  "link_id",
+  "mr_reference",
+  "wo_list",
+  "custom_pair_id",
+  "column_break_8pvk",
+  "production_plane",
+  "wo_list_with_type"
+ ],
+ "fields": [
+  {
+   "depends_on": "eval: doc.recipe_name",
+   "fieldname": "required_date",
+   "fieldtype": "Date",
+   "label": "Required Date"
+  },
+  {
+   "fieldname": "c1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "production_type",
+   "fieldtype": "Select",
+   "label": "Production Type",
+   "options": "New\nRecook\nReheat\nRepack"
+  },
+  {
+   "fieldname": "s1",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "recipe_note",
+   "fieldtype": "Small Text",
+   "label": "Recipe Note",
+   "read_only": 1
+  },
+  {
+   "fieldname": "c2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "pack_note",
+   "fieldtype": "Small Text",
+   "hidden": 1,
+   "label": "Pack Note"
+  },
+  {
+   "fieldname": "s2",
+   "fieldtype": "Section Break"
+  },
+  {
+   "columns": 1,
+   "fieldname": "recipe_name",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Recipe Name",
+   "link_filters": "[[\"Item\",\"item_group\",\"in\",[\"Recipe\",\"WIP Floss\"]]]",
+   "options": "Item",
+   "read_only": 1,
+   "width": "1"
+  },
+  {
+   "columns": 1,
+   "fieldname": "size",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Size",
+   "non_negative": 1,
+   "precision": "3",
+   "read_only": 1,
+   "width": "1"
+  },
+  {
+   "columns": 2,
+   "fieldname": "recipe_cook_workstaion",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Cook Workstaion",
+   "link_filters": "[[\"Workstation\",\"status\",\"in\",[\"Production\",\"Idle\",null]],[\"Workstation\",\"custom_inactive\",\"=\",0]]",
+   "options": "Workstation",
+   "read_only": 1,
+   "width": "1"
+  },
+  {
+   "columns": 1,
+   "fieldname": "recipe_cook_round",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Cook Round",
+   "length": 1,
+   "options": "\n1\n2\n3\n4\n5\n6\n7\n8\n9",
+   "width": "1"
+  },
+  {
+   "fieldname": "recipe_cook_time",
+   "fieldtype": "Time",
+   "label": "Cook Time",
+   "read_only": 1
+  },
+  {
+   "fieldname": "c3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval: doc.number_of_pack>=1",
+   "fieldname": "pack_name",
+   "fieldtype": "Link",
+   "label": "Pack Name",
+   "options": "Item",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "depends_on": "eval: doc.number_of_pack>=2",
+   "fieldname": "pack_qty",
+   "fieldtype": "Float",
+   "label": "Pack QTY",
+   "mandatory_depends_on": "eval.doc.number_of_pack >=2",
+   "read_only": 1,
+   "width": "1"
+  },
+  {
+   "columns": 1,
+   "fieldname": "pack_machine",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Pack Machine",
+   "link_filters": "[[\"Workstation\",\"status\",\"in\",[\"Production\",\"Idle\",null]],[\"Workstation\",\"custom_inactive\",\"=\",0]]",
+   "options": "Workstation",
+   "width": "1"
+  },
+  {
+   "columns": 1,
+   "fieldname": "pack_time",
+   "fieldtype": "Time",
+   "hidden": 1,
+   "label": "Pack Time"
+  },
+  {
+   "columns": 1,
+   "fieldname": "pack_round",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "label": "Pack Round",
+   "options": "\n1\n2\n3\n4\n5\n6\n7\n8\n9",
+   "width": "1"
+  },
+  {
+   "default": "0",
+   "fieldname": "urgent_check",
+   "fieldtype": "Check",
+   "label": "Urgent Order"
+  },
+  {
+   "depends_on": "eval: doc.number_of_pack>=2",
+   "fieldname": "pack_name_2",
+   "fieldtype": "Link",
+   "label": "Pack Name 2",
+   "options": "Item",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "depends_on": "eval: doc.number_of_pack>=3",
+   "fieldname": "pack_name_3",
+   "fieldtype": "Link",
+   "label": "Pack Name 3",
+   "options": "Item",
+   "read_only": 1,
+   "width": "1"
+  },
+  {
+   "columns": 1,
+   "depends_on": "eval: doc.number_of_pack>=4",
+   "fieldname": "pack_name_4",
+   "fieldtype": "Link",
+   "label": "Pack Name 4",
+   "options": "Item",
+   "read_only": 1,
+   "width": "1"
+  },
+  {
+   "columns": 1,
+   "depends_on": "eval: doc.number_of_pack>=5",
+   "fieldname": "pack_name_5",
+   "fieldtype": "Link",
+   "label": "Pack Name 5",
+   "options": "Item",
+   "read_only": 1,
+   "width": "1"
+  },
+  {
+   "columns": 1,
+   "depends_on": "eval: doc.number_of_pack>=6",
+   "fieldname": "pack_name_6",
+   "fieldtype": "Link",
+   "label": "Pack Name 6",
+   "options": "Item",
+   "read_only": 1,
+   "width": "1"
+  },
+  {
+   "columns": 1,
+   "depends_on": "eval: doc.number_of_pack>=7",
+   "fieldname": "pack_name_7",
+   "fieldtype": "Link",
+   "label": "Pack Name 7",
+   "options": "Item",
+   "read_only": 1,
+   "width": "1"
+  },
+  {
+   "fieldname": "column_break_xisw",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_kjk2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval: doc.number_of_pack>=1",
+   "fieldname": "pack_remark",
+   "fieldtype": "Data",
+   "label": "Pack Remark"
+  },
+  {
+   "columns": 1,
+   "default": "0",
+   "fieldname": "number_of_pack",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Number Of Pack",
+   "options": "0\n1\n2\n3\n4\n5\n6\n7",
+   "width": "1"
+  },
+  {
+   "bold": 1,
+   "columns": 2,
+   "fieldname": "produ_status",
+   "fieldtype": "Select",
+   "label": "Produ Status",
+   "options": "\nNew Schedule\nRecipe Change\nCancelled\nChange Slot\nRearrange\nOnly Remark\nPack Change",
+   "width": "2"
+  },
+  {
+   "columns": 1,
+   "depends_on": "eval: doc.number_of_pack>=2",
+   "fieldname": "pack_qty_2",
+   "fieldtype": "Float",
+   "label": "Pack QTY 2",
+   "mandatory_depends_on": "eval.doc.number_of_pack >=3",
+   "read_only": 1,
+   "width": "1"
+  },
+  {
+   "columns": 1,
+   "depends_on": "eval: doc.number_of_pack>=3",
+   "fieldname": "pack_qty_3",
+   "fieldtype": "Float",
+   "label": "Pack QTY 3",
+   "mandatory_depends_on": "eval.doc.number_of_pack >=4",
+   "read_only": 1,
+   "width": "1"
+  },
+  {
+   "columns": 1,
+   "depends_on": "eval: doc.number_of_pack>=4",
+   "fieldname": "pack_qty_4",
+   "fieldtype": "Float",
+   "label": "Pack QTY 4",
+   "mandatory_depends_on": "eval.doc.number_of_pack >=5",
+   "read_only": 1,
+   "width": "1"
+  },
+  {
+   "columns": 1,
+   "depends_on": "eval: doc.number_of_pack>=5",
+   "fieldname": "pack_qty_5",
+   "fieldtype": "Float",
+   "label": "Pack QTY 5",
+   "mandatory_depends_on": "eval.doc.number_of_pack >=6",
+   "read_only": 1,
+   "width": "1"
+  },
+  {
+   "columns": 1,
+   "depends_on": "eval: doc.number_of_pack>=6",
+   "fieldname": "pack_qty_6",
+   "fieldtype": "Float",
+   "label": "Pack QTY 6",
+   "mandatory_depends_on": "eval.doc.number_of_pack >=7",
+   "read_only": 1,
+   "width": "1"
+  },
+  {
+   "columns": 1,
+   "depends_on": "eval: doc.number_of_pack>=7",
+   "fieldname": "pack_qty_7",
+   "fieldtype": "Float",
+   "label": "Pack QTY 7",
+   "mandatory_depends_on": "eval.doc.number_of_pack >=7",
+   "read_only": 1,
+   "width": "1"
+  },
+  {
+   "depends_on": "eval: doc.number_of_pack>=2",
+   "fieldname": "pack_remark_2",
+   "fieldtype": "Data",
+   "label": "Pack Remark 2"
+  },
+  {
+   "depends_on": "eval: doc.number_of_pack>=3",
+   "fieldname": "pack_remark_3",
+   "fieldtype": "Data",
+   "label": "Pack Remark 3"
+  },
+  {
+   "depends_on": "eval: doc.number_of_pack>=4",
+   "fieldname": "pack_remark_4",
+   "fieldtype": "Data",
+   "label": "Pack Remark 4"
+  },
+  {
+   "depends_on": "eval: doc.number_of_pack>=5",
+   "fieldname": "pack_remark_5",
+   "fieldtype": "Data",
+   "label": "Pack Remark 5"
+  },
+  {
+   "depends_on": "eval: doc.number_of_pack>=6",
+   "fieldname": "pack_remark_6",
+   "fieldtype": "Data",
+   "label": "Pack Remark 6"
+  },
+  {
+   "depends_on": "eval: doc.number_of_pack>=7",
+   "fieldname": "pack_remark_7",
+   "fieldtype": "Data",
+   "label": "Pack Remark 7"
+  },
+  {
+   "fieldname": "wo_list",
+   "fieldtype": "Small Text",
+   "hidden": 1,
+   "label": "wo_list"
+  },
+  {
+   "fieldname": "section_break_hkut",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "link_id",
+   "fieldtype": "Data",
+   "label": "Link ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "mr_reference",
+   "fieldtype": "Link",
+   "label": "MR Reference",
+   "options": "Material Request",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_8pvk",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "production_plane",
+   "fieldtype": "Data",
+   "label": "Production plane"
+  },
+  {
+   "fieldname": "wo_list_with_type",
+   "fieldtype": "Small Text",
+   "label": "WO List With Type"
+  },
+  {
+   "fieldname": "qty",
+   "fieldtype": "Float",
+   "hidden": 1,
+   "label": "QTY",
+   "read_only": 1
+  },
+  {
+   "fieldname": "custom_pair_id",
+   "fieldtype": "Data",
+   "label": "Pair ID",
+   "read_only": 1
+  },
+  {
+   "bold": 1,
+   "fieldname": "custom_yield",
+   "fieldtype": "Float",
+   "label": "Yeild",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-06-10 14:45:17.560821",
+ "modified_by": "hisham@caffood.com",
+ "module": "Caf",
+ "name": "Create ProExl Items",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

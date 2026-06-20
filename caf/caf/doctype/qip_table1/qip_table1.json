@@ -1,0 +1,46 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-06-03 15:47:48.685312",
+ "default_view": "List",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "section_b_material_physical_inspection_section",
+  "material_physical_inspection",
+  "pass_or_fail2"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_b_material_physical_inspection_section",
+   "fieldtype": "Section Break",
+   "label": "SECTION (B) MATERIAL PHYSICAL INSPECTION"
+  },
+  {
+   "fieldname": "material_physical_inspection",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "MATERIAL PHYSICAL INSPECTION"
+  },
+  {
+   "fieldname": "pass_or_fail2",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Pass or Fail",
+   "options": "\nPass\nFail"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-06-03 15:48:24.511759",
+ "modified_by": "Administrator",
+ "module": "Caf",
+ "name": "QIP Table1",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

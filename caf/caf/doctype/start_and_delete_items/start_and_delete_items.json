@@ -1,0 +1,115 @@
+{
+ "actions": [],
+ "allow_import": 1,
+ "allow_rename": 1,
+ "autoname": "naming_series:",
+ "creation": "2025-09-27 15:56:16.809915",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_ejkx",
+  "delet",
+  "start_work_order_earlier_section",
+  "start",
+  "naming_series",
+  "amended_from",
+  "repack_items_tab",
+  "repack_items_table"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_ejkx",
+   "fieldtype": "Section Break",
+   "label": "Delete Items from Work Order"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "start and delete items",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "delet",
+   "fieldtype": "Table",
+   "label": "Delete",
+   "options": "delet"
+  },
+  {
+   "fieldname": "start_work_order_earlier_section",
+   "fieldtype": "Section Break",
+   "label": "Start Work Order Earlier "
+  },
+  {
+   "fieldname": "start",
+   "fieldtype": "Table",
+   "label": "Start",
+   "options": "start"
+  },
+  {
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "options": "LAD-TAB-.YYYYY.-"
+  },
+  {
+   "fieldname": "repack_items_tab",
+   "fieldtype": "Tab Break",
+   "label": "Repack Items"
+  },
+  {
+   "fieldname": "repack_items_table",
+   "fieldtype": "Table",
+   "label": "Repack Items Table",
+   "options": "Auto Repack"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-01-23 16:12:03.738731",
+ "modified_by": "Administrator",
+ "module": "Caf",
+ "name": "start and delete items",
+ "naming_rule": "By \"Naming Series\" field",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "cancel": 1,
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "cancel": 1,
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Stock Manager",
+   "select": 1,
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

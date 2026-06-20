@@ -2,6 +2,7 @@
 *.pyc
 *.egg-info
 *.swp
+*.bak
 tags
 node_modules
 __pycache__

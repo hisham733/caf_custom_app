@@ -1,0 +1,165 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-07-23 16:00:50.990976",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "batch_size",
+  "operation_type",
+  "required_by",
+  "section_break_dipu",
+  "column_break_gdsc",
+  "pack_item_code",
+  "quantity",
+  "pack_workstation",
+  "pack_start_time",
+  "pack_round",
+  "pack_note",
+  "pack_uom",
+  "c1",
+  "recipe_item_code",
+  "cooking_workstation",
+  "cooking_round",
+  "cooking_start_time",
+  "cooking_note",
+  "recipe_uom"
+ ],
+ "fields": [
+  {
+   "fieldname": "column_break_gdsc",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "pack_item_code",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Pack Item Code ",
+   "options": "Item",
+   "reqd": 1
+  },
+  {
+   "fieldname": "recipe_item_code",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Recipe Item Code ",
+   "options": "Item",
+   "reqd": 1
+  },
+  {
+   "fieldname": "c1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "batch_size",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Batch Size",
+   "non_negative": 1,
+   "precision": "2",
+   "reqd": 1
+  },
+  {
+   "fieldname": "operation_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Operation Type",
+   "options": "New\nRecook\nReheat",
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_break_dipu",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "required_by",
+   "fieldtype": "Date",
+   "label": "Required By",
+   "reqd": 1
+  },
+  {
+   "fieldname": "quantity",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Quantity",
+   "non_negative": 1,
+   "precision": "2",
+   "reqd": 1
+  },
+  {
+   "fieldname": "pack_workstation",
+   "fieldtype": "Link",
+   "label": "Pack Workstation",
+   "options": "Workstation",
+   "reqd": 1
+  },
+  {
+   "fieldname": "pack_start_time",
+   "fieldtype": "Time",
+   "label": "Pack Start Time",
+   "reqd": 1
+  },
+  {
+   "fieldname": "pack_round",
+   "fieldtype": "Int",
+   "label": "Pack Round",
+   "reqd": 1
+  },
+  {
+   "fieldname": "pack_note",
+   "fieldtype": "Small Text",
+   "label": "Pack Note"
+  },
+  {
+   "fieldname": "cooking_workstation",
+   "fieldtype": "Link",
+   "label": "Cooking Workstation",
+   "options": "Workstation",
+   "reqd": 1
+  },
+  {
+   "fieldname": "cooking_round",
+   "fieldtype": "Int",
+   "label": "Cooking Round",
+   "reqd": 1
+  },
+  {
+   "fieldname": "cooking_start_time",
+   "fieldtype": "Time",
+   "label": "Cooking Start Time",
+   "reqd": 1
+  },
+  {
+   "fieldname": "cooking_note",
+   "fieldtype": "Small Text",
+   "label": "Cooking Note"
+  },
+  {
+   "fetch_from": "pack_item_code.stock_uom",
+   "fetch_if_empty": 1,
+   "fieldname": "pack_uom",
+   "fieldtype": "Data",
+   "label": "Pack UOM"
+  },
+  {
+   "fetch_from": "recipe_item_code.stock_uom",
+   "fetch_if_empty": 1,
+   "fieldname": "recipe_uom",
+   "fieldtype": "Data",
+   "label": "Recipe UOM"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-07-24 11:35:24.697399",
+ "modified_by": "Administrator",
+ "module": "Caf",
+ "name": "Material Request Entry Line",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

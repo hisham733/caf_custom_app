@@ -1,0 +1,279 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-06-13 13:57:04.678677",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "work_order",
+  "workstation",
+  "number_of_pack",
+  "pack_name",
+  "pack_name_2",
+  "pack_name_3",
+  "pack_name_4",
+  "pack_name_5",
+  "pack_name_6",
+  "pack_name_7",
+  "actual_qty",
+  "actual_qty_2",
+  "actual_qty_3",
+  "actual_qty_4",
+  "actual_qty_5",
+  "actual_qty_6",
+  "actual_qty_7",
+  "pack_workstation",
+  "pack_workstation_2",
+  "pack_workstation_3",
+  "pack_workstation_4",
+  "pack_workstation_5",
+  "pack_workstation_6",
+  "pack_workstation_7",
+  "recook",
+  "column_break_oqng",
+  "link_id",
+  "round",
+  "size",
+  "raw_matl",
+  "balance",
+  "status"
+ ],
+ "fields": [
+  {
+   "fieldname": "work_order",
+   "fieldtype": "Link",
+   "label": "Work Order",
+   "options": "Work Order"
+  },
+  {
+   "fieldname": "workstation",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Workstation",
+   "options": "Workstation"
+  },
+  {
+   "default": "0",
+   "fieldname": "number_of_pack",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Number Of Pack",
+   "options": "0\n1\n2\n3\n4\n5\n6\n7"
+  },
+  {
+   "depends_on": "eval: doc.number_of_pack>=1",
+   "fieldname": "pack_name",
+   "fieldtype": "Link",
+   "label": "Pack Name",
+   "options": "Item"
+  },
+  {
+   "depends_on": "eval: doc.number_of_pack>=2",
+   "fieldname": "pack_name_2",
+   "fieldtype": "Link",
+   "label": "Pack Name 2",
+   "options": "Item"
+  },
+  {
+   "depends_on": "eval: doc.number_of_pack>=3",
+   "fieldname": "pack_name_3",
+   "fieldtype": "Link",
+   "label": "Pack Name 3",
+   "options": "Item"
+  },
+  {
+   "depends_on": "eval: doc.number_of_pack>=4",
+   "fieldname": "pack_name_4",
+   "fieldtype": "Link",
+   "label": "Pack Name 4",
+   "options": "Item"
+  },
+  {
+   "depends_on": "eval: doc.number_of_pack>=5",
+   "fieldname": "pack_name_5",
+   "fieldtype": "Link",
+   "label": "Pack Name 5",
+   "options": "Item"
+  },
+  {
+   "depends_on": "eval: doc.number_of_pack>=6",
+   "fieldname": "pack_name_6",
+   "fieldtype": "Link",
+   "label": "Pack Name 6",
+   "options": "Item"
+  },
+  {
+   "depends_on": "eval: doc.number_of_pack>=7",
+   "fieldname": "pack_name_7",
+   "fieldtype": "Link",
+   "label": "Pack Name 7",
+   "options": "Item"
+  },
+  {
+   "depends_on": "eval: doc.number_of_pack>=1",
+   "fieldname": "actual_qty",
+   "fieldtype": "Float",
+   "label": "Actual QTY",
+   "precision": "3"
+  },
+  {
+   "depends_on": "eval: doc.number_of_pack>=2",
+   "fieldname": "actual_qty_2",
+   "fieldtype": "Float",
+   "label": "Actual QTY 2",
+   "precision": "3"
+  },
+  {
+   "depends_on": "eval: doc.number_of_pack>=3",
+   "fieldname": "actual_qty_3",
+   "fieldtype": "Float",
+   "label": "Actual QTY 3",
+   "precision": "3"
+  },
+  {
+   "depends_on": "eval: doc.number_of_pack>=4",
+   "fieldname": "actual_qty_4",
+   "fieldtype": "Float",
+   "label": "Actual QTY 4",
+   "precision": "3"
+  },
+  {
+   "depends_on": "eval: doc.number_of_pack>=5",
+   "fieldname": "actual_qty_5",
+   "fieldtype": "Float",
+   "label": "Actual QTY 5",
+   "precision": "3"
+  },
+  {
+   "depends_on": "eval: doc.number_of_pack>=6",
+   "fieldname": "actual_qty_6",
+   "fieldtype": "Float",
+   "label": "Actual QTY 6",
+   "precision": "3"
+  },
+  {
+   "depends_on": "eval: doc.number_of_pack>=7",
+   "fieldname": "actual_qty_7",
+   "fieldtype": "Float",
+   "label": "Actual QTY 7",
+   "precision": "3"
+  },
+  {
+   "depends_on": "eval: doc.number_of_pack>=1",
+   "fieldname": "pack_workstation",
+   "fieldtype": "Link",
+   "label": "Pack Workstation",
+   "options": "Workstation"
+  },
+  {
+   "depends_on": "eval: doc.number_of_pack>=2",
+   "fieldname": "pack_workstation_2",
+   "fieldtype": "Link",
+   "label": "Pack Workstation 2",
+   "options": "Workstation"
+  },
+  {
+   "depends_on": "eval: doc.number_of_pack>=3",
+   "fieldname": "pack_workstation_3",
+   "fieldtype": "Link",
+   "label": "Pack Workstation 3",
+   "options": "Workstation"
+  },
+  {
+   "depends_on": "eval: doc.number_of_pack>=4",
+   "fieldname": "pack_workstation_4",
+   "fieldtype": "Link",
+   "label": "Pack Workstation 4",
+   "options": "Workstation"
+  },
+  {
+   "depends_on": "eval: doc.number_of_pack>=5",
+   "fieldname": "pack_workstation_5",
+   "fieldtype": "Link",
+   "label": "Pack Workstation 5",
+   "options": "Workstation"
+  },
+  {
+   "depends_on": "eval: doc.number_of_pack>=6",
+   "fieldname": "pack_workstation_6",
+   "fieldtype": "Link",
+   "label": "Pack Workstation 6",
+   "options": "Workstation"
+  },
+  {
+   "depends_on": "eval: doc.number_of_pack>=7",
+   "fieldname": "pack_workstation_7",
+   "fieldtype": "Link",
+   "label": "Pack Workstation 7",
+   "options": "Workstation"
+  },
+  {
+   "fieldname": "recook",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Recook",
+   "precision": "3"
+  },
+  {
+   "fieldname": "column_break_oqng",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "link_id",
+   "fieldtype": "Data",
+   "label": "Link ID"
+  },
+  {
+   "fieldname": "round",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Round",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "size",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Size",
+   "precision": "3"
+  },
+  {
+   "fieldname": "raw_matl",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Raw Mat'l",
+   "precision": "3"
+  },
+  {
+   "fieldname": "balance",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Balance",
+   "precision": "3"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Pending\nDone\nFailed",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-06-19 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Caf",
+ "name": "Daily Output Item",
+ "owner": "hisham@caffood.com",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

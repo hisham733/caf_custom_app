@@ -1,0 +1,32 @@
+{
+ "allow_roles": [
+  {
+   "role": "HR Manager"
+  },
+  {
+   "role": "HR User"
+  },
+  {
+   "role": "Administrator"
+  }
+ ],
+ "creation": "2025-02-25 11:37:09.169138",
+ "docstatus": 0,
+ "doctype": "Module Onboarding",
+ "documentation_url": "https://docs.erpnext.com/docs/user/manual/en/selling",
+ "idx": 0,
+ "is_complete": 0,
+ "modified": "2025-02-25 11:43:37.779038",
+ "modified_by": "Administrator",
+ "module": "Caf",
+ "name": "Finger Log",
+ "owner": "Administrator",
+ "steps": [
+  {
+   "step": "Create OT"
+  }
+ ],
+ "subtitle": "OT Approval, Finger Log",
+ "success_message": "The Finger Log Module is all set up!",
+ "title": "Let's Set Up the Finger Log Module."
+}

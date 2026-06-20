@@ -1,0 +1,146 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "naming_series:",
+ "creation": "2026-04-25 16:09:50.603022",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_fpid",
+  "work_order",
+  "column_break_rlgk",
+  "operation",
+  "workstation_section",
+  "old_workstation",
+  "column_break_wi5q",
+  "new_workstation",
+  "user_info_section",
+  "changed_by",
+  "column_break_q4dx",
+  "change_date",
+  "naming_series"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_fpid",
+   "fieldtype": "Section Break",
+   "label": "Work Order Info"
+  },
+  {
+   "fieldname": "work_order",
+   "fieldtype": "Link",
+   "label": "Work Order",
+   "options": "Work Order"
+  },
+  {
+   "fieldname": "column_break_rlgk",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "operation",
+   "fieldtype": "Link",
+   "label": "Operation",
+   "options": "Operation"
+  },
+  {
+   "fieldname": "workstation_section",
+   "fieldtype": "Section Break",
+   "label": "Workstation"
+  },
+  {
+   "fieldname": "old_workstation",
+   "fieldtype": "Link",
+   "label": "Old Workstation",
+   "options": "Workstation"
+  },
+  {
+   "fieldname": "column_break_wi5q",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "new_workstation",
+   "fieldtype": "Link",
+   "label": "New Workstation",
+   "options": "Workstation"
+  },
+  {
+   "fieldname": "user_info_section",
+   "fieldtype": "Section Break",
+   "label": "User Info"
+  },
+  {
+   "fieldname": "changed_by",
+   "fieldtype": "Data",
+   "label": "Changed By"
+  },
+  {
+   "fieldname": "column_break_q4dx",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "change_date",
+   "fieldtype": "Date",
+   "label": "Change Date"
+  },
+  {
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "options": "LOG-WS-.YYYY.-"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-05-06 17:04:32.084853",
+ "modified_by": "Administrator",
+ "module": "Caf",
+ "name": "Log Change Workstation",
+ "owner": "hisham@caffood.com",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Stock User",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Stock Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1,
+ "track_seen": 1,
+ "track_views": 1
+}

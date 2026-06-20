@@ -1,0 +1,67 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-10-25 09:47:39.491906",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "preparation_section",
+  "items",
+  "activities",
+  "check_hgiq",
+  "preptime",
+  "preppic"
+ ],
+ "fields": [
+  {
+   "fieldname": "preparation_section",
+   "fieldtype": "Section Break",
+   "label": "Preparation"
+  },
+  {
+   "fieldname": "items",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Items"
+  },
+  {
+   "fieldname": "activities",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Activities"
+  },
+  {
+   "default": "0",
+   "fieldname": "check_hgiq",
+   "fieldtype": "Check",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "preptime",
+   "fieldtype": "Time",
+   "in_list_view": 1,
+   "label": "Prep.Time"
+  },
+  {
+   "fieldname": "preppic",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Prep.PIC"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-10-25 10:16:21.741760",
+ "modified_by": "Administrator",
+ "module": "Caf",
+ "name": "PMC Preparation",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

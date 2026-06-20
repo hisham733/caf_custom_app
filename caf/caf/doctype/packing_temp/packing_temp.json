@@ -1,0 +1,67 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-10-25 10:11:29.561254",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "packing_temp_section",
+  "procedure",
+  "product_kattle",
+  "time",
+  "in_temp",
+  "pic"
+ ],
+ "fields": [
+  {
+   "fieldname": "packing_temp_section",
+   "fieldtype": "Section Break",
+   "label": "Packing Temp"
+  },
+  {
+   "fieldname": "procedure",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Procedure"
+  },
+  {
+   "fieldname": "product_kattle",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Product/ Kattle"
+  },
+  {
+   "fieldname": "time",
+   "fieldtype": "Time",
+   "in_list_view": 1,
+   "label": "Time"
+  },
+  {
+   "fieldname": "in_temp",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "In Temp"
+  },
+  {
+   "fieldname": "pic",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "PIC"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-10-25 10:12:05.790377",
+ "modified_by": "Administrator",
+ "module": "Caf",
+ "name": "Packing Temp",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
