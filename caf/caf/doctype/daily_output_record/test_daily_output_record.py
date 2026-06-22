@@ -283,4 +283,5 @@ class TestDailyOutputRecord(FrappeTestCase):
         self.assertEqual(frappe.db.get_value("Daily Output Item", done_row.name, "status"), "Done")
         self.assertEqual(frappe.db.get_value("Daily Output Item", pending_row.name, "status"), "Done")
 def test_fun():
+    print("test deploy")
     return
