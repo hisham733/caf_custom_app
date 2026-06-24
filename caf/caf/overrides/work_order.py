@@ -353,7 +353,7 @@ def make_stock_entry(
     if total_pack_qty and (total_pack_qty < flt(work_order.qty) and finish_mark == 0):
         resolved_qty = total_pack_qty
     elif total_pack_qty and (total_pack_qty < flt(work_order.qty) and finish_mark == 1):
-        resolved_qty = flt(work_order.qty) - flt(work_order.produced_qty)
+        resolved_qty = total_pack_qty
     elif total_pack_qty >= flt(work_order.qty) - flt(work_order.produced_qty):
         resolved_qty = total_pack_qty
     elif qty is not None:

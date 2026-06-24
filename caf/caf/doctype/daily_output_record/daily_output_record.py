@@ -171,6 +171,7 @@ class DailyOutputRecord(Document):
             purpose="Manufacture",
             total_balance=total_balance,
             total_pack_qty=total_pack_qty,
+            finish_mark=1
         )
         se = frappe.get_doc(se_dict)
         se.insert(ignore_permissions=True)
