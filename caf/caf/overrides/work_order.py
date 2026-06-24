@@ -71,8 +71,18 @@ class CustomWorkOrder(WorkOrder):
             except ValueError:
                 frappe.throw("Error")
 
-    def validate(self):
-        super().validate()
+    # def validate(self):
+    #     super().validate()
+    #     for row in self.operations:
+    #         if not row.workstation:
+    #             frappe.throw(
+    #                 _("Row #{0}: Workstation is required for operation {1}").format(
+    #                     row.idx, row.operation
+    #                 )
+    #             )
+
+    def before_submit(self):
+        super().before_submit()
         for row in self.operations:
             if not row.workstation:
                 frappe.throw(
@@ -80,9 +90,6 @@ class CustomWorkOrder(WorkOrder):
                         row.idx, row.operation
                     )
                 )
-
-    def before_submit(self):
-        super().before_submit()
         # pdb.set_trace()
         # self.check_raw_mat_in_items_table()
     def on_cancel(self):
