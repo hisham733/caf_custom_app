@@ -124,37 +124,37 @@ def process_size_change(doc_name: str, child_doctype: str) -> None:
         _cancel_work_orders_by_id(link_id)
 
         # Cancel the Production Plan to reset demand for this slot
-    if r.production_plane:
-        pp = r.production_plane
-        row_doc.db_set("production_plane", "")
-        # _cancel_production_plan(pp)
+        if r.production_plane:
+            pp = r.production_plane
+            row_doc.db_set("production_plane", "")
+            # _cancel_production_plan(pp)
 
-        # Clear specific row pointers but KEEP link_id and mr_reference
-        row_doc.db_set("wo_list", "")
-        row_doc.db_set("production_plane", "")
-        row_doc.db_set("wo_list_with_type", "")
+            # Clear specific row pointers but KEEP link_id and mr_reference
+            row_doc.db_set("wo_list", "")
+            row_doc.db_set("production_plane", "")
+            row_doc.db_set("wo_list_with_type", "")
 
-        # ── STEP 4: RE-CREATION PHASE ──────────────────────────────────────
-        # Returns the list of ONLY the WOs created in this transaction
-        full_group = parent_doc.get_full_group_for_row(row_doc)
-        newly_born_wos = parent_doc.create_material_request_after_change_size(row_doc.recipe_name, full_group)
+            # ── STEP 4: RE-CREATION PHASE ──────────────────────────────────────
+            # Returns the list of ONLY the WOs created in this transaction
+            full_group = parent_doc.get_full_group_for_row(row_doc)
+            newly_born_wos = parent_doc.create_material_request_after_change_size(row_doc.recipe_name, full_group)
 
-        # ── STEP 5: PRECISION WIP CLEANUP ──────────────────────────────────
-        # Deletes redundant WIP drafts created in Step 4
-        # _cleanup_redundant_wips_targeted(newly_born_wos, row_doc, child_doctype, process_start_time)
+            # ── STEP 5: PRECISION WIP CLEANUP ──────────────────────────────────
+            # Deletes redundant WIP drafts created in Step 4
+            # _cleanup_redundant_wips_targeted(newly_born_wos, row_doc, child_doctype, process_start_time)
 
-        # ── STEP 6: RE-LINK PHASE ──────────────────────────────────────────
-        # Reload to find the newly created Cook WO ID
-        row_doc.reload()
-        new_cook_wo = get_wo_by_type(link_id, "Cook")
+            # ── STEP 6: RE-LINK PHASE ──────────────────────────────────────────
+            # Reload to find the newly created Cook WO ID
+            row_doc.reload()
+            new_cook_wo = get_wo_by_type(link_id, "Cook")
 
-        if new_cook_wo and quality_docs:
-            _relink_quality_docs(quality_docs, new_cook_wo)
+            if new_cook_wo and quality_docs:
+                _relink_quality_docs(quality_docs, new_cook_wo)
 
-        # Update status to finalized
-        row_doc.db_set("produ_status", "Recipe Change")
-        if link_id and reheat == "Reheat":
-            remove_all_wip_wo(link_id,work=True)
+            # Update status to finalized
+            row_doc.db_set("produ_status", "Recipe Change")
+            if link_id and reheat == "Reheat":
+                remove_all_wip_wo(link_id,work=True)
 
     frappe.msgprint( 
         _("✅ <b>Size Change Successful:</b> Work Orders updated and Quality records migrated via Link ID <b>{0}</b>.")
