@@ -216,6 +216,9 @@ class DailyOutputRecord(Document):
             pack_wo.save()
 
     def _process_job_cards(self, wo_name):
+        wo = frappe.get_doc("Work Order", wo_name)
+        operation_order = {op.operation: op.sequence_id for op in wo.operations}
+
         jcs = frappe.get_all("Job Card", filters={
             "work_order": wo_name,
             "docstatus": 0,
@@ -223,6 +226,8 @@ class DailyOutputRecord(Document):
 
         if not jcs:
             return
+
+        jcs.sort(key=lambda jc: operation_order.get(jc.operation, 999))
 
         base = datetime.now().replace(microsecond=0)
 
