@@ -86,10 +86,9 @@ class CustomWorkOrder(WorkOrder):
         for row in self.operations:
             if not row.workstation:
                 frappe.throw(
-                    _(f"Row #{0}: Workstation is required for operation {1} for Work Order {2}").format(
-                        row.idx, row.operation,self.name
+                    _(f"Row #{row.idx}: Workstation is required for operation {row.operation} for Work Order {self.name}")
                     )
-                )
+                
         # pdb.set_trace()
         # self.check_raw_mat_in_items_table()
     def on_cancel(self):
