@@ -126,7 +126,7 @@
 ### `date_of_output(frm)`
 
 **What it does:** Auto-fetches **all** Cook WOs for the selected date (both draft and submitted — cancelled excluded), fetches sibling Pack WOs (also all except cancelled) and their operations, then populates one row per link_id with:
-- link_id, work_order, workstation, round, size
+- link_id, workstation, round, size
 - number_of_pack = count of Pack WOs for that link_id
 - pack_name_N / pack_workstation_N for each pack slot (1..number_of_pack)
 - **status = "Done"** if all Pack WOs for that link_id are already submitted (docstatus=1)

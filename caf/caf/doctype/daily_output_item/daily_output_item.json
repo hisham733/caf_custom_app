@@ -6,7 +6,6 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "work_order",
   "workstation",
   "number_of_pack",
   "pack_name",
@@ -40,12 +39,6 @@
   "status"
  ],
  "fields": [
-  {
-   "fieldname": "work_order",
-   "fieldtype": "Link",
-   "label": "Work Order",
-   "options": "Work Order"
-  },
   {
    "fieldname": "workstation",
    "fieldtype": "Link",

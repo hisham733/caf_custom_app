@@ -23,7 +23,7 @@ apps/caf/caf/caf/doctype/daily_output_record/
 
 | File | Location |
 |------|----------|
-| `daily_output_item/daily_output_item.json` | Child table fields: link_id, work_order, workstation, round, size, number_of_pack, pack_name_N, pack_workstation_N, actual_qty_N (N=1..7), recook, balance, raw_matl, status |
+| `daily_output_item/daily_output_item.json` | Child table fields: link_id, workstation, round, size, number_of_pack, pack_name_N, pack_workstation_N, actual_qty_N (N=1..7), recook, balance, raw_matl, status |
 | `daily_output_item/daily_output_item.py` | Child table controller (empty) |
 
 ## How It Works

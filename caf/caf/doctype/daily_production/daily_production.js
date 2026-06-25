@@ -213,7 +213,8 @@ function filter_produ_status(frm, cdn) {
     if (!grid_row) return;
     const field = grid_row.get_field("produ_status");
     if (!field) return;
-    const full = "\nNew Schedule\nRecipe Change\nCancelled\nChange Slot\nRearrange\nOnly Remark\nPack Change\nSingle WO";
+    const base = "\nNew Schedule\nRecipe Change\nCancelled\nChange Slot\nRearrange\nOnly Remark\nPack Change\nSingle WO";
+    const full = (!row.mr_reference && !row.production_plane) ? base + "\nClear" : base;
     const options = (!row.recipe_name || row.recipe_name === "No Cooking") ? "\nNew Schedule\nChange Slot" : full;
     field.df.options = options;
     field.set_options();
@@ -514,6 +515,23 @@ frappe.ui.form.on("Create ProExl Items", {
                 });
             }, 50);
             frappe.model.set_value(cdt, cdn, 'produ_status', '');
+            return;
+        }
+
+        // ── Clear: wipe all user data back to defaults ──
+        if (current_status === "Clear") {
+            // Clear produ_status via locals first to prevent recursive handler call
+            locals[cdt][cdn].produ_status = "";
+            locals[cdt][cdn].__prev_status = "";
+
+            // Reset user-editable fields (protected fields preserved: workstation, round, link_id)
+            frappe.model.set_value(cdt, cdn, "recipe_name", "No Cooking");
+            frappe.model.set_value(cdt, cdn, "size", 0);
+            frappe.model.set_value(cdt, cdn, "number_of_pack", 0);
+            frappe.model.set_value(cdt, cdn, "custom_yield", null);
+            // frappe.model.set_value(cdt, cdn, "production_type", null);
+            frappe.model.set_value(cdt, cdn, "recipe_cook_time", null);
+            frappe.model.set_value(cdt, cdn, "recipe_note", null);
             return;
         }
 

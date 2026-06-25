@@ -181,7 +181,7 @@ frappe.ui.form.on("Daily Output Record", {
                     cook_wos.forEach(function(wo) {
                         var row = frm.add_child("items");
                         row.link_id = wo.custom_link_id;
-                        row.work_order = wo.name;
+                        // row.work_order = wo.name;
                         row.workstation = workstations[wo.name] || "";
                         row.round = wo.custom_round;
                         row.size = wo.custom_batch_size || wo.qty;

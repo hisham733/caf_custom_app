@@ -22,7 +22,6 @@ class TestDailyOutputRecord(FrappeTestCase):
     def _add_item(self, **kwargs):
         defaults = {
             "link_id": "LINK-001",
-            "work_order": None,
             "workstation": None,
             "round": 1,
             "size": 100,
