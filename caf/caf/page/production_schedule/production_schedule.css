@@ -1,20 +1,29 @@
 /* ══════════════════════════════════════════════════════════════
-   PRODUCTION SCHEDULE  —  improved styles
-   All colors use CSS variables so they work in Frappe's light / dark themes.
+   PRODUCTION SCHEDULE  —  premium design
    ══════════════════════════════════════════════════════════════ */
+
+/* ── status accent colors (CSS custom properties) ──────────────── */
+.schedule-item[data-status="New Schedule"] { --status-clr: #22c55e; }
+.schedule-item[data-status="Recipe Change"]{ --status-clr: #ec4899; }
+.schedule-item[data-status="Cancelled"]   { --status-clr: #ef4444; }
+.schedule-item[data-status="Change Slot"] { --status-clr: var(--primary, #2490ef); }
+.schedule-item[data-status="Rearrange"]   { --status-clr: #f59e0b; }
+.schedule-item[data-status="Only Remark"] { --status-clr: #a855f7; }
+.schedule-item[data-status="Pack Change"] { --status-clr: #ec4899; }
 
 /* ── toolbar ─────────────────────────────────────────────────── */
 .schedule-toolbar {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	padding: 10px 14px;
-	margin-bottom: 12px;
+	padding: 10px 16px;
+	margin-bottom: 10px;
 	background: var(--card-bg, #fff);
 	border: 1px solid var(--border-color, #e2e8f0);
-	border-radius: 6px;
+	border-radius: 10px;
 	gap: 10px;
 	flex-wrap: wrap;
+	box-shadow: 0 1px 4px rgba(0,0,0,0.05);
 }
 
 .schedule-filters {
@@ -26,54 +35,126 @@
 
 .schedule-filters label {
 	margin: 0;
-	font-size: 12px;
-	font-weight: 600;
+	font-size: 11px;
+	font-weight: 700;
 	color: var(--text-muted, #6b7280);
 	white-space: nowrap;
 	text-transform: uppercase;
-	letter-spacing: 0.04em;
+	letter-spacing: 0.06em;
 }
 
 .schedule-filters .form-control {
 	height: 30px;
 	font-size: 13px;
-	border-radius: 4px;
+	border-radius: 6px;
 	border: 1px solid var(--border-color, #d1d8dd);
 	background: var(--control-bg, #fff);
 	color: var(--text-color, #1a1a1a);
-	padding: 0 8px;
+	padding: 0 10px;
+	transition: border-color 0.15s, box-shadow 0.15s;
 }
 
 .schedule-filters .form-control:focus {
 	outline: none;
 	border-color: var(--primary, #2490ef);
-	box-shadow: 0 0 0 2px rgba(36, 144, 239, 0.12);
+	box-shadow: 0 0 0 3px rgba(36, 144, 239, 0.12);
 }
 
 .schedule-actions {
 	display: flex;
 	align-items: center;
-	gap: 8px;
+	gap: 6px;
+}
+
+.schedule-actions .btn {
+	border-radius: 6px;
+	font-size: 12px;
+	font-weight: 600;
+	transition: box-shadow 0.12s, transform 0.1s;
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	white-space: nowrap;
+}
+
+.schedule-actions .btn:active {
+	transform: scale(0.96);
 }
 
 .schedule-week-info {
-	font-size: 13px;
+	font-size: 12px;
 	font-weight: 600;
 	color: var(--text-muted, #6b7280);
 	padding: 4px 10px;
 	background: var(--bg-light, #f3f4f6);
-	border-radius: 4px;
+	border-radius: 6px;
 	white-space: nowrap;
 }
+
+/* ── status summary bar ────────────────────────────────────────── */
+.schedule-summary {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 6px 12px;
+	margin-bottom: 8px;
+	min-height: 28px;
+	flex-wrap: wrap;
+}
+
+.summary-none {
+	font-size: 12px;
+	color: var(--text-muted, #9ca3af);
+	font-style: italic;
+}
+
+.summary-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 2px 8px;
+	border-radius: 12px;
+	font-size: 11px;
+	font-weight: 600;
+	background: var(--bg-light, #f3f4f6);
+	color: var(--text-color, #374151);
+	white-space: nowrap;
+}
+
+.summary-chip[data-status="New Schedule"] { background: rgba(34,197,94,0.10); color: #16a34a; }
+.summary-chip[data-status="Change Slot"]  { background: rgba(36,144,239,0.10); color: #2563eb; }
+.summary-chip[data-status="Rearrange"]    { background: rgba(245,158,11,0.10); color: #d97706; }
+.summary-chip[data-status="Recipe Change"]{ background: rgba(236,72,153,0.10); color: #db2777; }
+.summary-chip[data-status="Pack Change"]  { background: rgba(236,72,153,0.10); color: #db2777; }
+.summary-chip[data-status="Only Remark"]  { background: rgba(168,85,247,0.10); color: #9333ea; }
+.summary-chip[data-status="Cancelled"]    { background: rgba(239,68,68,0.10);  color: #dc2626; }
 
 /* ── board wrapper ────────────────────────────────────────────── */
 .schedule-board-wrapper {
 	overflow: auto;
-	max-height: calc(100vh - 200px);
+	max-height: calc(100vh - 210px);
 	border: 1px solid var(--border-color, #e2e8f0);
-	border-radius: 6px;
+	border-radius: 10px;
 	background: var(--card-bg, #fff);
 	scroll-behavior: smooth;
+}
+
+.schedule-board-wrapper::-webkit-scrollbar {
+	width: 6px;
+	height: 6px;
+}
+
+.schedule-board-wrapper::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+.schedule-board-wrapper::-webkit-scrollbar-thumb {
+	background: var(--border-color, #d1d8dd);
+	border-radius: 3px;
+}
+
+.schedule-board-wrapper::-webkit-scrollbar-thumb:hover {
+	background: var(--text-muted, #9ca3af);
 }
 
 .schedule-board {
@@ -83,7 +164,8 @@
 /* ── table ────────────────────────────────────────────────────── */
 .schedule-table {
 	width: 100%;
-	border-collapse: collapse;
+	border-collapse: separate;
+	border-spacing: 0;
 	table-layout: auto;
 	min-width: 1200px;
 	font-size: 12px;
@@ -101,14 +183,14 @@
 	position: sticky;
 	left: 0;
 	z-index: 12;
-	background: var(--bg-light, #f7f8fa);
+	background: var(--card-bg, #fff);
 	border-bottom: 2px solid var(--border-color, #d1d8dd);
 	border-right: 2px solid var(--border-color, #d1d8dd);
 	padding: 10px 8px;
 	font-weight: 700;
-	font-size: 11px;
+	font-size: 10px;
 	text-transform: uppercase;
-	letter-spacing: 0.06em;
+	letter-spacing: 0.08em;
 	color: var(--text-muted, #6b7280);
 	text-align: center;
 	width: 120px;
@@ -116,14 +198,32 @@
 }
 
 .schedule-day-header {
-	background: var(--bg-light, #f7f8fa);
+	background: var(--card-bg, #fff);
 	border-bottom: 2px solid var(--border-color, #d1d8dd);
 	border-right: 1px solid var(--border-color, #e2e8f0);
-	padding: 8px 6px;
-	font-size: 13px;
+	padding: 9px 6px;
+	font-size: 12px;
 	font-weight: 700;
 	text-align: center;
+	letter-spacing: 0.02em;
+	position: relative;
 }
+
+/* colored top stripe per day */
+.schedule-day-header::before {
+	content: "";
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	height: 3px;
+}
+.schedule-day-header:nth-child(2)::before  { background: rgba(59,130,246,0.4); } /* Mon */
+.schedule-day-header:nth-child(3)::before  { background: rgba(34,197,94,0.4); } /* Tue */
+.schedule-day-header:nth-child(4)::before { background: rgba(168,85,247,0.4); } /* Wed */
+.schedule-day-header:nth-child(5)::before { background: rgba(234,179,8,0.4); } /* Thu */
+.schedule-day-header:nth-child(6)::before { background: rgba(249,115,22,0.4); } /* Fri */
+.schedule-day-header:nth-child(7)::before { background: rgba(239,68,68,0.4); } /* Sat */
 
 .schedule-day-header.schedule-has-dp {
 	color: var(--text-color, #1a1a1a);
@@ -136,9 +236,9 @@
 }
 
 .schedule-sub-col {
-	background: var(--bg-light, #f7f8fa);
-	border-bottom: 1px solid var(--border-color, #e2e8f0);
-	border-right: 1px solid var(--border-color, #e2e8f0);
+	background: var(--card-bg, #fff);
+	border-bottom: 1px solid var(--border-color, #f0f0f0);
+	border-right: 1px solid var(--border-color, #f0f0f0);
 	padding: 4px 2px;
 	font-size: 10px;
 	font-weight: 700;
@@ -160,14 +260,27 @@
 
 /* ── body cells ───────────────────────────────────────────────── */
 .schedule-table tbody td {
-	border: 1px solid var(--border-color, #e2e8f0);
+	border-bottom: 1px solid var(--border-color, #f0f0f0);
+	border-right: 1px solid var(--border-color, #f0f0f0);
 	padding: 3px 4px;
 	vertical-align: top;
 	min-height: 36px;
 }
 
+.schedule-table tbody tr:last-child td {
+	border-bottom: none;
+}
+
+/* each day column color */
+.schedule-table tbody td:nth-child(n+2):nth-child(-n+7)   { background: rgba(59,130,246,0.03); }  /* Mon */
+.schedule-table tbody td:nth-child(n+8):nth-child(-n+13)  { background: rgba(34,197,94,0.03); }  /* Tue */
+.schedule-table tbody td:nth-child(n+14):nth-child(-n+19) { background: rgba(168,85,247,0.03); } /* Wed */
+.schedule-table tbody td:nth-child(n+20):nth-child(-n+25) { background: rgba(234,179,8,0.03); }  /* Thu */
+.schedule-table tbody td:nth-child(n+26):nth-child(-n+31) { background: rgba(249,115,22,0.03); } /* Fri */
+.schedule-table tbody td:nth-child(n+32):nth-child(-n+37) { background: rgba(239,68,68,0.03); }  /* Sat */
+
 .schedule-table tbody tr:hover td {
-	background: rgba(36, 144, 239, 0.03);
+	background: rgba(36, 144, 239, 0.02);
 }
 
 /* sticky workstation label */
@@ -175,7 +288,7 @@
 	position: sticky;
 	left: 0;
 	z-index: 8;
-	background: var(--bg-light, #f7f8fa);
+	background: var(--card-bg, #fff);
 	font-weight: 600;
 	font-size: 12px;
 	color: var(--text-color, #1a1a1a);
@@ -185,15 +298,6 @@
 	border-right: 2px solid var(--border-color, #d1d8dd);
 	white-space: nowrap;
 }
-
-
-/* ── day column groups ─────────────────────────────────────────── */
-.schedule-table tbody td:nth-child(n+2):nth-child(-n+7)  { background: rgba(224, 242, 254, 0.28); } /* Mon */
-.schedule-table tbody td:nth-child(n+8):nth-child(-n+13) { background: rgba(220, 252, 231, 0.28); } /* Tue */
-.schedule-table tbody td:nth-child(n+14):nth-child(-n+19){ background: rgba(243, 232, 255, 0.25); } /* Wed */
-.schedule-table tbody td:nth-child(n+20):nth-child(-n+25){ background: rgba(254, 252, 232, 0.35); } /* Thu */
-.schedule-table tbody td:nth-child(n+26):nth-child(-n+31){ background: rgba(255, 237, 213, 0.30); } /* Fri */
-.schedule-table tbody td:nth-child(n+32):nth-child(-n+37){ background: rgba(255, 228, 230, 0.28); } /* Sat */
 
 /* note / pack cells */
 .schedule-col-note,
@@ -221,13 +325,12 @@
 
 /* cells that have no DP for this day */
 .schedule-no-dp {
-	background: var(--bg-light, #fafafa);
-	opacity: 0.5;
+	opacity: 0.3;
 }
 
 /* ── round / recipe slots ─────────────────────────────────────── */
 .round-slot {
-	padding: 2px !important;
+	padding: 3px !important;
 	vertical-align: top;
 	min-height: 36px;
 }
@@ -235,53 +338,148 @@
 /* filled recipe card */
 .schedule-item {
 	display: flex;
-	align-items: center;
+	align-items: flex-start;
 	gap: 5px;
-	padding: 5px 7px;
-	margin: 2px 0;
-	border-radius: 5px;
+	padding: 6px 8px;
+	margin: 3px 0;
+	border-radius: 7px;
 	background: var(--card-bg, #fff);
 	border: 1px solid var(--border-color, #e2e8f0);
+	box-shadow: 0 1px 3px rgba(0,0,0,0.04);
 	cursor: grab;
 	font-size: 12px;
 	line-height: 1.35;
 	user-select: none;
-	transition: border-color 0.12s, box-shadow 0.12s;
+	transition: box-shadow 0.18s, border-color 0.18s, transform 0.12s;
+	position: relative;
+	overflow: hidden;
+}
+
+/* status accent bar (appears on hover) */
+.schedule-item::before {
+	content: "";
+	position: absolute;
+	left: 0;
+	top: 3px;
+	bottom: 3px;
+	width: 3px;
+	border-radius: 2px;
+	background: var(--status-clr, transparent);
+	opacity: 0;
+	transition: opacity 0.18s;
 }
 
 .schedule-item:hover {
-	border-color: var(--primary, #2490ef);
-	box-shadow: 0 0 0 2px rgba(36, 144, 239, 0.1);
+	border-color: var(--border-color, #c5ccd4);
+	box-shadow: 0 4px 12px rgba(0,0,0,0.07);
+	transform: translateY(-1px);
+}
+
+.schedule-item:hover::before {
+	opacity: 1;
 }
 
 .schedule-item:active {
 	cursor: grabbing;
+	transform: scale(0.97);
 }
 
 .schedule-item-status {
 	font-size: 13px;
 	flex-shrink: 0;
-	line-height: 1;
+	line-height: 1.4;
+	margin-top: 1px;
+}
+
+.schedule-item-body {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
 }
 
 .schedule-item-name {
 	font-weight: 600;
-	flex: 1;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
 	color: var(--text-color, #1a1a1a);
 }
 
+.schedule-item-badge {
+	font-size: 9px;
+	font-weight: 700;
+	padding: 1px 6px;
+	border-radius: 4px;
+	background: var(--status-clr, #e2e8f0);
+	color: #fff;
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	width: fit-content;
+	letter-spacing: 0.02em;
+	text-transform: uppercase;
+	line-height: 1.5;
+}
+
 .schedule-item-size {
 	font-size: 10px;
-	font-weight: 600;
+	font-weight: 700;
 	color: var(--text-muted, #6b7280);
 	background: var(--bg-light, #f3f4f6);
-	padding: 1px 5px;
-	border-radius: 3px;
+	padding: 1px 6px;
+	border-radius: 4px;
 	flex-shrink: 0;
 	white-space: nowrap;
+	margin-top: 1px;
+}
+
+/* ── locked item ──────────────────────────────────────────────── */
+.schedule-item-locked {
+	opacity: 0.82;
+	border-color: var(--status-clr, #2490ef);
+	background: rgba(36, 144, 239, 0.03);
+	box-shadow: none;
+	cursor: default;
+}
+
+.schedule-item-locked .schedule-item-name {
+	color: var(--text-muted, #4b5563);
+}
+
+.schedule-item-locked .schedule-item-badge {
+	box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+
+.schedule-item-locked:hover {
+	box-shadow: none;
+	transform: none;
+	cursor: default;
+	border-color: var(--status-clr, #2490ef);
+}
+
+.schedule-item-locked:active {
+	cursor: default;
+	transform: none;
+}
+
+.schedule-item-locked .schedule-item-size {
+	background: rgba(36, 144, 239, 0.08);
+	color: var(--status-clr, #2490ef);
+}
+
+/* ── paired items ─────────────────────────────────────────────── */
+.schedule-item-paired {
+	border-left: 4px solid var(--primary, #2490ef);
+}
+
+/* ── invalid drop target ──────────────────────────────────────── */
+.drop-invalid {
+	outline: 2px dashed #ef4444 !important;
+	outline-offset: -2px;
+	background: rgba(239, 68, 68, 0.06) !important;
+	border-radius: 4px;
 }
 
 /* ── empty / addable slot ─────────────────────────────────────── */
@@ -293,21 +491,21 @@
 	font-size: 14px;
 	color: var(--text-muted, #d1d5db);
 	user-select: none;
-	border-radius: 4px;
+	border-radius: 5px;
 }
 
 .round-slot-empty.addable {
-	color: var(--text-muted, #c5ccd4);
+	color: var(--border-color, #d1d8dd);
 	cursor: pointer;
 	border: 1.5px dashed var(--border-color, #d1d8dd);
 	margin: 2px 0;
 	font-size: 18px;
-	font-weight: 300;
+	font-weight: 400;
 	transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 
 .round-slot-empty.addable:hover {
-	background: rgba(36, 144, 239, 0.06);
+	background: rgba(36, 144, 239, 0.05);
 	color: var(--primary, #2490ef);
 	border-color: var(--primary, #2490ef);
 }
@@ -320,8 +518,8 @@
 .drag-active .round-slot:not(.schedule-no-dp):hover {
 	outline: 2px dashed #4caf50;
 	outline-offset: -2px;
-	background: rgba(76, 175, 80, 0.07);
-	border-radius: 2px;
+	background: rgba(76, 175, 80, 0.04);
+	border-radius: 4px;
 }
 
 .round-slot-pulse {
@@ -329,37 +527,37 @@
 }
 
 @keyframes slot-pulse {
-	0%   { box-shadow: inset 0 0 0 0   rgba(76, 175, 80, 0.45); }
-	50%  { box-shadow: inset 0 0 14px 3px rgba(76, 175, 80, 0.28); }
+	0%   { box-shadow: inset 0 0 0 0   rgba(76, 175, 80, 0.40); }
+	50%  { box-shadow: inset 0 0 14px 3px rgba(76, 175, 80, 0.20); }
 	100% { box-shadow: inset 0 0 0 0   rgba(76, 175, 80, 0); }
 }
 
 /* ── sortable drag/ghost states ───────────────────────────────── */
 .schedule-item-ghost {
-	opacity: 0.25;
+	opacity: 0.2;
 	background: rgba(36, 144, 239, 0.08) !important;
 	border: 1.5px dashed var(--primary, #2490ef) !important;
-	transform: scale(0.97);
+	transform: scale(0.96);
 }
 
 .schedule-item-drag {
-	box-shadow: 0 10px 32px rgba(0, 0, 0, 0.22) !important;
+	box-shadow: 0 16px 48px rgba(0, 0, 0, 0.25) !important;
 	z-index: 999 !important;
-	transform: rotate(2deg) scale(1.05);
-	opacity: 0.96;
+	transform: rotate(1.5deg) scale(1.06);
+	opacity: 0.95;
 }
 
 .schedule-item-chosen {
-	opacity: 0.45;
+	opacity: 0.35;
 	background: var(--bg-light, #f9fafb) !important;
 }
 
 /* ── status bar ───────────────────────────────────────────────── */
 .schedule-status {
-	margin-top: 8px;
+	margin-top: 6px;
 	color: var(--text-muted, #9ca3af);
 	font-size: 12px;
-	min-height: 18px;
+	min-height: 16px;
 }
 
 /* ── empty state ──────────────────────────────────────────────── */

@@ -105,6 +105,7 @@ def _build_round_data(row, recipe_name):
         "recipe_note": row.get("recipe_note") or "",
         "production_plane": row.get("production_plane") or "",
         "mr_reference": row.get("mr_reference") or "",
+        "pair_id": row.get("custom_pair_id") or "",
     }
 
 
@@ -186,7 +187,7 @@ def get_week_data(year, week_number, mode):
                 "name", "recipe_name", "size", "recipe_cook_workstaion",
                 "recipe_cook_round", "required_date", "produ_status",
                 "number_of_pack", "recipe_note", "production_type",
-                "recipe_cook_time", "custom_yield", "link_id",
+                "recipe_cook_time", "custom_yield", "link_id", "custom_pair_id",
                 "mr_reference", "production_plane", "urgent_check",
                 "pack_remark", "pack_remark_2", "pack_remark_3",
                 "pack_remark_4", "pack_remark_5", "pack_remark_6", "pack_remark_7",
@@ -282,74 +283,55 @@ def save_move_item(item_id, source_date, target_date, target_cooker, target_roun
     if source_row is None:
         return {"success": False, "message": "Source row not found"}
 
-    # Same day: update cooker and/or round
+    # Same day: swap positions with the No Cooking row at target slot
     if source_date == target_date:
-        if target_cooker is not None:
-            source_row.recipe_cook_workstaion = target_cooker or None
-        if target_round is not None:
-            source_row.recipe_cook_round = int(target_round)
+        old_ws = source_row.recipe_cook_workstaion
+        old_round = source_row.recipe_cook_round
+
+        target_nc = None
+        for r in source_dp.production_table:
+            if (str(r.recipe_cook_workstaion or "") == str(target_cooker) and
+                str(r.recipe_cook_round or "") == str(target_round) and
+                r.recipe_name == NO_COOKING and
+                r.name != source_row.name):
+                target_nc = r
+                break
+
+        pair_id = frappe.generate_hash(length=10)
+
+        source_row.recipe_cook_workstaion = target_cooker
+        source_row.recipe_cook_round = int(target_round)
         source_row.produ_status = "Change Slot"
+        source_row.custom_pair_id = pair_id
+
+        if target_nc:
+            target_nc.recipe_cook_workstaion = old_ws
+            target_nc.recipe_cook_round = old_round
+            target_nc.produ_status = "Change Slot"
+            target_nc.custom_pair_id = pair_id
+        else:
+            new_nc = source_dp.append("production_table", {})
+            new_nc.recipe_name = NO_COOKING
+            new_nc.recipe_cook_workstaion = old_ws
+            new_nc.recipe_cook_round = old_round
+            new_nc.produ_status = "Change Slot"
+            new_nc.custom_pair_id = pair_id
+            new_nc.required_date = source_date
+
+        for i, r in enumerate(source_dp.production_table):
+            r.idx = i + 1
+
         source_dp.save(ignore_permissions=True)
         frappe.db.commit()
-        return {"success": True, "message": "Updated"}
+        return {
+            "success": True,
+            "message": "Moved",
+            "pair_id": pair_id,
+            "target_row_name": target_nc.name if target_nc else None,
+        }
 
-    # Different day — move between DPs
-    target_dp_name = frappe.db.get_value(
-        "Daily Production",
-        {"required_by": target_date, "docstatus": 0},
-        "name",
-    )
-    if not target_dp_name:
-        target_dp = frappe.new_doc("Daily Production")
-        target_dp.required_by = target_date
-        target_dp.insert(ignore_permissions=True)
-        frappe.db.commit()
-        target_dp_name = target_dp.name
-    else:
-        target_dp = frappe.get_doc("Daily Production", target_dp_name)
-
-    excluded = {"name", "parent", "parentfield", "parenttype", "doctype", "idx"}
-    new_row = target_dp.append("production_table", {})
-    for df in _get_child_meta_fields():
-        fieldname = df.fieldname
-        if fieldname in excluded:
-            continue
-        val = source_row.get(fieldname)
-        if val is not None:
-            new_row.set(fieldname, val)
-
-    new_row.required_date = target_date
-    new_row.recipe_cook_workstaion = target_cooker or new_row.recipe_cook_workstaion
-    if target_round is not None:
-        new_row.recipe_cook_round = int(target_round)
-    new_row.link_id = ""
-    new_row.produ_status = "New Schedule"
-
-    for i, r in enumerate(target_dp.production_table):
-        r.idx = i + 1
-
-    source_row.recipe_name = NO_COOKING
-    source_row.size = 0
-    source_row.number_of_pack = 0
-    source_row.produ_status = ""
-    source_row.link_id = ""
-    source_row.custom_yield = 0
-    source_row.recipe_cook_time = None
-    source_row.recipe_note = ""
-    source_row.production_type = ""
-
-    for i, r in enumerate(source_dp.production_table):
-        r.idx = i + 1
-
-    source_dp.save(ignore_permissions=True)
-    target_dp.save(ignore_permissions=True)
-    frappe.db.commit()
-
-    return {
-        "success": True,
-        "message": f"Moved to {target_date}",
-        "new_item_id": new_row.name,
-    }
+    # Different day — not allowed
+    return {"success": False, "message": "Cross-day moves are not allowed."}
 
 
 @frappe.whitelist()
@@ -394,6 +376,8 @@ def submit_week(week_monday):
     from caf.caf.doctype.daily_production.daily_production import submit_dp_week
 
     submit_dp_week(week_monday)
+    frappe.response["type"] = "json"
+    return {"success": True}
 
 
 @frappe.whitelist()
@@ -420,26 +404,41 @@ def add_recipe(day, recipe, size, cooker, pack_count, round_num, **kwargs):
         return {"success": False, "message": f"No draft DP for {day}"}
 
     dp = frappe.get_doc("Daily Production", dp_name)
-    new_row = dp.append("production_table", {})
-    new_row.required_date = day
-    new_row.recipe_name = recipe
-    new_row.size = size or 0
-    new_row.recipe_cook_workstaion = cooker or None
-    new_row.recipe_cook_round = int(round_num) if round_num else 1
-    new_row.number_of_pack = int(pack_count) if pack_count else 0
-    new_row.produ_status = kwargs.get("produ_status") or ""
-    new_row.production_type = kwargs.get("production_type") or ""
-    new_row.urgent_check = int(kwargs.get("urgent_check", 0)) if kwargs.get("urgent_check") else 0
-    new_row.recipe_note = kwargs.get("recipe_note") or ""
-    new_row.production_plane = kwargs.get("production_plane") or ""
-    new_row.wo_list_with_type = kwargs.get("wo_list_with_type") or ""
+
+    cooker_str = str(cooker or "")
+    round_str = str(round_num or "1")
+    existing_row = None
+    for r in dp.production_table:
+        if (str(r.recipe_cook_workstaion or "") == cooker_str
+                and str(r.recipe_cook_round or "") == round_str
+                and r.recipe_name == NO_COOKING):
+            existing_row = r
+            break
+
+    if existing_row:
+        row = existing_row
+    else:
+        row = dp.append("production_table", {})
+
+    row.required_date = day
+    row.recipe_name = recipe
+    row.size = size or 0
+    row.recipe_cook_workstaion = cooker or None
+    row.recipe_cook_round = int(round_num) if round_num else 1
+    row.number_of_pack = int(pack_count) if pack_count else 0
+    row.produ_status = kwargs.get("produ_status") or ""
+    row.production_type = kwargs.get("production_type") or ""
+    row.urgent_check = int(kwargs.get("urgent_check", 0)) if kwargs.get("urgent_check") else 0
+    row.recipe_note = kwargs.get("recipe_note") or ""
+    row.production_plane = kwargs.get("production_plane") or ""
+    row.wo_list_with_type = kwargs.get("wo_list_with_type") or ""
 
     for i in range(1, 8):
         suffix = "" if i == 1 else "_{}".format(i)
         for pfield in ("pack_name", "pack_qty", "pack_remark"):
             val = kwargs.get(pfield + suffix)
             if val:
-                new_row.set(pfield + suffix, val)
+                row.set(pfield + suffix, val)
 
     for i, r in enumerate(dp.production_table):
         r.idx = i + 1
@@ -451,18 +450,18 @@ def add_recipe(day, recipe, size, cooker, pack_count, round_num, **kwargs):
         "success": True,
         "message": f"Added {recipe} to {day}",
         "item": {
-            "id": new_row.name,
-            "recipe": new_row.recipe_name,
-            "size": new_row.size,
-            "cooker": new_row.recipe_cook_workstaion or "",
+            "id": row.name,
+            "recipe": row.recipe_name,
+            "size": row.size,
+            "cooker": row.recipe_cook_workstaion or "",
             "day": day,
-            "round": new_row.recipe_cook_round,
+            "round": row.recipe_cook_round,
             "status": "",
-            "pack_count": new_row.number_of_pack,
-            "production_type": new_row.production_type,
-            "urgent_check": new_row.urgent_check,
-            "recipe_note": new_row.recipe_note or "",
-            "production_plane": new_row.production_plane or "",
+            "pack_count": row.number_of_pack,
+            "production_type": row.production_type,
+            "urgent_check": row.urgent_check,
+            "recipe_note": row.recipe_note or "",
+            "production_plane": row.production_plane or "",
         },
     }
 
@@ -495,6 +494,8 @@ def create_week_version(week_number):
     from caf.caf.doctype.daily_production.daily_production import create_empty_dp_week_by_number
 
     create_empty_dp_week_by_number(int(week_number))
+    frappe.response["type"] = "json"
+    return {"success": True}
 
 
 @frappe.whitelist()
@@ -549,10 +550,159 @@ def swap_recipes(source_id, target_id):
         row_a.set(fn, val_b)
         row_b.set(fn, val_a)
 
+    pair_id = frappe.generate_hash(length=10)
+    row_a.produ_status = "Rearrange"
+    row_b.produ_status = "Rearrange"
+    row_a.custom_pair_id = pair_id
+    row_b.custom_pair_id = pair_id
+
     dp.save(ignore_permissions=True)
     frappe.db.commit()
 
-    return {"success": True, "message": "Recipes swapped"}
+    return {"success": True, "message": "Recipes swapped", "pair_id": pair_id}
+
+
+@frappe.whitelist()
+def undo_pair(pair_id, original_link_id=None, original_source_date=None):
+    """Reverse a Change Slot or Rearrange operation by pair_id.
+
+    Args:
+        pair_id: The custom_pair_id shared by the two affected rows
+        original_link_id: Original link_id for cross-day undo (from frontend)
+        original_source_date: Original source date for cross-day undo
+
+    Returns:
+        Dict with success status
+    """
+    rows = frappe.get_all(
+        CHILD_DOCTYPE,
+        filters={"custom_pair_id": pair_id},
+        fields=["name", "parent", "recipe_name", "produ_status",
+                "recipe_cook_workstaion", "recipe_cook_round", "link_id"],
+    )
+    if len(rows) != 2:
+        return {"success": False, "message": "Pair not found"}
+
+    status = rows[0].produ_status or rows[1].produ_status
+    parents = set(r.parent for r in rows)
+
+    SLOT_FIELDS = {
+        "name", "parent", "parentfield", "parenttype", "doctype", "idx",
+        "link_id", "recipe_cook_workstaion", "recipe_cook_round", "required_date",
+        "custom_pair_id",
+    }
+
+    # ── Rearrange: swap all swappable fields back ──
+    if status == "Rearrange":
+        dp = frappe.get_doc("Daily Production", list(parents)[0])
+        row_a = row_b = None
+        for r in dp.production_table:
+            if r.name == rows[0].name:
+                row_a = r
+            elif r.name == rows[1].name:
+                row_b = r
+        if not row_a or not row_b:
+            return {"success": False, "message": "Rows not found"}
+
+        swappable = [
+            df.fieldname for df in _get_child_meta_fields()
+            if df.fieldname not in SLOT_FIELDS
+        ]
+        for fn in swappable:
+            val_a = row_a.get(fn)
+            val_b = row_b.get(fn)
+            row_a.set(fn, val_b)
+            row_b.set(fn, val_a)
+
+        row_a.produ_status = ""
+        row_b.produ_status = ""
+        row_a.custom_pair_id = ""
+        row_b.custom_pair_id = ""
+
+        dp.save(ignore_permissions=True)
+        frappe.db.commit()
+        return {"success": True, "message": "Swap undone"}
+
+    # ── Change Slot: same-day (swap WS/round back) or cross-day (copy back + delete) ──
+    if status == "Change Slot":
+        if len(parents) == 1:
+            # Same-day: swap WS/round back
+            dp = frappe.get_doc("Daily Production", list(parents)[0])
+            row_a = row_b = None
+            for r in dp.production_table:
+                if r.name == rows[0].name:
+                    row_a = r
+                elif r.name == rows[1].name:
+                    row_b = r
+            if not row_a or not row_b:
+                return {"success": False, "message": "Rows not found"}
+
+            row_a.recipe_cook_workstaion = rows[1].recipe_cook_workstaion
+            row_a.recipe_cook_round = rows[1].recipe_cook_round
+            row_b.recipe_cook_workstaion = rows[0].recipe_cook_workstaion
+            row_b.recipe_cook_round = rows[0].recipe_cook_round
+            row_a.produ_status = ""
+            row_b.produ_status = ""
+            row_a.custom_pair_id = ""
+            row_b.custom_pair_id = ""
+
+            dp.save(ignore_permissions=True)
+            frappe.db.commit()
+            return {"success": True, "message": "Move undone"}
+        else:
+            # Cross-day: copy target row data back to source, delete target row
+            source_data = None
+            target_data = None
+            for r in rows:
+                if r.recipe_name == NO_COOKING:
+                    source_data = r
+                else:
+                    target_data = r
+            if not source_data or not target_data:
+                return {"success": False, "message": "Could not identify source/target rows"}
+
+            source_dp = frappe.get_doc("Daily Production", source_data.parent)
+            target_dp = frappe.get_doc("Daily Production", target_data.parent)
+
+            source_row = None
+            target_row = None
+            for r in source_dp.production_table:
+                if r.name == source_data.name:
+                    source_row = r
+                    break
+            for r in target_dp.production_table:
+                if r.name == target_data.name:
+                    target_row = r
+                    break
+            if not source_row or not target_row:
+                return {"success": False, "message": "Rows not found in DPs"}
+
+            swappable = [
+                df.fieldname for df in _get_child_meta_fields()
+                if df.fieldname not in SLOT_FIELDS
+            ]
+            for fn in swappable:
+                val = target_row.get(fn)
+                source_row.set(fn, val)
+
+            source_row.link_id = original_link_id
+            source_row.produ_status = ""
+            source_row.custom_pair_id = ""
+
+            new_table = [r for r in target_dp.production_table if r.name != target_data.name]
+            target_dp.production_table = new_table
+
+            for i, r in enumerate(source_dp.production_table):
+                r.idx = i + 1
+            for i, r in enumerate(target_dp.production_table):
+                r.idx = i + 1
+
+            source_dp.save(ignore_permissions=True)
+            target_dp.save(ignore_permissions=True)
+            frappe.db.commit()
+            return {"success": True, "message": "Cross-day move undone"}
+
+    return {"success": False, "message": f"Unknown status: {status}"}
 
 
 def _get_child_meta_fields():

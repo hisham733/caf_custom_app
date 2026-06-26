@@ -21,6 +21,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			day_labels: [],
 			dp_names: {},
 			schedule: {},
+			last_action: null,
 		};
 		this.page = frappe.ui.make_app_page({
 			parent: wrapper,
@@ -41,6 +42,8 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 	}
 
 	refresh() {
+		this.state.last_action = null;
+		this._update_undo_btn();
 		var now = new Date();
 		this._compute_iso_week(now);
 		this._sync_inputs();
@@ -72,17 +75,22 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			'    <select id="schedule-mode" class="form-control" style="width:150px" aria-label="' + __("View mode") + '">' +
 			mode_sel +
 			'    </select>' +
-			'    <button class="btn btn-primary btn-sm" id="schedule-load-btn">' + __("Load") + '</button>' +
+			'    <button class="btn btn-primary btn-sm" id="schedule-load-btn">' +
+			'      <svg class="icon icon-sm"><use href="#icon-refresh"></use></svg> ' + __("Load") + '</button>' +
 			'  </div>' +
 			'  <div class="schedule-actions">' +
 			'    <span class="schedule-week-info" id="schedule-week-range" aria-live="polite"></span>' +
 			'    <button class="btn btn-outline-primary btn-sm" id="schedule-new-version-btn"' +
-			'      title="' + __("Create new draft DPs from latest submitted versions") + '">' +
-			__("New Version") +
+			'      title="' + __("Create from latest submitted") + '">' +
+			'      <svg class="icon icon-sm"><use href="#icon-plus"></use></svg> ' + __("New Version") +
 			'    </button>' +
 			'    <button class="btn btn-success btn-sm" id="schedule-submit-btn"' +
-			'      title="' + __("Submit all draft DPs for this week") + '">' +
-			__("Submit Week") +
+			'      title="' + __("Submit all draft DPs") + '">' +
+			'      <svg class="icon icon-sm"><use href="#icon-check"></use></svg> ' + __("Submit Week") +
+			'    </button>' +
+			'    <button class="btn btn-outline-danger btn-sm" id="schedule-undo-btn" style="display:none"' +
+			'      title="' + __("Undo last drag-and-drop operation") + '">' +
+			'      <svg class="icon icon-sm"><use href="#icon-undo"></use></svg> ' + __("Undo") +
 			'    </button>' +
 			'  </div>' +
 			'</div>'
@@ -91,6 +99,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 
 	_board_container_html() {
 		return (
+			'<div class="schedule-summary" id="schedule-summary"></div>' +
 			'<div class="schedule-board-wrapper" role="region" aria-label="' + __("Production schedule grid") + '">' +
 			'  <div class="schedule-board" id="schedule-board"></div>' +
 			'</div>' +
@@ -113,6 +122,10 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 
 		m.find("#schedule-new-version-btn").on("click", function () {
 			me._create_new_version();
+		});
+
+		m.find("#schedule-undo-btn").on("click", function () {
+			me._undo_last_action();
 		});
 
 		m.find("#schedule-year").on("change", function () {
@@ -396,24 +409,75 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 		if (this.state.mode === "Edit Schedule") {
 			this._try_init_sortable();
 		}
+		this._link_paired_items();
+		this._render_status_summary();
+	}
+
+	_render_status_summary() {
+		var counts = {};
+		var total = 0;
+		for (var ws in this.state.schedule) {
+			for (var day in this.state.schedule[ws]) {
+				var info = this.state.schedule[ws][day];
+				for (var rn in info.rounds) {
+					var r = info.rounds[rn];
+					if (r && r.status) {
+						counts[r.status] = (counts[r.status] || 0) + 1;
+						total++;
+					}
+				}
+			}
+		}
+		var html = "";
+		if (total === 0) {
+			html = '<span class="summary-none">' + __("No statuses set") + "</span>";
+		} else {
+			var order = ["New Schedule", "Change Slot", "Rearrange", "Recipe Change", "Pack Change", "Only Remark", "Cancelled"];
+			for (var i = 0; i < order.length; i++) {
+				var s = order[i];
+				if (counts[s]) {
+					var emoji = this._status_emoji(s);
+					html += '<span class="summary-chip" data-status="' + s + '">' + emoji + " " + s + " " + counts[s] + "</span>";
+				}
+			}
+		}
+		this.page.main.find("#schedule-summary").html(html);
+	}
+
+	_link_paired_items() {
+		var items = this.page.main.find(".schedule-item[data-pair-id]:not([data-pair-id=''])");
+		var seen = {};
+		items.each(function () {
+			var pid = this.dataset.pairId;
+			if (!pid || seen[pid]) return;
+			seen[pid] = true;
+			var paired = items.filter('[data-pair-id="' + pid.replace(/"/g, '\\"') + '"]');
+			if (paired.length > 1) {
+				paired.addClass("schedule-item-paired");
+			}
+		});
 	}
 
 	_render_round_item(r, dp_name) {
 		var me = this;
-		if (r.recipe === "No Cooking") {
+		if (r.recipe === "No Cooking" && !r.status) {
 			return '<div class="round-slot-empty addable" role="button" tabindex="0" title="' + __("Add recipe") + '">' + __("No Cooking") + '</div>';
 		}
 		var emoji = this._status_emoji(r.status);
 		var label = r.recipe || __("No Cooking");
 		var size_label = r.size ? r.size : "0";
 		var pack_json = JSON.stringify(r.pack_items || []);
+		var badge_html = r.status
+			? '<span class="schedule-item-badge">' + emoji + " " + me._escape(r.status) + "</span>"
+			: "";
 		return (
-			'<div class="schedule-item"' +
+			'<div class="schedule-item' + (r.status ? ' schedule-item-locked' : '') + '"' +
 			' data-item-id="' + (r.id || "") + '"' +
 			' data-dp-name="' + me._escape(dp_name || "") + '"' +
 			' data-recipe="' + me._escape(r.recipe || "") + '"' +
 			' data-size="' + (r.size || 0) + '"' +
 			' data-status="' + (r.status || "") + '"' +
+			' data-pair-id="' + me._escape(r.pair_id || "") + '"' +
 			' data-production-type="' + me._escape(r.production_type || "") + '"' +
 			' data-cook-time="' + me._escape(r.cook_time || "") + '"' +
 			' data-cook-station="' + me._escape(r.cook_station || "") + '"' +
@@ -434,7 +498,10 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			(r.status ? " | " + r.status : "") +
 			'">' +
 			'<span class="schedule-item-status" aria-hidden="true">' + emoji + "</span>" +
+			'<span class="schedule-item-body">' +
 			'<span class="schedule-item-name">' + me._escape(label) + "</span>" +
+			badge_html +
+			"</span>" +
 			'<span class="schedule-item-size">' + size_label + "</span>" +
 			"</div>"
 		);
@@ -454,7 +521,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 				"Recipe Change": "🩷",
 				Cancelled: "🔴",
 				"Change Slot": "🔵",
-				Rearrange: "🔵",
+				Rearrange: "🔶",
 				"Only Remark": "🟣",
 				"Pack Change": "🩷",
 			}[status] || ""
@@ -528,7 +595,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 				ghostClass: "schedule-item-ghost",
 				dragClass: "schedule-item-drag",
 				chosenClass: "schedule-item-chosen",
-				filter: ".round-slot-empty",
+				filter: ".round-slot-empty, .schedule-item[data-status]:not([data-status=\"\"])",
 				onStart: function (evt) {
 					me.page.main.find(".schedule-table").addClass("drag-active");
 					me._highlight_target_slots(evt.item);
@@ -539,6 +606,10 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 					me._handle_drop(evt);
 				},
 				onMove: function (evt) {
+					if (evt.related && evt.related.dataset && evt.related.dataset.status) {
+						me._pulse_target_slot(evt.to, true);
+						return false;
+					}
 					me._pulse_target_slot(evt.to);
 				},
 			});
@@ -565,17 +636,28 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 	_clear_target_highlights() {
 		this.page.main
 			.find(".round-slot")
-			.removeClass("round-slot-pulse")
+			.removeClass("round-slot-pulse drop-invalid")
 			.removeAttr("data-drag-size");
 	}
 
-	_pulse_target_slot(slot) {
-		$(slot).addClass("round-slot-pulse");
-		clearTimeout(this._pulse_timer);
-		var me = this;
-		this._pulse_timer = setTimeout(function () {
-			me.page.main.find(".round-slot-pulse").removeClass("round-slot-pulse");
-		}, 350);
+	_pulse_target_slot(slot, invalid) {
+		var $slot = $(slot);
+		$slot.removeClass("round-slot-pulse drop-invalid");
+		if (invalid) {
+			$slot.addClass("drop-invalid");
+			clearTimeout(this._pulse_timer);
+			var me = this;
+			this._pulse_timer = setTimeout(function () {
+				me.page.main.find(".drop-invalid").removeClass("drop-invalid");
+			}, 350);
+		} else {
+			$slot.addClass("round-slot-pulse");
+			clearTimeout(this._pulse_timer);
+			var me = this;
+			this._pulse_timer = setTimeout(function () {
+				me.page.main.find(".round-slot-pulse").removeClass("round-slot-pulse");
+			}, 350);
+		}
 	}
 
 	_handle_drop(evt) {
@@ -595,6 +677,12 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 		var tgt_round = to_slot.dataset.round;
 
 		if (src_ws === tgt_ws && src_day === tgt_day && src_round === tgt_round) return;
+
+		if (src_day !== tgt_day) {
+			frappe.show_alert({ message: __("Cross-day moves are not allowed."), indicator: "red" });
+			me._load_week();
+			return;
+		}
 
 		var other = $(to_slot).children(".schedule-item").not(el).first();
 		if (other.length) {
@@ -621,6 +709,13 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			callback: function (r) {
 				if (r.message && r.message.success) {
 					frappe.show_alert({ message: r.message.message, indicator: "green" });
+					me.state.last_action = {
+						type: "swap",
+						pair_id: r.message.pair_id,
+						source_id: src_id,
+						target_id: tgt_id,
+					};
+					me._update_undo_btn();
 					me._set_metabase_cookie();
 					me._load_week();
 				} else {
@@ -653,12 +748,15 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			callback: function (r) {
 				if (r.message && r.message.success) {
 					frappe.show_alert({ message: r.message.message, indicator: "green" });
-					if (r.message.new_item_id) {
-						el.dataset.itemId = r.message.new_item_id;
-					}
-					me._refresh_slot_placeholder(from_slot);
-					me._refresh_slot_placeholder(to_slot);
+					me.state.last_action = {
+						type: "move",
+						pair_id: r.message.pair_id,
+						original_link_id: r.message.original_link_id,
+						original_source_date: r.message.original_source_date,
+					};
+					me._update_undo_btn();
 					me._set_metabase_cookie();
+					me._load_week();
 				} else {
 					frappe.show_alert({ message: __("Save failed — reloading."), indicator: "red" });
 					me._load_week();
@@ -696,6 +794,48 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 
 	_set_metabase_cookie() {
 		document.cookie = "trigger_metabase_refresh=1; path=/; max-age=30";
+	}
+
+	_update_undo_btn() {
+		var btn = this.page.main.find("#schedule-undo-btn");
+		if (this.state.last_action) {
+			var tip = this.state.last_action.type === "swap" ? __("Undo: Rearrange") : __("Undo: Change Slot");
+			btn.prop("title", tip);
+			btn.show();
+		} else {
+			btn.hide();
+		}
+	}
+
+	_undo_last_action() {
+		var me = this;
+		if (!this.state.last_action) return;
+		var action = this.state.last_action;
+		frappe.call({
+			method: "caf.caf.page.production_schedule.production_schedule.undo_pair",
+			args: {
+				pair_id: action.pair_id,
+				original_link_id: action.original_link_id || "",
+				original_source_date: action.original_source_date || "",
+			},
+			freeze: true,
+			freeze_message: __("Undoing…"),
+			callback: function (r) {
+				if (r.message && r.message.success) {
+					frappe.show_alert({ message: r.message.message, indicator: "green" });
+					me.state.last_action = null;
+					me._update_undo_btn();
+					me._load_week();
+				} else {
+					frappe.show_alert({ message: __("Undo failed — reloading."), indicator: "red" });
+					me._load_week();
+				}
+			},
+			error: function () {
+				frappe.show_alert({ message: __("Undo failed — reloading."), indicator: "red" });
+				me._load_week();
+			},
+		});
 	}
 
 	// ══════════════════════════════════════════════════════════════
@@ -801,13 +941,19 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			})(suffix, pi, depends);
 		}
 
+		var is_no_cook = !recipe || recipe === "No Cooking";
+		var status_options;
+		if (is_no_cook) {
+			status_options = "\nNew Schedule\nChange Slot";
+		} else {
+			status_options = "\nNew Schedule\nRecipe Change\nCancelled\nChange Slot\nRearrange\nOnly Remark\nPack Change\nClear";
+		}
 		fields.push(
 			{ fieldtype: "Column Break" },
 			{
 				label: __("Production Status"), fieldname: "status", fieldtype: "Select",
-				options: "\nNew Schedule\nRecipe Change\nCancelled\nChange Slot\nRearrange\nOnly Remark\nPack Change\nClear",
+				options: status_options,
 				default: status,
-				read_only: status !== "New Schedule",
 			}
 		);
 
@@ -850,6 +996,47 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			}
 		);
 
+		// Apply edit restrictions based on produ_status
+		var is_locked = status === "Change Slot" || status === "Rearrange";
+		if (is_locked || status === "Recipe Change") {
+			fields = fields.map(function (f) {
+				if (!f.read_only && f.fieldtype !== "Section Break" && f.fieldtype !== "Column Break" && f.fieldtype !== "HTML" && f.fieldname) {
+					return Object.assign({}, f, { read_only: 1 });
+				}
+				return f;
+			});
+		} else if (status === "New Schedule" && is_no_cook) {
+			fields = fields.map(function (f) {
+				if (!f.read_only && f.fieldtype !== "Section Break" && f.fieldtype !== "Column Break" && f.fieldtype !== "HTML" && f.fieldname && f.fieldname !== "status") {
+					return Object.assign({}, f, { read_only: 1 });
+				}
+				return f;
+			});
+		} else if (status === "Pack Change") {
+			var unlock = ["number_of_pack"];
+			for (var i = 1; i <= 7; i++) {
+				var s = i === 1 ? "" : "_" + i;
+				unlock.push("pack_name" + s, "pack_qty" + s, "pack_remark" + s);
+			}
+			fields = fields.map(function (f) {
+				if (!f.read_only && f.fieldtype !== "Section Break" && f.fieldtype !== "Column Break" && f.fieldtype !== "HTML" && f.fieldname) {
+					if (unlock.indexOf(f.fieldname) === -1) {
+						return Object.assign({}, f, { read_only: 1 });
+					}
+				}
+				return f;
+			});
+		} else if (status === "Only Remark") {
+			fields = fields.map(function (f) {
+				if (!f.read_only && f.fieldtype !== "Section Break" && f.fieldtype !== "Column Break" && f.fieldtype !== "HTML" && f.fieldname) {
+					if (f.fieldname !== "recipe_note") {
+						return Object.assign({}, f, { read_only: 1 });
+					}
+				}
+				return f;
+			});
+		}
+
 		var save_fields = [
 			{ field: "produ_status", dialog_field: "status" },
 			{ field: "size", dialog_field: "size" },
@@ -872,6 +1059,22 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			fields: fields,
 			primary_action_label: __("Save"),
 			primary_action: function (values) {
+				if (values.status === "Clear") {
+					var clear_data = [
+						{ field: "recipe_name", value: "No Cooking" },
+						{ field: "size", value: 0 },
+						{ field: "number_of_pack", value: 0 },
+						{ field: "produ_status", value: "" },
+						{ field: "custom_yield", value: null },
+						{ field: "recipe_cook_time", value: null },
+						{ field: "recipe_note", value: null },
+					];
+					me._save_item_fields(item_id, clear_data, function (ok) {
+						if (ok) me._load_week();
+					});
+					d.hide();
+					return;
+				}
 				var to_save = [];
 				save_fields.forEach(function (sf) {
 					var val = values[sf.dialog_field];
@@ -1232,6 +1435,9 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 					callback: function () {
 						frappe.show_alert({ message: __("Week submitted"), indicator: "green" });
 						me._set_metabase_cookie();
+						me.page.main.find("#schedule-mode").val("View Schedule");
+						me.state.mode = "View Schedule";
+						me._update_submit_btn();
 						me._load_week();
 					},
 					error: function (err) {
