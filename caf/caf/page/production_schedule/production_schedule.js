@@ -1264,6 +1264,10 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 		var d = new frappe.ui.Dialog(dialog_opts);
 		d.show();
 
+		$(d.wrapper).find("form").on("submit", function (e) {
+			e.preventDefault();
+		});
+
 		if (!is_past) {
 			$(d.wrapper).on("change", "[data-fieldname='status']", function () {
 				var new_status = d.get_value("status") || "";
@@ -1548,6 +1552,10 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			},
 		});
 		d.show();
+
+		$(d.wrapper).find("form").on("submit", function (e) {
+			e.preventDefault();
+		});
 
 		var pc_field = d.get_field("pack_count");
 		if (pc_field) {
