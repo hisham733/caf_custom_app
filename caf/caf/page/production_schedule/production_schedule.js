@@ -511,7 +511,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 
 	_render_round_item(r, dp_name) {
 		var me = this;
-		if (r.recipe === "No Cooking" && !r.status) {
+		if (r.recipe === "No Cooking") {
 			return '<div class="round-slot-empty addable" role="button" tabindex="0" title="' + __("Add recipe") + '">' + __("No Cooking") + '</div>';
 		}
 		var emoji = this._status_emoji(r.status);
@@ -1437,7 +1437,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			
 			{
 				label: __("Link ID"), fieldname: "link_id", fieldtype: "Data",
-				read_only: 1, default: link_id,
+				read_only: 1,
 			},
 			{
 				label: __("MR Reference"), fieldname: "mr_reference", fieldtype: "Data",

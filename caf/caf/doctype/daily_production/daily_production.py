@@ -138,6 +138,9 @@ class DailyProduction(Document):
         # If none has it → assign to ALL rows
         for d in self.production_table:
             d.link_id = make_autoname("R-.YYYY.-.#####")
+
+    def on_save(self):
+        self._assign_link_id()
     # ── Submit Hook ───────────────────────────────────────────────────────────
     def before_submit(self):
         """Validate before submit.
@@ -147,11 +150,6 @@ class DailyProduction(Document):
         """
         if all(d.recipe_name == NO_COOKING and not d.produ_status for d in self.production_table):
             frappe.throw("All rows have recipe <strong>No Cooking</strong> — not allowed")
-        # Check if ANY row already has link_id
-        if any(d.link_id for d in self.production_table): return
-        # If none has it → assign to ALL rows
-        for d in self.production_table:
-            d.link_id = make_autoname("R-.YYYY.-.#####")
         
     def on_submit(self):
             """Entry point after DB commit.
