@@ -392,14 +392,6 @@ def save_move_item(item_id, source_date, target_date, target_cooker, target_roun
     # Different day — not allowed
     return {"success": False, "message": "Cross-day moves are not allowed."}
 
-        return {
-            "success": True,
-            "message": "Moved",
-        }
-
-    # Different day — not allowed
-    return {"success": False, "message": "Cross-day moves are not allowed."}
-
 
 @frappe.whitelist()
 def save_update_item(item_id, field, value):
