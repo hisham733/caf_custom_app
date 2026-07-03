@@ -5,13 +5,14 @@
  "creation": "2026-06-13 13:56:24.323080",
  "doctype": "DocType",
  "engine": "InnoDB",
- "field_order": [
-  "section_break_8sro",
-  "date_of_output",
-  "naming_series",
-  "items",
-  "amended_from"
- ],
+  "field_order": [
+   "section_break_8sro",
+   "date_of_output",
+   "naming_series",
+   "status",
+   "items",
+   "amended_from"
+  ],
  "fields": [
   {
    "fieldname": "section_break_8sro",
@@ -28,11 +29,18 @@
    "hidden": 1,
    "options": "DOR-.YYYY.-"
   },
-  {
-   "fieldname": "items",
-   "fieldtype": "Table",
-   "label": "Items",
-   "options": "Daily Output Item"
+   {
+    "fieldname": "status",
+    "fieldtype": "Select",
+    "label": "Status",
+    "options": "Pending\nIn Process\nDone",
+    "read_only": 1
+   },
+   {
+    "fieldname": "items",
+    "fieldtype": "Table",
+    "label": "Items",
+    "options": "Daily Output Item"
   },
   {
    "fieldname": "amended_from",

@@ -59,7 +59,7 @@ class DailyProduction(Document):
                     _("Row Number {0}: You cannot set a Production Status <strong>\"{2}\"</strong> if the Recipe is <b>{1}</b>. Please clear the status or select a valid recipe.")
                     .format(item.idx, NO_COOKING, item.produ_status)
                 )
-            if not item.size and item.recipe_name != "No Cooking":
+            if not item.size and item.recipe_name not in ("No Cooking", None, ""):
                 frappe.throw(f"Size can't be 0 or Empty for Recipe: {item.recipe_name}")
         if self.docstatus == 1:
             # ✅ NEW RULE: at least 1 status must exist

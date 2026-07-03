@@ -38,7 +38,7 @@ def get_workstations():
     """
     rows = frappe.get_all(
         "Workstation",
-        fields=["name", "workstation_name"],
+        fields=["name", "workstation_name", "status"],
         filters={"custom_inactive": ["!=", 1]},
         order_by="workstation_name asc",
     )
@@ -66,6 +66,7 @@ def get_workstations():
             "workstation_name": name,
             "ws_class": ws_class,
             "ws_index": ws_index,
+            "status": r.status or "",
         })
 
     result.sort(key=lambda x: (x["ws_class"], x["ws_index"], x["name"]))
@@ -297,25 +298,17 @@ def save_move_item(item_id, source_date, target_date, target_cooker, target_roun
                 target_nc = r
                 break
 
-        pair_id = frappe.generate_hash(length=10)
-
         source_row.recipe_cook_workstaion = target_cooker
         source_row.recipe_cook_round = int(target_round)
-        source_row.produ_status = "Change Slot"
-        source_row.custom_pair_id = pair_id
 
         if target_nc:
             target_nc.recipe_cook_workstaion = old_ws
             target_nc.recipe_cook_round = old_round
-            target_nc.produ_status = "Change Slot"
-            target_nc.custom_pair_id = pair_id
         else:
             new_nc = source_dp.append("production_table", {})
             new_nc.recipe_name = NO_COOKING
             new_nc.recipe_cook_workstaion = old_ws
             new_nc.recipe_cook_round = old_round
-            new_nc.produ_status = "Change Slot"
-            new_nc.custom_pair_id = pair_id
             new_nc.required_date = source_date
 
         for i, r in enumerate(source_dp.production_table):
@@ -323,11 +316,51 @@ def save_move_item(item_id, source_date, target_date, target_cooker, target_roun
 
         source_dp.save(ignore_permissions=True)
         frappe.db.commit()
+
+        # If WOs exist for this recipe, cancel old Cook/Pack and recreate for new slot
+        if source_row.mr_reference:
+            try:
+                from caf.caf.doctype.daily_production.rearrange_and_change_slot import (
+                    _cancel_cook_pack_by_id,
+                    _get_quality_data_by_id,
+                    _relink_quality_docs,
+                    _cleanup_redundant_wips,
+                )
+                from caf.caf.doctype.daily_production.wo_helpers import get_wo_by_type
+                from caf.caf.doctype.daily_production.rws import rws
+                from frappe.utils import now_datetime
+
+                child_doctype = "Create ProExl Items"
+                start_time = now_datetime()
+
+                # 1. Back up quality docs before cancelling
+                quality_data = _get_quality_data_by_id(source_row.link_id)
+
+                # 2. Cancel old Cook/Pack WOs
+                _cancel_cook_pack_by_id(source_row.link_id)
+
+                # 3. Recreate MR+WOs for new location
+                new_wos = source_dp.create_material_request_after_change_size(
+                    source_row.recipe_name, [source_row]
+                )
+
+                # 4. Clean up redundant WIP WOs
+                _cleanup_redundant_wips(new_wos, source_row, child_doctype, start_time)
+
+                # 5. Relink quality docs to new Cook WO
+                new_cook_wo = get_wo_by_type(source_row.link_id, "Cook")
+                if new_cook_wo:
+                    _relink_quality_docs(quality_data, new_cook_wo)
+
+                # 6. Sync notes to new WOs
+                rws(source_dp_name, child_doctype)
+
+            except Exception:
+                frappe.log_error(frappe.get_traceback(), title="Move WO processing failed")
+
         return {
             "success": True,
             "message": "Moved",
-            "pair_id": pair_id,
-            "target_row_name": target_nc.name if target_nc else None,
         }
 
     # Different day — not allowed
@@ -368,16 +401,58 @@ def save_update_item(item_id, field, value):
 
 @frappe.whitelist()
 def submit_week(week_monday):
-    """Submit all draft DPs for the week Mon-Sat.
+    """Submit draft DPs that have status changes for the week Mon-Sat.
+
+    Only submits DPs where at least one child row has a non-empty produ_status.
+    Skips past days (before today).
+    Returns JSON response.
 
     Args:
         week_monday: Date string of the Monday
     """
-    from caf.caf.doctype.daily_production.daily_production import submit_dp_week
+    monday = getdate(week_monday)
+    days = [monday + datetime.timedelta(days=i) for i in range(6)]
+    today = datetime.date.today()
 
-    submit_dp_week(week_monday)
-    frappe.response["type"] = "json"
-    return {"success": True}
+    submitted = 0
+    skipped_past = 0
+    skipped_no_status = 0
+    skipped_no_dp = 0
+
+    for day in days:
+        if day < today:
+            skipped_past += 1
+            continue
+
+        dp_name = frappe.db.get_value(
+            "Daily Production",
+            {"required_by": day, "docstatus": 0},
+            "name",
+            order_by="name desc",
+        )
+        if not dp_name:
+            skipped_no_dp += 1
+            continue
+
+        dp = frappe.get_doc("Daily Production", dp_name)
+        has_status = any(row.produ_status for row in dp.production_table)
+        if not has_status:
+            skipped_no_status += 1
+            continue
+
+        dp.submit()
+        submitted += 1
+
+    if submitted == 0:
+        return {
+            "success": False,
+            "message": _("No recipes have status changes to submit."),
+        }
+
+    return {
+        "success": True,
+        "message": _("Submitted {0} DP(s). Skipped {1} past, {2} with no status.").format(submitted, skipped_past, skipped_no_status),
+    }
 
 
 @frappe.whitelist()
@@ -467,25 +542,11 @@ def add_recipe(day, recipe, size, cooker, pack_count, round_num, **kwargs):
 
 
 @frappe.whitelist()
-def get_dp_row_url(dp_name, row_name):
-    """Return the ERPNext URL to open a DP form scrolled to a specific row.
-
-    Args:
-        dp_name: Daily Production document name
-        row_name: Child table row name
-
-    Returns:
-        Full URL string
-    """
-    base = frappe.utils.get_url() or ""
-    return f"{base}/app/daily-production/{dp_name}?row={row_name}"
-
-
-@frappe.whitelist()
 def create_week_version(week_number):
     """Create new draft DPs for a week from the latest submitted versions.
 
     Delegates to daily_production.create_empty_dp_week_by_number.
+    Removes draft DPs for past days (before today).
     After creation, the new draft DPs appear in Edit Schedule mode.
 
     Args:
@@ -494,6 +555,20 @@ def create_week_version(week_number):
     from caf.caf.doctype.daily_production.daily_production import create_empty_dp_week_by_number
 
     create_empty_dp_week_by_number(int(week_number))
+
+    today = datetime.date.today()
+    monday = _iso_week_to_monday(datetime.date.today().year, int(week_number))
+    for i in range(6):
+        day = monday + datetime.timedelta(days=i)
+        if day < today:
+            dp_name = frappe.db.get_value(
+                "Daily Production",
+                {"required_by": day, "docstatus": 0},
+                "name",
+            )
+            if dp_name:
+                frappe.delete_doc("Daily Production", dp_name, ignore_permissions=True)
+
     frappe.response["type"] = "json"
     return {"success": True}
 
@@ -550,16 +625,44 @@ def swap_recipes(source_id, target_id):
         row_a.set(fn, val_b)
         row_b.set(fn, val_a)
 
-    pair_id = frappe.generate_hash(length=10)
-    row_a.produ_status = "Rearrange"
-    row_b.produ_status = "Rearrange"
-    row_a.custom_pair_id = pair_id
-    row_b.custom_pair_id = pair_id
-
     dp.save(ignore_permissions=True)
     frappe.db.commit()
 
-    return {"success": True, "message": "Recipes swapped", "pair_id": pair_id}
+    # If WOs exist, swap link_ids, cancel old Cook/Pack, recreate for both
+    has_wos_a = bool(row_a.mr_reference)
+    has_wos_b = bool(row_b.mr_reference)
+    if has_wos_a or has_wos_b:
+        try:
+            from caf.caf.doctype.daily_production.rearrange_and_change_slot import (
+                _cancel_cook_pack_by_id,
+                _get_quality_data_by_id,
+                _relink_quality_docs,
+                _swap_db_link_ids,
+            )
+            from caf.caf.doctype.daily_production.wo_helpers import get_wo_by_type
+
+            qual_a = _get_quality_data_by_id(row_a.link_id)
+            qual_b = _get_quality_data_by_id(row_b.link_id)
+
+            _swap_db_link_ids(row_a.link_id, row_b.link_id)
+
+            _cancel_cook_pack_by_id(row_a.link_id)
+            _cancel_cook_pack_by_id(row_b.link_id)
+
+            dp.create_material_request_after_change_size(row_a.recipe_name, [row_a])
+            dp.create_material_request_after_change_size(row_b.recipe_name, [row_b])
+
+            new_cook_a = get_wo_by_type(row_a.link_id, "Cook")
+            new_cook_b = get_wo_by_type(row_b.link_id, "Cook")
+
+            if new_cook_a:
+                _relink_quality_docs(qual_b, new_cook_a)
+            if new_cook_b:
+                _relink_quality_docs(qual_a, new_cook_b)
+        except Exception:
+            frappe.log_error(title="Swap WO processing failed")
+
+    return {"success": True, "message": "Recipes swapped"}
 
 
 @frappe.whitelist()
@@ -708,3 +811,28 @@ def undo_pair(pair_id, original_link_id=None, original_source_date=None):
 def _get_child_meta_fields():
     """Return all field definitions from the child DocType metadata."""
     return frappe.get_meta(CHILD_DOCTYPE).fields
+
+
+@frappe.whitelist()
+def get_recipe_bom_data(recipe_name):
+    """Fetch BOM data for a recipe: custom_yield and custom_raw_materails.
+
+    Args:
+        recipe_name: Item name (recipe)
+
+    Returns:
+        Dict with yield and raw_materials values
+    """
+    bom = frappe.db.get_value(
+        "BOM",
+        {"item": recipe_name, "docstatus": 1, "is_active": 1},
+        ["name", "custom_yield", "custom_raw_materails"],
+        as_dict=True,
+        order_by="modified desc",
+    )
+    if bom:
+        return {
+            "yield": bom.custom_yield or 0,
+            "raw_materials": bom.custom_raw_materails or 0,
+        }
+    return {"yield": 0, "raw_materials": 0}

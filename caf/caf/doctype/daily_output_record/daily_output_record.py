@@ -11,6 +11,12 @@ from datetime import datetime, timedelta
 
 class DailyOutputRecord(Document):
 
+    def validate(self):
+        if not self.items:
+            self.status = "Pending"
+            return
+        self._update_parent_status()
+
     @frappe.whitelist()
     def process_all(self):
         for row in self.items:
@@ -20,16 +26,27 @@ class DailyOutputRecord(Document):
             try:
                 self._process_row(row)
                 frappe.db.set_value("Daily Output Item", row.name, "status", "Done")
+                row.status = "Done"
             except Exception as e:
                 frappe.log_error(frappe.get_traceback(), "Daily Output Row {0} failed".format(row.idx))
                 frappe.db.set_value("Daily Output Item", row.name, "status", "Failed")
+                row.status = "Failed"
+                self.status = "In Process"
+                self.save(ignore_permissions=True)
                 return {
                     "success": False,
                     "error": str(e),
                     "failed_row": row.idx,
                     "link_id": row.link_id,
                 }
+
+        self._update_parent_status()
+        self.save(ignore_permissions=True)
         return {"success": True, "message": "All rows processed successfully"}
+
+    def _update_parent_status(self):
+        all_done = all(row.status == "Done" for row in self.items)
+        self.status = "Done" if all_done else "In Process"
 
     def _process_row(self, row):
         link_id = row.link_id
