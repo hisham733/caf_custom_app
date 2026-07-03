@@ -132,6 +132,12 @@ class DailyProduction(Document):
         self.name = make_autoname(f"DP-.{date_field:%Y-%m-%d}-.####")
         return self.name
 
+    def _assign_link_id(self):
+         # Check if ANY row already has link_id
+        if any(d.link_id for d in self.production_table): return
+        # If none has it → assign to ALL rows
+        for d in self.production_table:
+            d.link_id = make_autoname("R-.YYYY.-.#####")
     # ── Submit Hook ───────────────────────────────────────────────────────────
     def before_submit(self):
         """Validate before submit.

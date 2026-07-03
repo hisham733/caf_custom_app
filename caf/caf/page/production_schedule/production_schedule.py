@@ -256,6 +256,10 @@ def get_week_data(year, week_number, mode):
 def save_move_item(item_id, source_date, target_date, target_cooker, target_round=None):
     """Move a child row between cookers, rounds, or DPs.
 
+    Workstation, round, and link_id are static to the slot — the recipe
+    inherits the target slot's values, and the No Cooking placeholder
+    inherits the source slot's values. Both slots are marked "Change Slot".
+
     Args:
         item_id: Child table row name
         source_date: Source DP's required_by date
@@ -288,6 +292,7 @@ def save_move_item(item_id, source_date, target_date, target_cooker, target_roun
     if source_date == target_date:
         old_ws = source_row.recipe_cook_workstaion
         old_round = source_row.recipe_cook_round
+        old_link_id = source_row.link_id
 
         target_nc = None
         for r in source_dp.production_table:
@@ -298,12 +303,37 @@ def save_move_item(item_id, source_date, target_date, target_cooker, target_roun
                 target_nc = r
                 break
 
+        # Recipe row inherits target slot's static values
         source_row.recipe_cook_workstaion = target_cooker
         source_row.recipe_cook_round = int(target_round)
 
+        pair_id = None
+        swap_executed = False
+
         if target_nc:
+            # No Cooking row inherits source slot's static values
             target_nc.recipe_cook_workstaion = old_ws
             target_nc.recipe_cook_round = old_round
+
+            # Swap link_ids (static to slot, not recipe)
+            target_link_id = target_nc.link_id
+            target_nc.link_id = old_link_id
+            source_row.link_id = target_link_id
+
+            # Mark both as Change Slot with shared pair_id
+            from frappe.utils import now_datetime
+            pair_id = now_datetime().strftime("%Y%m%d%H%M%S%f")
+            source_row.produ_status = "Change Slot"
+            target_nc.produ_status = "Change Slot"
+            source_row.custom_pair_id = pair_id
+            target_nc.custom_pair_id = pair_id
+            swap_executed = True
+
+            # Migrate WOs from old link_id to new
+            from caf.caf.doctype.daily_production.rearrange_and_change_slot import (
+                _migrate_db_link_ids,
+            )
+            _migrate_db_link_ids(source_id=old_link_id, target_id=source_row.link_id)
         else:
             new_nc = source_dp.append("production_table", {})
             new_nc.recipe_name = NO_COOKING
@@ -317,8 +347,8 @@ def save_move_item(item_id, source_date, target_date, target_cooker, target_roun
         source_dp.save(ignore_permissions=True)
         frappe.db.commit()
 
-        # If WOs exist for this recipe, cancel old Cook/Pack and recreate for new slot
-        if source_row.mr_reference:
+        # If WOs exist, cancel old Cook/Pack and recreate for new slot
+        if source_row.mr_reference and swap_executed:
             try:
                 from caf.caf.doctype.daily_production.rearrange_and_change_slot import (
                     _cancel_cook_pack_by_id,
@@ -327,16 +357,15 @@ def save_move_item(item_id, source_date, target_date, target_cooker, target_roun
                     _cleanup_redundant_wips,
                 )
                 from caf.caf.doctype.daily_production.wo_helpers import get_wo_by_type
-                from caf.caf.doctype.daily_production.rws import rws
                 from frappe.utils import now_datetime
 
                 child_doctype = "Create ProExl Items"
                 start_time = now_datetime()
 
-                # 1. Back up quality docs before cancelling
-                quality_data = _get_quality_data_by_id(source_row.link_id)
+                # 1. Back up quality docs from old link_id
+                quality_data = _get_quality_data_by_id(old_link_id)
 
-                # 2. Cancel old Cook/Pack WOs
+                # 2. Cancel old Cook/Pack WOs (now on source_row.link_id after migration)
                 _cancel_cook_pack_by_id(source_row.link_id)
 
                 # 3. Recreate MR+WOs for new location
@@ -352,11 +381,16 @@ def save_move_item(item_id, source_date, target_date, target_cooker, target_roun
                 if new_cook_wo:
                     _relink_quality_docs(quality_data, new_cook_wo)
 
-                # 6. Sync notes to new WOs
-                rws(source_dp_name, child_doctype)
-
             except Exception:
                 frappe.log_error(frappe.get_traceback(), title="Move WO processing failed")
+
+        return {
+            "success": True,
+            "message": "Moved",
+        }
+
+    # Different day — not allowed
+    return {"success": False, "message": "Cross-day moves are not allowed."}
 
         return {
             "success": True,
