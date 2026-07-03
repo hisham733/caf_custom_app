@@ -1189,7 +1189,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			{ fieldname: "sec_note", fieldtype: "Section Break", label: __("System Info") },
 			{
 				label: __("Link ID"), fieldname: "link_id", fieldtype: "Data",
-				read_only: 1, default: link_id,
+				read_only: 1, disabled: 1, default: link_id,
 			},
 			{
 				label: __("MR Reference"), fieldname: "mr_reference", fieldtype: "Data",
@@ -1441,7 +1441,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			
 			{
 				label: __("Link ID"), fieldname: "link_id", fieldtype: "Data",
-				read_only: 1,
+				read_only: 1, disabled: 1,
 			},
 			{
 				label: __("MR Reference"), fieldname: "mr_reference", fieldtype: "Data",
