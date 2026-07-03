@@ -5,14 +5,15 @@
  "creation": "2026-06-13 13:56:24.323080",
  "doctype": "DocType",
  "engine": "InnoDB",
-  "field_order": [
-   "section_break_8sro",
-   "date_of_output",
-   "naming_series",
-   "status",
-   "items",
-   "amended_from"
-  ],
+ "field_order": [
+  "section_break_8sro",
+  "date_of_output",
+  "naming_series",
+  "status",
+  "custom_process_status",
+  "items",
+  "amended_from"
+ ],
  "fields": [
   {
    "fieldname": "section_break_8sro",
@@ -29,18 +30,27 @@
    "hidden": 1,
    "options": "DOR-.YYYY.-"
   },
-   {
-    "fieldname": "status",
-    "fieldtype": "Select",
-    "label": "Status",
-    "options": "Pending\nIn Process\nDone",
-    "read_only": 1
-   },
-   {
-    "fieldname": "items",
-    "fieldtype": "Table",
-    "label": "Items",
-    "options": "Daily Output Item"
+  {
+   "allow_on_submit": 1,
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Pending\nIn Process\nDone",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "custom_process_status",
+   "fieldtype": "Select",
+   "label": "Process Status",
+   "options": "\nProcessing\nCompleted\nFailed",
+   "read_only": 1
+  },
+  {
+   "fieldname": "items",
+   "fieldtype": "Table",
+   "label": "Items",
+   "options": "Daily Output Item"
   },
   {
    "fieldname": "amended_from",
@@ -57,7 +67,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-06-19 10:00:00.000000",
+ "modified": "2026-07-03 11:54:52.578655",
  "modified_by": "Administrator",
  "module": "Caf",
  "name": "Daily Output Record",

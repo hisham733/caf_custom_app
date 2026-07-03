@@ -15,26 +15,26 @@ frappe.ui.form.on("Daily Output Record", {
                 };
             }
 
-            frm.add_custom_button(__("Process All"), function() {
-                frm.call({
-                    method: "process_all",
-                    doc: frm.doc,
-                    freeze: true,
-                    freeze_message: __("Processing Work Orders..."),
-                    callback: function(r) {
-                        if (r.message && r.message.success) {
-                            frappe.msgprint(__("All rows processed successfully"));
-                            frm.reload_doc();
-                        } else if (r.message) {
-                            frappe.msgprint(__("Failed at row {0}: {1}").format(
-                                r.message.failed_row, r.message.error
-                            ));
-                            frm.reload_doc();
+            if (frm.doc.custom_process_status !== "Processing") {
+                frm.add_custom_button(__("Process All"), function() {
+                    frm.call({
+                        method: "process_all",
+                        doc: frm.doc,
+                        freeze: true,
+                        freeze_message: __("Starting background processing..."),
+                        callback: function(r) {
+                            if (r.message && r.message.success) {
+                                frm.reload_doc();
+                                poll_processing_status(frm);
+                            }
                         }
-                    }
-                });
-            }).addClass("btn-primary");
+                    });
+                }).addClass("btn-primary");
+            }
         }
+    },
+
+    custom_process_status: function(frm) {
     },
 
     date_of_output: function(frm) {
@@ -221,3 +221,20 @@ frappe.ui.form.on("Daily Output Item", {
         }
     }
 });
+
+function poll_processing_status(frm) {
+    var interval = setInterval(function() {
+        frappe.db.get_value("Daily Output Record", frm.doc.name, "custom_process_status", function(r) {
+            var status = r.message.custom_process_status;
+            if (status === "Completed") {
+                clearInterval(interval);
+                frappe.msgprint(__("All rows processed successfully"));
+                frm.reload_doc();
+            } else if (status === "Failed") {
+                clearInterval(interval);
+                frappe.msgprint(__("Processing failed. Check Error Log for details."));
+                frm.reload_doc();
+            }
+        });
+    }, 3000);
+}
