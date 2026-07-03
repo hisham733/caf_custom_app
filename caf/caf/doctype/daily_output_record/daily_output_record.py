@@ -13,23 +13,19 @@ class DailyOutputRecord(Document):
 
     @frappe.whitelist()
     def process_all(self):
-        for row in self.items:
-            if row.status == "Done":
-                self._validate_row(row)
-                continue
-            try:
-                self._process_row(row)
-                frappe.db.set_value("Daily Output Item", row.name, "status", "Done")
-            except Exception as e:
-                frappe.log_error(frappe.get_traceback(), "Daily Output Row {0} failed".format(row.idx))
-                frappe.db.set_value("Daily Output Item", row.name, "status", "Failed")
-                return {
-                    "success": False,
-                    "error": str(e),
-                    "failed_row": row.idx,
-                    "link_id": row.link_id,
-                }
-        return {"success": True, "message": "All rows processed successfully"}
+        if self.custom_process_status == "Processing":
+            frappe.throw(_("Processing is already in progress. Please wait."))
+
+        self.custom_process_status = "Processing"
+        self.save(ignore_permissions=True)
+
+        frappe.enqueue(
+            "caf.caf.doctype.daily_output_record.daily_output_record.background_process_all",
+            queue="long",
+            timeout=3600,
+            doc_name=self.name,
+        )
+        return {"success": True, "message": "Processing started in background"}
 
     def _process_row(self, row):
         link_id = row.link_id
@@ -250,3 +246,31 @@ class DailyOutputRecord(Document):
             })
             jc_doc.save()
             jc_doc.submit()
+
+
+def background_process_all(doc_name):
+    doc = frappe.get_doc("Daily Output Record", doc_name)
+    try:
+        for row in doc.items:
+            if row.status == "Done":
+                doc._validate_row(row)
+                continue
+            try:
+                doc._process_row(row)
+                frappe.db.set_value("Daily Output Item", row.name, "status", "Done")
+                row.status = "Done"
+            except Exception as e:
+                frappe.log_error(frappe.get_traceback(), "Daily Output Row {0} failed".format(row.idx))
+                frappe.db.set_value("Daily Output Item", row.name, "status", "Failed")
+                row.status = "Failed"
+                doc.status = "In Process"
+                doc.save(ignore_permissions=True)
+                frappe.db.set_value("Daily Output Record", doc_name, "custom_process_status", "Failed")
+                return
+
+        doc._update_parent_status()
+        doc.save(ignore_permissions=True)
+        frappe.db.set_value("Daily Output Record", doc_name, "custom_process_status", "Completed")
+    except Exception:
+        frappe.db.set_value("Daily Output Record", doc_name, "custom_process_status", "Failed")
+        frappe.log_error(frappe.get_traceback(), "Daily Output Record {0} background processing failed".format(doc_name))
