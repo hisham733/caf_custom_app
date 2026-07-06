@@ -53,14 +53,14 @@ class DailyProduction(Document):
                     _("Row {0}: This row already has Work Orders. You cannot select <b>{1}</b>. Please clear the status.")
                     .format(item.idx, NEW_SCHEDULE)
                 )
-            if item.produ_status and item.produ_status != "Change Slot" and item.recipe_name == NO_COOKING:
+            # if item.produ_status and item.produ_status != "Change Slot" and item.recipe_name == NO_COOKING:
 
-                frappe.throw(
-                    _("Row Number {0}: You cannot set a Production Status <strong>\"{2}\"</strong> if the Recipe is <b>{1}</b>. Please clear the status or select a valid recipe.")
-                    .format(item.idx, NO_COOKING, item.produ_status)
-                )
-            if not item.size and item.recipe_name != "No Cooking":
-                frappe.throw(f"Size can't be 0 or Empty for Recipe: {item.recipe_name}")
+            #     frappe.throw(
+            #         _("Row Number {0}: You cannot set a Production Status <strong>\"{2}\"</strong> if the Recipe is <b>{1}</b>. Please clear the status or select a valid recipe.")
+            #         .format(item.idx, NO_COOKING, item.produ_status)
+            #     )
+            # if not item.size and item.recipe_name not in ("No Cooking", None, "") and item.produ_status != "New Schedule":
+            #     frappe.throw(f"Size can't be 0 or Empty for Recipe: {item.recipe_name}")
         if self.docstatus == 1:
             # ✅ NEW RULE: at least 1 status must exist
             has_status = any(
@@ -90,13 +90,13 @@ class DailyProduction(Document):
             pack_count = frappe.utils.cint(row.number_of_pack)
 
             # Validate pack selection first
-            if recipe_name and pack_count <= 0:
-                frappe.throw(
-                    _(
-                        "Row {0}: Please select a Pack Quantity before submitting "
-                        "the recipe <strong>{1}</strong>."
-                    ).format(row.idx, recipe_name)
-                )
+            # if recipe_name and pack_count <= 0:
+            #     frappe.throw(
+            #         _(
+            #             "Row {0}: Please select a Pack Quantity before submitting "
+            #             "the recipe <strong>{1}</strong>."
+            #         ).format(row.idx, recipe_name)
+            #     )
 
             # Validate pack fields
             for i in range(1, pack_count + 1):
@@ -132,6 +132,15 @@ class DailyProduction(Document):
         self.name = make_autoname(f"DP-.{date_field:%Y-%m-%d}-.####")
         return self.name
 
+    def _assign_link_id(self):
+        # Assign link_id to any non-No-Cooking row that's missing one
+        for d in self.production_table:
+            if not d.link_id:
+                d.link_id = make_autoname("R-.YYYY.-.#####")
+
+    def before_save(self):
+        self._assign_link_id()
+
     # ── Submit Hook ───────────────────────────────────────────────────────────
     def before_submit(self):
         """Validate before submit.
@@ -141,23 +150,13 @@ class DailyProduction(Document):
         """
         if all(d.recipe_name == NO_COOKING and not d.produ_status for d in self.production_table):
             frappe.throw("All rows have recipe <strong>No Cooking</strong> — not allowed")
-        # Check if ANY row already has link_id
-        if any(d.link_id for d in self.production_table): return
-        # If none has it → assign to ALL rows
-        for d in self.production_table:
-            d.link_id = make_autoname("R-.YYYY.-.#####")
         
     def on_submit(self):
             """Entry point after DB commit.
 
-            If custom_submit_ref is already set, runs process_manual_updates() to
-            execute remaining production workflows (cancellations, slot swaps,
-            pack changes, MR creation, WOs).
+            If custom_submit_ref is already set, runs process_manual_updates().
             """
             if self.custom_submit_ref:
-                # We call our orchestrator. 
-                # If any sub-function inside throws an error, 
-                # this submission will be aborted and the DB will rollback.
                 self.process_manual_updates()
                 
     @frappe.whitelist()
@@ -260,7 +259,7 @@ class DailyProduction(Document):
         for group in recipe_groups:
             if group["rows"][0].produ_status == NEW_SCHEDULE or (not group["rows"][0].mr_reference and not group["rows"][0].production_plane):
                 self.create_material_request(group["recipe"], group["rows"])
-                frappe.db.set_value(CHILD_DOCTYPE, group["rows"][0].name, "produ_status", "New Schedule")
+                frappe.db.set_value(CHILD_DOCTYPE, group["rows"][0].name, "produ_status", "")
                 link_id = group["rows"][0].link_id
                 reheat = group["rows"][0].production_type
                 if link_id and reheat == "Reheat":
@@ -366,8 +365,9 @@ class DailyProduction(Document):
 
         mr.submit()
         _write_back_to_row(first, mr.name, mr)
-        link = frappe.utils.get_link_to_form(MR_DOCTYPE, mr.name)
-        frappe.msgprint(f"✅ Material Request created for Recipe: {recipe_name}<br>{link}")
+        if frappe.request:
+            link = frappe.utils.get_link_to_form(MR_DOCTYPE, mr.name)
+            frappe.msgprint(f"Material Request created for Recipe: {recipe_name}<br>{link}")
 
     def create_material_request_after_change_size(self, recipe_name: str, rows: list) -> list:
             """Force-update production after a size change while preserving the existing Link ID.

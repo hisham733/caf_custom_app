@@ -11,6 +11,12 @@ from datetime import datetime, timedelta
 
 class DailyOutputRecord(Document):
 
+    def validate(self):
+        if not self.items:
+            self.status = "Pending"
+            return
+        self._update_parent_status()
+
     @frappe.whitelist()
     def process_all(self):
         if self.custom_process_status == "Processing":
@@ -26,6 +32,11 @@ class DailyOutputRecord(Document):
             doc_name=self.name,
         )
         return {"success": True, "message": "Processing started in background"}
+
+
+    def _update_parent_status(self):
+        all_done = all(row.status == "Done" for row in self.items)
+        self.status = "Done" if all_done else "In Process"
 
     def _process_row(self, row):
         link_id = row.link_id

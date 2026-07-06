@@ -499,7 +499,7 @@
 	cursor: pointer;
 	border: 1.5px dashed var(--border-color, #d1d8dd);
 	margin: 2px 0;
-	font-size: 18px;
+	font-size: 11px;
 	font-weight: 400;
 	transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
@@ -567,4 +567,67 @@
 	color: var(--text-muted, #9ca3af);
 	font-size: 14px;
 	font-style: italic;
+}
+
+/* ── past day columns ─────────────────────────────────────────── */
+.schedule-past-day {
+	opacity: 0.6;
+}
+
+.schedule-past-day .schedule-item {
+	cursor: default !important;
+	border-color: var(--border-color, #e2e8f0);
+	box-shadow: none;
+	opacity: 0.85;
+}
+
+.schedule-past-day .schedule-item-name {
+	color: var(--text-muted, #6b7280);
+}
+
+.schedule-past-day .schedule-item-size {
+	background: var(--bg-light, #f3f4f6);
+	color: var(--text-muted, #9ca3af);
+}
+
+.schedule-past-day .round-slot-empty {
+	cursor: default;
+	border-style: solid;
+	opacity: 0.4;
+}
+
+.schedule-past-day .note-slot,
+.schedule-past-day .pack-slot {
+	cursor: default;
+	opacity: 0.5;
+}
+
+.schedule-past-day .schedule-item-locked {
+	opacity: 0.75;
+}
+
+.ws-problem {
+	background: rgba(239, 68, 68, 0.08) !important;
+}
+
+.ws-problem .schedule-item {
+	cursor: default !important;
+	opacity: 0.65;
+}
+
+.ws-problem .schedule-item:hover {
+	background: inherit;
+	border-color: inherit;
+}
+
+.ws-problem .round-slot-empty {
+	cursor: default !important;
+	border-style: solid;
+	opacity: 0.4;
+}
+
+.ws-problem.note-slot,
+.ws-problem.pack-slot {
+	cursor: default !important;
+	opacity: 0.5;
 }
