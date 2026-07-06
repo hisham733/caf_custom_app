@@ -51,9 +51,12 @@ Board
   │
   ├─ drag ──────► save_move_item(id, source_date, target_date, cooker, round)
   │
-  ├─ edit ──────► save_update_item(id, field, value)
+  ├─ edit ──────► save_item_fields(id, fields)   (batch save)
+  │                ├─ process_recipe_change()      if status="Recipe Change"
+  │                └─ process_dp_updates()         if status triggers changes
   │
   ├─ add ───────► add_recipe(day, recipe, size, cooker, pack_count, round)
+  │                └─ _background_create_mr()      if status="New Schedule"
   │
   └─ submit ────► submit_week(week_monday) → submit_dp_week()
 ```
@@ -62,11 +65,19 @@ Board
 
 | Existing Component | Board Interaction |
 |--------------------|-------------------|
-| `rearrange_and_change_slot.py` | Board moves rows directly. On submit, produ_status drives Change Slot/Rearrange |
-| `change_size.py` | Board edits size. On submit, produ_status drives Recipe Change |
-| `cancellation.py` | Not triggered by board. User sets produ_status="Cancelled" via edit dialog |
+| `rearrange_and_change_slot.py` | Background workers call `_migrate_db_link_ids`, `_cancel_cook_pack_by_id`, `_relink_quality_docs` during drag-drop WO migration |
+| `change_size.py` | Not used directly; `create_material_request_after_change_size` handles WO recreation after recipe change |
+| `cancellation.py` | `_background_cancel_item` calls `process_cancellations()` to cancel WOs, then resets the row to No Cooking |
 | `submit_dp_week_by_number()` | Board's Submit Week delegates to `submit_dp_week()` |
 | Metabase | Sets `trigger_metabase_refresh` cookie after save |
+
+## Documentation
+
+| File | Audience | Contents |
+|------|----------|----------|
+| [`README.md`](README.md) | Developers | Blueprint, layout, data flow, endpoints, integration |
+| [`workflow.md`](workflow.md) | Developers | Technical workflows, background jobs, state machine, race conditions |
+| [`user-guide.md`](user-guide.md) | End users | How to add/edit/move/cancel recipes, submit week, troubleshooting |
 
 ## Files
 
@@ -74,8 +85,10 @@ Board
 apps/caf/caf/caf/page/production_schedule/
 ├── __init__.py              Empty
 ├── README.md                Blueprint (this file)
+├── workflow.md              Technical workflow documentation
+├── user-guide.md            User-facing guide
 ├── production_schedule.json Page DocType metadata (name: production-schedule)
-├── production_schedule.py   Server endpoints (7 whitelisted methods)
+├── production_schedule.py   Server endpoints + background workers (16 whitelisted methods)
 ├── production_schedule.js   Client: grid + drag-drop + dialogs
 └── production_schedule.css  Pivoted grid styling
 ```
@@ -86,8 +99,17 @@ apps/caf/caf/caf/page/production_schedule/
 |--------|------|---------|
 | `get_workstations` | — | All active Cooker/Kettle/Fryer workstations sorted |
 | `get_week_data` | `year, week_number, mode` | Full pivoted schedule data |
-| `save_move_item` | `item_id, source_date, target_date, target_cooker, target_round` | Move a recipe between slots |
-| `save_update_item` | `item_id, field, value` | Single field update |
-| `add_recipe` | `day, recipe, size, cooker, pack_count, round_num` | Add new recipe row |
+| `save_move_item` | `item_id, source_date, target_date, target_cooker, target_round` | Move a recipe between slots (same-day only) |
+| `save_item_fields` | `item_id, fields[]` | Save multiple fields in a single `dp.save()` call |
+| `save_update_item` | `item_id, field, value` | Single field update (legacy) |
+| `add_recipe` | `day, recipe, size, cooker, pack_count, round_num, **kwargs` | Add new recipe row |
 | `submit_week` | `week_monday` | Submit all draft DPs via `submit_dp_week()` |
+| `create_week_version` | `week_number` | Create fresh draft DPs from latest submitted |
+| `swap_recipes` | `source_id, target_id` | Swap recipe data between two rows in same DP |
+| `undo_pair` | `pair_id, original_link_id, original_source_date` | Reverse a Change Slot or Rearrange |
+| `get_recipe_bom_data` | `recipe_name` | Fetch BOM yield + raw materials |
+| `get_row_status` | `item_id` | Lightweight poll for `wo_status` and `mr_reference` |
+| `cancel_item` | `item_id` | Cancel item + enqueue background WO cancellation |
+| `process_recipe_change` | `item_id` | Enqueue background WO reprocessing after recipe change |
+| `process_dp_updates` | `item_id` | Enqueue `process_manual_updates` on parent DP |
 | `get_dp_row_url` | `dp_name, row_name` | ERPNext URL for View mode click-through |

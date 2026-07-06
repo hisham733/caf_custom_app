@@ -4,6 +4,7 @@ import re
 import frappe
 from frappe import _
 from frappe.utils import getdate, add_days
+from frappe.model.naming import make_autoname
 
 NO_COOKING = "No Cooking"
 CHILD_DOCTYPE = "Create ProExl Items"
@@ -107,6 +108,7 @@ def _build_round_data(row, recipe_name):
         "production_plane": row.get("production_plane") or "",
         "mr_reference": row.get("mr_reference") or "",
         "pair_id": row.get("custom_pair_id") or "",
+        "wo_status": row.get("custom_wo_status") or "",
     }
 
 
@@ -315,6 +317,10 @@ def save_move_item(item_id, source_date, target_date, target_cooker, target_roun
             target_nc.recipe_cook_workstaion = old_ws
             target_nc.recipe_cook_round = old_round
 
+            # Assign new link_id if this slot has never been used
+            if not target_nc.link_id:
+                target_nc.link_id = make_autoname("R-.YYYY.-.#####")
+
             # Swap link_ids (static to slot, not recipe)
             target_link_id = target_nc.link_id
             target_nc.link_id = old_link_id
@@ -329,11 +335,20 @@ def save_move_item(item_id, source_date, target_date, target_cooker, target_roun
             target_nc.custom_pair_id = pair_id
             swap_executed = True
 
+            # Capture quality data BEFORE WO migration
+            from caf.caf.doctype.daily_production.rearrange_and_change_slot import (
+                _get_quality_data_by_id,
+            )
+            quality_data = _get_quality_data_by_id(old_link_id)
+
             # Migrate WOs from old link_id to new
             from caf.caf.doctype.daily_production.rearrange_and_change_slot import (
                 _migrate_db_link_ids,
             )
             _migrate_db_link_ids(source_id=old_link_id, target_id=source_row.link_id)
+
+            source_row.custom_wo_status = "Processing"
+            target_nc.custom_wo_status = "Processing"
         else:
             new_nc = source_dp.append("production_table", {})
             new_nc.recipe_name = NO_COOKING
@@ -347,42 +362,14 @@ def save_move_item(item_id, source_date, target_date, target_cooker, target_roun
         source_dp.save(ignore_permissions=True)
         frappe.db.commit()
 
-        # If WOs exist, cancel old Cook/Pack and recreate for new slot
-        if source_row.mr_reference and swap_executed:
-            try:
-                from caf.caf.doctype.daily_production.rearrange_and_change_slot import (
-                    _cancel_cook_pack_by_id,
-                    _get_quality_data_by_id,
-                    _relink_quality_docs,
-                    _cleanup_redundant_wips,
-                )
-                from caf.caf.doctype.daily_production.wo_helpers import get_wo_by_type
-                from frappe.utils import now_datetime
-
-                child_doctype = "Create ProExl Items"
-                start_time = now_datetime()
-
-                # 1. Back up quality docs from old link_id
-                quality_data = _get_quality_data_by_id(old_link_id)
-
-                # 2. Cancel old Cook/Pack WOs (now on source_row.link_id after migration)
-                _cancel_cook_pack_by_id(source_row.link_id)
-
-                # 3. Recreate MR+WOs for new location
-                new_wos = source_dp.create_material_request_after_change_size(
-                    source_row.recipe_name, [source_row]
-                )
-
-                # 4. Clean up redundant WIP WOs
-                _cleanup_redundant_wips(new_wos, source_row, child_doctype, start_time)
-
-                # 5. Relink quality docs to new Cook WO
-                new_cook_wo = get_wo_by_type(source_row.link_id, "Cook")
-                if new_cook_wo:
-                    _relink_quality_docs(quality_data, new_cook_wo)
-
-            except Exception:
-                frappe.log_error(frappe.get_traceback(), title="Move WO processing failed")
+        if swap_executed:
+            frappe.enqueue(
+                "caf.caf.page.production_schedule.production_schedule._background_move_wo_migration",
+                queue="long",
+                timeout=600,
+                source_row_name=source_row.name,
+                quality_data=quality_data,
+            )
 
         return {
             "success": True,
@@ -415,7 +402,45 @@ def save_update_item(item_id, field, value):
 
     for row in dp.production_table:
         if row.name == item_id:
+            if field == "produ_status" and value == "New Schedule":
+                row.mr_reference = None
+                row.wo_list = None
+                row.wo_list_with_type = None
             row.set(field, value)
+            break
+    else:
+        return {"success": False, "message": "Row not found in DP"}
+
+    dp.save(ignore_permissions=True)
+    frappe.db.commit()
+    return {"success": True, "message": "Updated"}
+
+
+@frappe.whitelist()
+def save_item_fields(item_id, fields):
+    """Save multiple fields on a child row in a single transaction."""
+    import json
+    if isinstance(fields, str):
+        fields = json.loads(fields)
+
+    dp_name = frappe.db.get_value(CHILD_DOCTYPE, {"name": item_id}, "parent")
+    if not dp_name:
+        return {"success": False, "message": "Item not found"}
+
+    dp = frappe.get_doc("Daily Production", dp_name)
+    if dp.docstatus != 0:
+        return {"success": False, "message": "DP is not in draft state"}
+
+    for row in dp.production_table:
+        if row.name == item_id:
+            for f in fields:
+                field = f.get("field")
+                value = f.get("value")
+                if field == "produ_status" and value == "New Schedule":
+                    row.mr_reference = None
+                    row.wo_list = None
+                    row.wo_list_with_type = None
+                row.set(field, value)
             break
     else:
         return {"success": False, "message": "Row not found in DP"}
@@ -466,8 +491,11 @@ def submit_week(week_monday):
             skipped_no_status += 1
             continue
 
-        dp.submit()
-        submitted += 1
+        try:
+            dp.submit()
+            submitted += 1
+        finally:
+            frappe.flags.pop('from_schedule_page', None)
 
     if submitted == 0:
         return {
@@ -534,6 +562,9 @@ def add_recipe(day, recipe, size, cooker, pack_count, round_num, **kwargs):
     row.production_plane = kwargs.get("production_plane") or ""
     row.wo_list_with_type = kwargs.get("wo_list_with_type") or ""
 
+    if row.produ_status == "New Schedule":
+        row.custom_wo_status = "Processing"
+
     for i in range(1, 8):
         suffix = "" if i == 1 else "_{}".format(i)
         for pfield in ("pack_name", "pack_qty", "pack_remark"):
@@ -546,6 +577,16 @@ def add_recipe(day, recipe, size, cooker, pack_count, round_num, **kwargs):
 
     dp.save(ignore_permissions=True)
     frappe.db.commit()
+
+    # Create MR + WOs in background if status is New Schedule
+    if row.produ_status == "New Schedule":
+        frappe.enqueue(
+            "caf.caf.page.production_schedule.production_schedule._background_create_mr",
+            queue="long",
+            timeout=600,
+            row_name=row.name,
+            dp_name=dp.name,
+        )
 
     return {
         "success": True,
@@ -862,3 +903,291 @@ def get_recipe_bom_data(recipe_name):
             "raw_materials": bom.custom_raw_materails or 0,
         }
     return {"yield": 0, "raw_materials": 0}
+
+
+@frappe.whitelist()
+def get_row_status(item_id):
+    """Lightweight poll: return wo_status and mr_reference for a row."""
+    vals = frappe.db.get_value(
+        CHILD_DOCTYPE,
+        {"name": item_id},
+        ["custom_wo_status", "mr_reference"],
+        as_dict=True,
+    )
+    if vals:
+        return {"wo_status": vals.custom_wo_status or "", "mr_reference": vals.mr_reference or ""}
+    return {"wo_status": "", "mr_reference": ""}
+
+
+@frappe.whitelist()
+def process_recipe_change(item_id):
+    """Enqueue background recipe change WO reprocessing for a row."""
+    row_data = frappe.db.get_value(
+        CHILD_DOCTYPE, {"name": item_id},
+        ["parent", "produ_status", "mr_reference", "recipe_name"],
+        as_dict=True,
+    )
+    if not row_data:
+        return {"success": False, "message": "Item not found"}
+    if row_data.produ_status != "Recipe Change" or not row_data.mr_reference:
+        return {"success": False, "message": "No recipe change needed"}
+
+    frappe.db.set_value(CHILD_DOCTYPE, item_id, "custom_wo_status", "Processing")
+
+    frappe.enqueue(
+        "caf.caf.page.production_schedule.production_schedule._background_change_recipe",
+        queue="long",
+        timeout=600,
+        item_id=item_id,
+        dp_name=row_data.parent,
+        new_recipe=row_data.recipe_name,
+    )
+    return {"success": True, "message": _("Recipe change queued")}
+
+
+@frappe.whitelist()
+def cancel_item(item_id):
+    """Cancel a production item row and queue WO cancellation."""
+    dp_name = frappe.db.get_value(CHILD_DOCTYPE, {"name": item_id}, "parent")
+    if not dp_name:
+        return {"success": False, "message": "Item not found"}
+
+    dp = frappe.get_doc("Daily Production", dp_name)
+    if dp.docstatus != 0:
+        return {"success": False, "message": "DP is not in draft state"}
+
+    row = next((r for r in dp.production_table if r.name == item_id), None)
+    if not row:
+        return {"success": False, "message": "Row not found in DP"}
+
+    row.produ_status = "Cancelled"
+    row.custom_wo_status = "Processing"
+    dp.save(ignore_permissions=True)
+    frappe.db.commit()
+
+    frappe.enqueue(
+        "caf.caf.page.production_schedule.production_schedule._background_cancel_item",
+        queue="long",
+        timeout=600,
+        item_id=item_id,
+        dp_name=dp_name,
+    )
+    return {"success": True, "message": _("Item cancelled")}
+
+
+def _background_change_recipe(item_id, dp_name, new_recipe):
+    """Background worker: reprocess WOs after recipe change."""
+    try:
+        current = frappe.db.get_value(
+            CHILD_DOCTYPE, item_id,
+            ["produ_status", "mr_reference", "custom_wo_status"], as_dict=True
+        )
+        if not current or current.produ_status != "Recipe Change" or not current.mr_reference:
+            frappe.db.set_value(CHILD_DOCTYPE, item_id, "custom_wo_status", "")
+            frappe.db.commit()
+            return
+
+        from caf.caf.doctype.daily_production.rearrange_and_change_slot import (
+            _cancel_cook_pack_by_id,
+            _cleanup_redundant_wips,
+        )
+        from caf.caf.doctype.daily_production.wo_helpers import get_wo_by_type
+        from frappe.utils import now_datetime
+
+        dp = frappe.get_doc("Daily Production", dp_name)
+        row = next((r for r in dp.production_table if r.name == item_id), None)
+        if not row or row.produ_status != "Recipe Change":
+            frappe.db.set_value(CHILD_DOCTYPE, item_id, "custom_wo_status", "")
+            frappe.db.commit()
+            return
+
+        _cancel_cook_pack_by_id(row.link_id)
+        new_wos = dp.create_material_request_after_change_size(new_recipe, [row])
+        _cleanup_redundant_wips(new_wos, row, CHILD_DOCTYPE, now_datetime())
+        frappe.db.set_value(CHILD_DOCTYPE, item_id, "custom_wo_status", "Done")
+    except Exception:
+        frappe.log_error(title="Background recipe change failed", message=frappe.get_traceback())
+        frappe.db.set_value(CHILD_DOCTYPE, item_id, "custom_wo_status", "Failed")
+        frappe.db.commit()
+
+
+def _background_cancel_item(item_id, dp_name):
+    """Background worker: process cancellation and reset row to free the slot."""
+    try:
+        current = frappe.db.get_value(
+            CHILD_DOCTYPE, item_id,
+            ["produ_status", "custom_wo_status"], as_dict=True
+        )
+        if not current or current.produ_status != "Cancelled":
+            frappe.db.set_value(CHILD_DOCTYPE, item_id, "custom_wo_status", "")
+            frappe.db.commit()
+            return
+
+        from caf.caf.doctype.daily_production.cancellation import process_cancellations
+
+        process_cancellations(dp_name, "Daily Production", CHILD_DOCTYPE)
+
+        dp = frappe.get_doc("Daily Production", dp_name)
+        row = next((r for r in dp.production_table if r.name == item_id), None)
+        if row:
+            row.recipe_name = "No Cooking"
+            row.size = 0
+            row.produ_status = ""
+            row.number_of_pack = 0
+            row.production_type = ""
+            row.urgent_check = 0
+            row.recipe_note = ""
+            row.mr_reference = None
+            row.wo_list = None
+            row.wo_list_with_type = None
+            row.custom_wo_status = ""
+            for i in range(1, 8):
+                suffix = "" if i == 1 else f"_{i}"
+                row.set(f"pack_name{suffix}", None)
+                row.set(f"pack_qty{suffix}", 0)
+                row.set(f"pack_remark{suffix}", None)
+            dp.save(ignore_permissions=True)
+            frappe.db.commit()
+        else:
+            frappe.db.set_value(CHILD_DOCTYPE, item_id, "custom_wo_status", "Done")
+    except Exception:
+        frappe.log_error(title="Background cancellation failed", message=frappe.get_traceback())
+        frappe.db.set_value(CHILD_DOCTYPE, item_id, "custom_wo_status", "Failed")
+        frappe.db.commit()
+
+
+def _background_move_wo_migration(source_row_name, quality_data):
+    """Background worker: process WO migration after a Change Slot move."""
+    try:
+        row_data = frappe.db.get_value(
+            CHILD_DOCTYPE,
+            {"name": source_row_name},
+            ["parent", "recipe_name", "link_id", "mr_reference", "custom_wo_status"],
+            as_dict=True,
+        )
+        if not row_data or row_data.custom_wo_status != "Processing":
+            if row_data:
+                frappe.db.set_value(CHILD_DOCTYPE, source_row_name, "custom_wo_status", "")
+                frappe.db.commit()
+            return
+
+        from caf.caf.doctype.daily_production.rearrange_and_change_slot import (
+            _cancel_cook_pack_by_id,
+            _relink_quality_docs,
+            _cleanup_redundant_wips,
+        )
+        from caf.caf.doctype.daily_production.wo_helpers import get_wo_by_type
+        from frappe.utils import now_datetime
+
+        dp = frappe.get_doc("Daily Production", row_data.parent)
+        row = next((r for r in dp.production_table if r.name == source_row_name), None)
+        if not row:
+            frappe.db.set_value(CHILD_DOCTYPE, source_row_name, "custom_wo_status", "")
+            frappe.db.commit()
+            return
+
+        if row_data.mr_reference:
+            _cancel_cook_pack_by_id(row.link_id)
+
+        new_wos = dp.create_material_request_after_change_size(
+            row.recipe_name, [row]
+        )
+        _cleanup_redundant_wips(new_wos, row, CHILD_DOCTYPE, now_datetime())
+
+        if row_data.mr_reference:
+            new_cook_wo = get_wo_by_type(row.link_id, "Cook")
+            if new_cook_wo:
+                _relink_quality_docs(quality_data, new_cook_wo)
+
+        frappe.db.set_value(CHILD_DOCTYPE, source_row_name, "custom_wo_status", "Done")
+    except Exception:
+        frappe.log_error(title="Background move WO migration failed", message=frappe.get_traceback())
+        frappe.db.set_value(CHILD_DOCTYPE, source_row_name, "custom_wo_status", "Failed")
+        frappe.db.commit()
+
+
+def _background_create_mr(row_name, dp_name):
+    """Background worker: create MR + WOs for a single New Schedule row."""
+    try:
+        current = frappe.db.get_value(
+            CHILD_DOCTYPE, row_name, ["produ_status", "custom_wo_status"], as_dict=True
+        )
+        if not current or current.produ_status != "New Schedule":
+            if current:
+                frappe.db.set_value(CHILD_DOCTYPE, row_name, "custom_wo_status", "")
+                frappe.db.commit()
+            return
+
+        dp = frappe.get_doc("Daily Production", dp_name)
+        row = next((r for r in dp.production_table if r.name == row_name), None)
+        if not row or row.produ_status != "New Schedule":
+            frappe.db.set_value(CHILD_DOCTYPE, row_name, "custom_wo_status", "")
+            frappe.db.commit()
+            return
+
+        final = frappe.db.get_value(CHILD_DOCTYPE, row_name, "produ_status")
+        if final != "New Schedule":
+            frappe.db.set_value(CHILD_DOCTYPE, row_name, "custom_wo_status", "")
+            frappe.db.commit()
+            return
+
+        dp._process_new_schedules()
+        frappe.db.set_value(CHILD_DOCTYPE, row_name, "custom_wo_status", "Done")
+    except Exception:
+        frappe.log_error(title="Background MR creation failed", message=frappe.get_traceback())
+        frappe.db.set_value(CHILD_DOCTYPE, row_name, "custom_wo_status", "Failed")
+        frappe.db.commit()
+
+
+@frappe.whitelist()
+def process_dp_updates(item_id):
+    """Enqueue process_manual_updates on the parent DP in the background."""
+    dp_name = frappe.db.get_value(CHILD_DOCTYPE, {"name": item_id}, "parent")
+    if not dp_name:
+        return {"success": False, "message": "Item not found"}
+
+    dp = frappe.get_doc("Daily Production", dp_name)
+    if dp.docstatus != 0:
+        return {"success": False, "message": "DP is not in draft state"}
+
+    _set_rows_wo_status(dp, "Processing")
+    dp.save(ignore_permissions=True)
+    frappe.db.commit()
+
+    frappe.enqueue(
+        "caf.caf.page.production_schedule.production_schedule._background_process_dp",
+        queue="long",
+        timeout=600,
+        dp_name=dp_name,
+    )
+    return {"success": True, "message": _("Processing queued")}
+
+
+def _set_rows_wo_status(dp, status):
+    """Set custom_wo_status on every row in the DP."""
+    for row in dp.production_table:
+        if row.recipe_name != NO_COOKING:
+            row.custom_wo_status = status
+
+
+def _background_process_dp(dp_name):
+    """Background worker: runs process_manual_updates and updates row status."""
+    try:
+        dp = frappe.get_doc("Daily Production", dp_name)
+        if dp.docstatus != 0:
+            return
+        dp.process_manual_updates()
+        _set_rows_wo_status(dp, "Done")
+        dp.save(ignore_permissions=True)
+        frappe.db.commit()
+    except Exception:
+        frappe.log_error(title="Background DP processing failed", message=frappe.get_traceback())
+        try:
+            dp = frappe.get_doc("Daily Production", dp_name)
+            if dp.docstatus == 0:
+                _set_rows_wo_status(dp, "Failed")
+                dp.save(ignore_permissions=True)
+                frappe.db.commit()
+        except Exception:
+            pass
+        frappe.db.commit()
