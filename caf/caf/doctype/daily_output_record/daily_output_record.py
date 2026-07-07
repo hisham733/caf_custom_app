@@ -33,7 +33,6 @@ class DailyOutputRecord(Document):
         )
         return {"success": True, "message": "Processing started in background"}
 
-
     def _update_parent_status(self):
         all_done = all(row.status == "Done" for row in self.items)
         self.status = "Done" if all_done else "In Process"

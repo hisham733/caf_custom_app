@@ -705,8 +705,10 @@ def swap_recipes(source_id, target_id):
                 _get_quality_data_by_id,
                 _relink_quality_docs,
                 _swap_db_link_ids,
+                _cleanup_redundant_wips,
             )
             from caf.caf.doctype.daily_production.wo_helpers import get_wo_by_type
+            from frappe.utils import now_datetime
 
             qual_a = _get_quality_data_by_id(row_a.link_id)
             qual_b = _get_quality_data_by_id(row_b.link_id)
@@ -716,8 +718,11 @@ def swap_recipes(source_id, target_id):
             _cancel_cook_pack_by_id(row_a.link_id)
             _cancel_cook_pack_by_id(row_b.link_id)
 
-            dp.create_material_request_after_change_size(row_a.recipe_name, [row_a])
-            dp.create_material_request_after_change_size(row_b.recipe_name, [row_b])
+            new_wos_a = dp.create_material_request_after_change_size(row_a.recipe_name, [row_a])
+            new_wos_b = dp.create_material_request_after_change_size(row_b.recipe_name, [row_b])
+
+            _cleanup_redundant_wips(new_wos_a, row_a, CHILD_DOCTYPE, now_datetime())
+            _cleanup_redundant_wips(new_wos_b, row_b, CHILD_DOCTYPE, now_datetime())
 
             new_cook_a = get_wo_by_type(row_a.link_id, "Cook")
             new_cook_b = get_wo_by_type(row_b.link_id, "Cook")
