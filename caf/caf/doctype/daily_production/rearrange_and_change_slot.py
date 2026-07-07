@@ -94,14 +94,14 @@ def _migrate_db_link_ids(source_id: str, target_id: str) -> None:
 
 
 def _cancel_cook_pack_by_id(link_id: str) -> None:
-    """Cancel all active Cook and Pack WOs for a given link_id.
+    """Cancel all active Cook, Pack, and WIP WOs for a given link_id.
 
-    Gets active WOs via get_active_wos_by_link_id, filters to Cook/Pack
+    Gets active WOs via get_active_wos_by_link_id, filters to WIP/Cook/Pack
     types, then cancels (or deletes if draft) each one.
+    Prevents duplicate WIP WOs after recipe change / change slot.
     """
-    # FIXED: Changed from get_active_link_id_from_row to get_active_wos_by_link_id
     wos = get_active_wos_by_link_id(link_id)
-    cook_pack_wos = [wo for wo in wos if wo.get("custom_item_type") in ["Cook", "Pack"]]
+    cook_pack_wos = [wo for wo in wos if wo.get("custom_item_type") in ["WIP", "Cook", "Pack"]]
     if cook_pack_wos:
        for wo in cook_pack_wos:
         if not frappe.db.exists("Work Order", wo.name): continue
