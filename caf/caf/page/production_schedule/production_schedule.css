@@ -423,6 +423,31 @@
 	line-height: 1.5;
 }
 
+.schedule-item-wo-badge {
+	font-size: 8px;
+	font-weight: 700;
+	padding: 0 5px;
+	border-radius: 3px;
+	display: inline-flex;
+	align-items: center;
+	width: fit-content;
+	letter-spacing: 0.02em;
+	line-height: 1.6;
+	margin-top: 1px;
+}
+.schedule-item-wo-badge[data-value="Processing"] {
+	background: #f59e0b;
+	color: #fff;
+}
+.schedule-item-wo-badge[data-value="Done"] {
+	background: #22c55e;
+	color: #fff;
+}
+.schedule-item-wo-badge[data-value="Failed"] {
+	background: #ef4444;
+	color: #fff;
+}
+
 .schedule-item-size {
 	font-size: 10px;
 	font-weight: 700;

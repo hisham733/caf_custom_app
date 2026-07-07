@@ -190,11 +190,11 @@ class CustomMaterialRequest(MaterialRequest):
         total_input_qty = 0
         for bom_item in bom_items:
             qty_in_kg = self._convert_qty_to_kg(
-                qty      = bom_item.qty,
+                qty      = float(bom_item.qty),
                 uom      = bom_item.stock_uom or bom_item.uom,
                 item_code= bom_item.item_code,
             )
-            total_input_qty += qty_in_kg * batch_size
+            total_input_qty += float(qty_in_kg) * float(batch_size)
 
         return round(total_input_qty, 9)
 
