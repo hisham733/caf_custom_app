@@ -137,17 +137,19 @@ def get_week_data(year, week_number, mode):
 
     dp_names = {}
     day_has_dp = {}
+    dp_submit_refs = {}
 
     for day in days:
         dp_info = frappe.db.get_value(
             "Daily Production",
             {"required_by": getdate(day), "docstatus": target_docstatus},
-            ["name", "docstatus"],
+            ["name", "docstatus", "custom_submit_ref"],
             order_by="name desc",
             as_dict=True,
         )
         dp_names[day] = dp_info.name if dp_info else None
         day_has_dp[day] = dp_info is not None
+        dp_submit_refs[day] = dp_info.custom_submit_ref if dp_info else None
 
     day_labels = []
     for day in days:
@@ -250,6 +252,7 @@ def get_week_data(year, week_number, mode):
         "days": days,
         "day_labels": day_labels,
         "dp_names": dp_names,
+        "dp_submit_refs": dp_submit_refs,
         "schedule": schedule,
     }
 
@@ -347,8 +350,9 @@ def save_move_item(item_id, source_date, target_date, target_cooker, target_roun
             )
             _migrate_db_link_ids(source_id=old_link_id, target_id=source_row.link_id)
 
-            source_row.custom_wo_status = "Processing"
-            target_nc.custom_wo_status = "Processing"
+            if source_dp.custom_submit_ref:
+                source_row.custom_wo_status = "Processing"
+                target_nc.custom_wo_status = "Processing"
         else:
             new_nc = source_dp.append("production_table", {})
             new_nc.recipe_name = NO_COOKING
@@ -362,7 +366,7 @@ def save_move_item(item_id, source_date, target_date, target_cooker, target_roun
         source_dp.save(ignore_permissions=True)
         frappe.db.commit()
 
-        if swap_executed:
+        if swap_executed and source_dp.custom_submit_ref:
             frappe.enqueue(
                 "caf.caf.page.production_schedule.production_schedule._background_move_wo_migration",
                 queue="long",
@@ -451,8 +455,55 @@ def save_item_fields(item_id, fields):
 
 
 @frappe.whitelist()
+def process_day_dp(week_monday, day_index):
+    """Synchronously run process_manual_updates for one day's DP.
+
+    Called from the page's Create WO button in View mode. Runs all
+    change types (Change Slot, Rearrange, Recipe Change, New Schedule,
+    Cancelled) for that day. Freezes the page with loading overlay.
+
+    Args:
+        week_monday: Date string of the Monday
+        day_index: 0=Mon, 1=Tue, ..., 5=Sat
+
+    Returns:
+        Dict with success status
+    """
+    from datetime import timedelta
+
+    monday = getdate(week_monday)
+    day = monday + timedelta(days=int(day_index))
+
+    dp_name = frappe.db.get_value(
+        "Daily Production",
+        {"required_by": str(day), "docstatus": 1},
+        "name",
+        order_by="name desc",
+    )
+    if not dp_name:
+        return {"success": False, "message": _("No submitted DP for {0}").format(str(day))}
+
+    dp = frappe.get_doc("Daily Production", dp_name)
+    if dp.custom_submit_ref:
+        return {"success": False, "message": _("Work Orders already created for {0}").format(str(day))}
+
+    try:
+        dp.process_manual_updates()
+        return {
+            "success": True,
+            "message": _("Work Orders created for {0}").format(str(day)),
+        }
+    except Exception as e:
+        frappe.log_error(title="process_day_dp failed", message=frappe.get_traceback())
+        return {"success": False, "message": str(e)}
+
+
+@frappe.whitelist()
 def submit_week(week_monday):
     """Submit draft DPs that have status changes for the week Mon-Sat.
+
+    Sets skip_wo_creation flag so on_submit does NOT run process_manual_updates.
+    WO creation happens later via the Create WO button in View mode.
 
     Only submits DPs where at least one child row has a non-empty produ_status.
     Skips past days (before today).
@@ -470,32 +521,37 @@ def submit_week(week_monday):
     skipped_no_status = 0
     skipped_no_dp = 0
 
-    for day in days:
-        if day < today:
-            skipped_past += 1
-            continue
+    try:
+        frappe.flags.skip_wo_creation = True
 
-        dp_name = frappe.db.get_value(
-            "Daily Production",
-            {"required_by": day, "docstatus": 0},
-            "name",
-            order_by="name desc",
-        )
-        if not dp_name:
-            skipped_no_dp += 1
-            continue
+        for day in days:
+            if day < today:
+                skipped_past += 1
+                continue
 
-        dp = frappe.get_doc("Daily Production", dp_name)
-        has_status = any(row.produ_status for row in dp.production_table)
-        if not has_status:
-            skipped_no_status += 1
-            continue
+            dp_name = frappe.db.get_value(
+                "Daily Production",
+                {"required_by": day, "docstatus": 0},
+                "name",
+                order_by="name desc",
+            )
+            if not dp_name:
+                skipped_no_dp += 1
+                continue
 
-        try:
-            dp.submit()
-            submitted += 1
-        finally:
-            frappe.flags.pop('from_schedule_page', None)
+            dp = frappe.get_doc("Daily Production", dp_name)
+            has_status = any(row.produ_status for row in dp.production_table)
+            if not has_status:
+                skipped_no_status += 1
+                continue
+
+            try:
+                dp.submit()
+                submitted += 1
+            finally:
+                frappe.flags.pop('from_schedule_page', None)
+    finally:
+        frappe.flags.pop('skip_wo_creation', None)
 
     if submitted == 0:
         return {
@@ -562,7 +618,7 @@ def add_recipe(day, recipe, size, cooker, pack_count, round_num, **kwargs):
     row.production_plane = kwargs.get("production_plane") or ""
     row.wo_list_with_type = kwargs.get("wo_list_with_type") or ""
 
-    if row.produ_status == "New Schedule":
+    if row.produ_status == "New Schedule" and dp.custom_submit_ref:
         row.custom_wo_status = "Processing"
 
     for i in range(1, 8):
@@ -578,8 +634,9 @@ def add_recipe(day, recipe, size, cooker, pack_count, round_num, **kwargs):
     dp.save(ignore_permissions=True)
     frappe.db.commit()
 
-    # Create MR + WOs in background if status is New Schedule
-    if row.produ_status == "New Schedule":
+    # Create MR + WOs in background only for submitted DPs (already had WO run once)
+    # For draft DPs, New Schedule rows are processed by process_day_dp → process_manual_updates
+    if row.produ_status == "New Schedule" and dp.custom_submit_ref:
         frappe.enqueue(
             "caf.caf.page.production_schedule.production_schedule._background_create_mr",
             queue="long",
@@ -695,44 +752,21 @@ def swap_recipes(source_id, target_id):
     dp.save(ignore_permissions=True)
     frappe.db.commit()
 
-    # If WOs exist, swap link_ids, cancel old Cook/Pack, recreate for both
-    has_wos_a = bool(row_a.mr_reference)
-    has_wos_b = bool(row_b.mr_reference)
-    if has_wos_a or has_wos_b:
-        try:
-            from caf.caf.doctype.daily_production.rearrange_and_change_slot import (
-                _cancel_cook_pack_by_id,
-                _get_quality_data_by_id,
-                _relink_quality_docs,
-                _swap_db_link_ids,
-                _cleanup_redundant_wips,
-            )
-            from caf.caf.doctype.daily_production.wo_helpers import get_wo_by_type
-            from frappe.utils import now_datetime
+    has_wos = bool(row_a.mr_reference) or bool(row_b.mr_reference)
+    if has_wos and dp.custom_submit_ref:
+        row_a.custom_wo_status = "Processing"
+        row_b.custom_wo_status = "Processing"
+        dp.save(ignore_permissions=True)
+        frappe.db.commit()
 
-            qual_a = _get_quality_data_by_id(row_a.link_id)
-            qual_b = _get_quality_data_by_id(row_b.link_id)
-
-            _swap_db_link_ids(row_a.link_id, row_b.link_id)
-
-            _cancel_cook_pack_by_id(row_a.link_id)
-            _cancel_cook_pack_by_id(row_b.link_id)
-
-            new_wos_a = dp.create_material_request_after_change_size(row_a.recipe_name, [row_a])
-            new_wos_b = dp.create_material_request_after_change_size(row_b.recipe_name, [row_b])
-
-            _cleanup_redundant_wips(new_wos_a, row_a, CHILD_DOCTYPE, now_datetime())
-            _cleanup_redundant_wips(new_wos_b, row_b, CHILD_DOCTYPE, now_datetime())
-
-            new_cook_a = get_wo_by_type(row_a.link_id, "Cook")
-            new_cook_b = get_wo_by_type(row_b.link_id, "Cook")
-
-            if new_cook_a:
-                _relink_quality_docs(qual_b, new_cook_a)
-            if new_cook_b:
-                _relink_quality_docs(qual_a, new_cook_b)
-        except Exception:
-            frappe.log_error(title="Swap WO processing failed")
+        frappe.enqueue(
+            "caf.caf.page.production_schedule.production_schedule._background_swap_recipes",
+            queue="long",
+            timeout=600,
+            row_a_name=row_a.name,
+            row_b_name=row_b.name,
+        )
+        return {"success": True, "message": "Rearranging — background processing started"}
 
     return {"success": True, "message": "Recipes swapped"}
 
@@ -937,6 +971,10 @@ def process_recipe_change(item_id):
     if row_data.produ_status != "Recipe Change" or not row_data.mr_reference:
         return {"success": False, "message": "No recipe change needed"}
 
+    dp_custom_submit_ref = frappe.db.get_value("Daily Production", row_data.parent, "custom_submit_ref")
+    if not dp_custom_submit_ref:
+        return {"success": True, "message": _("Saved — will be processed when Work Orders are created")}
+
     frappe.db.set_value(CHILD_DOCTYPE, item_id, "custom_wo_status", "Processing")
 
     frappe.enqueue(
@@ -966,17 +1004,19 @@ def cancel_item(item_id):
         return {"success": False, "message": "Row not found in DP"}
 
     row.produ_status = "Cancelled"
-    row.custom_wo_status = "Processing"
+    if dp.custom_submit_ref:
+        row.custom_wo_status = "Processing"
     dp.save(ignore_permissions=True)
     frappe.db.commit()
 
-    frappe.enqueue(
-        "caf.caf.page.production_schedule.production_schedule._background_cancel_item",
-        queue="long",
-        timeout=600,
-        item_id=item_id,
-        dp_name=dp_name,
-    )
+    if dp.custom_submit_ref:
+        frappe.enqueue(
+            "caf.caf.page.production_schedule.production_schedule._background_cancel_item",
+            queue="long",
+            timeout=600,
+            item_id=item_id,
+            dp_name=dp_name,
+        )
     return {"success": True, "message": _("Item cancelled")}
 
 
@@ -1058,6 +1098,78 @@ def _background_cancel_item(item_id, dp_name):
     except Exception:
         frappe.log_error(title="Background cancellation failed", message=frappe.get_traceback())
         frappe.db.set_value(CHILD_DOCTYPE, item_id, "custom_wo_status", "Failed")
+        frappe.db.commit()
+
+
+def _background_swap_recipes(row_a_name, row_b_name):
+    """Background worker: process WO swap, cancel, recreate for a Rearrange pair."""
+    try:
+        data_a = frappe.db.get_value(
+            CHILD_DOCTYPE, row_a_name,
+            ["parent", "custom_wo_status", "mr_reference", "link_id", "recipe_name"],
+            as_dict=True,
+        )
+        data_b = frappe.db.get_value(
+            CHILD_DOCTYPE, row_b_name,
+            ["parent", "custom_wo_status", "mr_reference", "link_id", "recipe_name"],
+            as_dict=True,
+        )
+        if (not data_a or not data_b or
+            data_a.custom_wo_status != "Processing" or data_b.custom_wo_status != "Processing"):
+            for name in [row_a_name, row_b_name]:
+                cur = frappe.db.get_value(CHILD_DOCTYPE, name, "custom_wo_status")
+                if cur == "Processing":
+                    frappe.db.set_value(CHILD_DOCTYPE, name, "custom_wo_status", "")
+                    frappe.db.commit()
+            return
+
+        dp = frappe.get_doc("Daily Production", data_a.parent)
+        row_a = next((r for r in dp.production_table if r.name == row_a_name), None)
+        row_b = next((r for r in dp.production_table if r.name == row_b_name), None)
+        if not row_a or not row_b:
+            for name in [row_a_name, row_b_name]:
+                frappe.db.set_value(CHILD_DOCTYPE, name, "custom_wo_status", "")
+                frappe.db.commit()
+            return
+
+        from caf.caf.doctype.daily_production.rearrange_and_change_slot import (
+            _cancel_cook_pack_by_id,
+            _get_quality_data_by_id,
+            _relink_quality_docs,
+            _swap_db_link_ids,
+            _cleanup_redundant_wips,
+        )
+        from caf.caf.doctype.daily_production.wo_helpers import get_wo_by_type
+        from frappe.utils import now_datetime
+
+        qual_a = _get_quality_data_by_id(row_a.link_id)
+        qual_b = _get_quality_data_by_id(row_b.link_id)
+
+        _swap_db_link_ids(row_a.link_id, row_b.link_id)
+
+        _cancel_cook_pack_by_id(row_a.link_id)
+        _cancel_cook_pack_by_id(row_b.link_id)
+
+        new_wos_a = dp.create_material_request_after_change_size(row_a.recipe_name, [row_a])
+        new_wos_b = dp.create_material_request_after_change_size(row_b.recipe_name, [row_b])
+
+        _cleanup_redundant_wips(new_wos_a, row_a, CHILD_DOCTYPE, now_datetime())
+        _cleanup_redundant_wips(new_wos_b, row_b, CHILD_DOCTYPE, now_datetime())
+
+        new_cook_a = get_wo_by_type(row_a.link_id, "Cook")
+        new_cook_b = get_wo_by_type(row_b.link_id, "Cook")
+
+        if new_cook_a:
+            _relink_quality_docs(qual_b, new_cook_a)
+        if new_cook_b:
+            _relink_quality_docs(qual_a, new_cook_b)
+
+        frappe.db.set_value(CHILD_DOCTYPE, row_a_name, "custom_wo_status", "Done")
+        frappe.db.set_value(CHILD_DOCTYPE, row_b_name, "custom_wo_status", "Done")
+    except Exception:
+        frappe.log_error(title="Background swap recipes failed", message=frappe.get_traceback())
+        for name in [row_a_name, row_b_name]:
+            frappe.db.set_value(CHILD_DOCTYPE, name, "custom_wo_status", "Failed")
         frappe.db.commit()
 
 

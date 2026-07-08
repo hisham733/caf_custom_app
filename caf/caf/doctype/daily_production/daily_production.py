@@ -154,9 +154,10 @@ class DailyProduction(Document):
     def on_submit(self):
             """Entry point after DB commit.
 
-            If custom_submit_ref is already set, runs process_manual_updates().
+            If custom_submit_ref is already set AND the skip_wo_creation flag
+            is NOT active, runs process_manual_updates().
             """
-            if self.custom_submit_ref:
+            if self.custom_submit_ref and not frappe.flags.get("skip_wo_creation"):
                 self.process_manual_updates()
                 
     @frappe.whitelist()

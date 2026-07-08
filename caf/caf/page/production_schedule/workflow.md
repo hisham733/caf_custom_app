@@ -68,6 +68,80 @@
 
 The endpoint returns an error for cross-day moves.
 
+## Swap (Rearrange) Flow (`swap_recipes`)
+
+Swapping is triggered when dragging a recipe onto **another recipe** (not onto an empty No Cooking slot). Both rows must have recipes.
+
+### Synchronous phase (fast, no UI freeze)
+
+1. Locate both rows in the same draft DP
+2. Identify `SLOT_FIELDS` (static to position, never swapped): `name, parent, parentfield, parenttype, doctype, idx, link_id, recipe_cook_workstaion, recipe_cook_round, required_date`
+3. Compute `swappable` fields: all child table fields **except** SLOT_FIELDS
+4. Swap every swappable field between the two rows:
+   - `recipe_name`, `size`, `produ_status`, `number_of_pack`, all pack fields, etc.
+5. Save DP, commit
+6. If **either** row has an `mr_reference` (existing WOs):
+   - Set both rows' `custom_wo_status = "Processing"`
+   - Save DP again, commit
+   - Enqueue `_background_swap_recipes(row_a_name, row_b_name)` to `long` queue, timeout 600s
+   - Return `"Rearranging — background processing started"` immediately
+7. If **neither** row has `mr_reference`: return `"Recipes swapped"` (no WO work needed)
+
+### Client-side (JS)
+
+- **No `freeze: true`** — the swap call returns instantly
+- Board reloads immediately (shows swapped recipes with "Processing" badge)
+- `_poll_row_status` polls every 5s until `wo_status` is no longer "Processing", then reloads the board
+
+### Background worker (`_background_swap_recipes`)
+
+```
+Guard 1: Read both rows' custom_wo_status from DB
+         → If either ≠ "Processing": clear both to "", commit, return
+
+Guard 2: Load DP, get both row docs from memory
+         → If either missing: clear both to "", commit, return
+
+Step 1: Capture quality data (Quality Reviews + Weight Records)
+        qual_a = _get_quality_data_by_id(row_a.link_id)   ← pre-swap link_id
+        qual_b = _get_quality_data_by_id(row_b.link_id)
+
+Step 2: _swap_db_link_ids(row_a.link_id, row_b.link_id)
+        SQL: WOs at id_a → temp → id_a(gets id_b's WOs), id_b → id_b(gets id_a's WOs)
+
+Step 3: Cancel Cook+Pack at both link_ids
+        _cancel_cook_pack_by_id(row_a.link_id)  ← cancels old-B's Cook/Pack now at A's slot
+        _cancel_cook_pack_by_id(row_b.link_id)  ← cancels old-A's Cook/Pack now at B's slot
+        (WIP WOs are NOT cancelled — they survive and stay in place)
+
+Step 4: Recreate WOs for both rows
+        new_wos_a = dp.create_material_request_after_change_size(row_a.recipe_name, [row_a])
+        new_wos_b = dp.create_material_request_after_change_size(row_b.recipe_name, [row_b])
+        → Creates fresh WIP + Cook + Pack WOs at each link_id
+
+Step 5: Clean up redundant WIPs
+        _cleanup_redundant_wips(new_wos_a, row_a, …)  ← deletes NEW WIP (old WIP survives)
+        _cleanup_redundant_wips(new_wos_b, row_b, …)
+
+Step 6: Relink quality docs cross-wise
+        new_cook_a = get_wo_by_type(row_a.link_id, "Cook")
+        new_cook_b = get_wo_by_type(row_b.link_id, "Cook")
+        _relink_quality_docs(qual_b, new_cook_a)  ← old-B's quality → A's new Cook WO
+        _relink_quality_docs(qual_a, new_cook_b)  ← old-A's quality → B's new Cook WO
+
+Success: set both rows custom_wo_status = "Done"
+Failure: set both rows custom_wo_status = "Failed", commit
+```
+
+### Link ID Ownership After Swap
+
+| Before Swap | After Swap |
+|---|---|
+| Slot A (link_id=X) has recipe Alpha, with WOs at link_id=X | Slot A (link_id=X) has recipe Beta |
+| Slot B (link_id=Y) has recipe Beta, with WOs at link_id=Y | Slot B (link_id=Y) has recipe Alpha |
+
+After `_swap_db_link_ids`: WOs at X now belong to Beta's old slot, WOs at Y now belong to Alpha's old slot. After cancel + recreate: each slot gets fresh new WOs with the correct recipe. Old WIP WOs survive in place.
+
 ## Edit Dialog Flow (`save_item_fields`)
 
 1. Frontend calls `save_item_fields(item_id, fields)` — all fields sent in one batch
@@ -99,7 +173,8 @@ The endpoint returns an error for cross-day moves.
 |----------------|-------------|---------|
 | `_background_create_mr` | `add_recipe` with "New Schedule" | Creates MR + WOs for the new row |
 | `_background_process_dp` | `process_dp_updates` (after edit save) | Runs `process_manual_updates()` |
-| `_background_move_wo_migration` | `save_move_item` (after swap) | Cancels old Cook/Pack WOs, recreates for new slot, relinks quality docs |
+| `_background_move_wo_migration` | `save_move_item` (after change slot) | Cancels old Cook/Pack WOs, recreates for new slot, relinks quality docs |
+| `_background_swap_recipes` | `swap_recipes` (after rearrange) | Swaps link_ids, cancels old Cook/Pack for both rows, recreates, cleans up WIPs, relinks quality cross-wise |
 | `_background_change_recipe` | `process_recipe_change` (after recipe edit) | Cancels existing Cook/Pack, recreates for new recipe |
 | `_background_cancel_item` | `cancel_item` | Processes WO cancellations, resets row to No Cooking |
 
@@ -124,6 +199,19 @@ The endpoint returns an error for cross-day moves.
 - If MR existed: finds new Cook WO and relinks captured quality data
 - Sets `custom_wo_status = "Done"` on success, `"Failed"` on error
 
+### `_background_swap_recipes`
+
+- Same pattern as native DP's `_process_one_switch_pair` (rearrange_and_change_slot.py)
+- Guard: re-reads both rows' `custom_wo_status` from DB — must be "Processing"
+- Guard early-return: clears status to `""` + commit on both rows
+- Captures quality data from both link_ids (before swap/cancel)
+- `_swap_db_link_ids`: SQL-level swap of WO `custom_link_id` between slots
+- `_cancel_cook_pack_by_id` on both link_ids (Cook+Pack only, WIP untouched)
+- `create_material_request_after_change_size` on both rows (creates MR + fresh WOs)
+- `_cleanup_redundant_wips` on both rows (deletes newly created WIP WOs, old WIP survives)
+- Relinks quality docs cross-wise: old-A quality → new-B Cook WO, old-B quality → new-A Cook WO
+- Sets both rows `custom_wo_status = "Done"` on success, `"Failed"` on error with commit
+
 ### `_background_change_recipe`
 
 - Loads DP, cancels existing Cook/Pack via `_cancel_cook_pack_by_id`
@@ -145,6 +233,7 @@ The endpoint returns an error for cross-day moves.
 - Finds both rows by `custom_pair_id`
 - Swaps all swappable fields back to original positions
 - Clears `produ_status` and `custom_pair_id` on both rows
+- **Note**: Does NOT reverse WO changes — WOs remain at their post-swap link_ids
 
 ### Change Slot — Same Day
 
@@ -197,6 +286,7 @@ The endpoint returns an error for cross-day moves.
 | User clicks Save twice rapidly | Batch save is idempotent; background jobs check current row state on load |
 | Cancel + re-add same slot before bg cancel completes | Cancel clears the row to No Cooking; re-add checks for existing No Cooking row |
 | Recipe change submitted before WO reprocessing | `custom_wo_status = "Processing"` set synchronously; submit checks status |
+| User swaps two recipes in rapid succession | `_background_swap_recipes` guards on `custom_wo_status = "Processing"`; second swap waits for first to finish or gets guard-cleared |
 
 ## Relevant Files
 
