@@ -22,6 +22,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			days: [],
 			day_labels: [],
 			dp_names: {},
+			dp_submit_refs: {},
 			schedule: {},
 			past_days: [],
 			ws_problems: [],
@@ -171,6 +172,12 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			me._show_inline_edit(cell, row.dataset.workstation, day, field);
 		});
 
+		m.on("click", ".schedule-wo-btn", function () {
+			if (this.disabled) return;
+			var day = this.dataset.day;
+			me._create_work_order_for_day(day);
+		});
+
 	}
 
 	_read_inputs() {
@@ -278,6 +285,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 						me.state.days = r.message.days || [];
 						me.state.day_labels = r.message.day_labels || [];
 						me.state.dp_names = r.message.dp_names || {};
+						me.state.dp_submit_refs = r.message.dp_submit_refs || {};
 						me.state.schedule = r.message.schedule || {};
 
 						var today_str = me._fmt(new Date());
@@ -352,12 +360,29 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			var cls = has_dp ? " schedule-has-dp" : " schedule-no-dp";
 			var is_past = me.state.past_days.indexOf(day) !== -1;
 			var past_cls = is_past ? " schedule-past-day" : "";
+			var label_html = this.state.day_labels[di];
+
+			if (me.state.mode === "View Schedule") {
+				var submit_ref = (me.state.dp_submit_refs && me.state.dp_submit_refs[day]) || "";
+				var disabled = submit_ref ? " disabled" : "";
+				var btn_text = "Create WO";
+				if (submit_ref) {
+					var parts = submit_ref.split("-");
+					var serial = parts[parts.length - 1];
+					btn_text = "Create WO (" + serial + ")";
+				}
+				label_html += '<br><button class="btn btn-xs btn-primary schedule-wo-btn"' +
+					disabled +
+					' data-day="' + day + '"' +
+					'>' + btn_text + '</button>';
+			}
+
 			html +=
 				'<th colspan="5" class="schedule-day-header' +
 				cls +
 				past_cls +
 				'" scope="colgroup">' +
-				this.state.day_labels[di] +
+				label_html +
 				"</th>";
 		}
 		html += "</tr>";
@@ -992,13 +1017,12 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 		frappe.call({
 			method: "caf.caf.page.production_schedule.production_schedule.swap_recipes",
 			args: { source_id: src_id, target_id: tgt_id },
-			freeze: true,
-			freeze_message: __("Swapping…"),
 			callback: function (r) {
 				if (r.message && r.message.success) {
 					frappe.show_alert({ message: r.message.message, indicator: "green" });
 					me._set_metabase_cookie();
 					me._load_week();
+					me._poll_row_status(src_id, function () { me._load_week(); });
 				} else {
 					frappe.show_alert({ message: __("Swap failed — reloading."), indicator: "red" });
 					me._load_week();
@@ -1943,6 +1967,35 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 					error: function (err) {
 						me._set_status(__("Submit failed."));
 						console.error(err);
+					},
+				});
+			}
+		);
+	}
+
+	_create_work_order_for_day(day_str) {
+		var me = this;
+		var di = this.state.days.indexOf(day_str);
+		if (di < 0) return;
+		frappe.confirm(
+			__("Create Work Orders for {0}? This will process all changes (New Schedule, Rearrange, Change Slot, Cancelled) for that day.", [this.state.day_labels[di]]),
+			function () {
+				frappe.call({
+					method: "caf.caf.page.production_schedule.production_schedule.process_day_dp",
+					args: {
+						week_monday: me._fmt(me.state.week_monday),
+						day_index: di,
+					},
+					freeze: true,
+					freeze_message: __("Creating Work Orders…"),
+					callback: function (r) {
+						if (r.message && r.message.success) {
+							frappe.show_alert({ message: r.message.message, indicator: "green" });
+							me._set_metabase_cookie();
+							me._load_week();
+						} else {
+							frappe.show_alert({ message: r.message ? r.message.message : __("Failed"), indicator: "orange" });
+						}
 					},
 				});
 			}
