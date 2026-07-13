@@ -990,8 +990,24 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 		if (src_ws === tgt_ws && src_day === tgt_day && src_round === tgt_round) return;
 
 		if (src_day !== tgt_day) {
-			frappe.show_alert({ message: __("Cross-day moves are not allowed."), indicator: "red" });
-			me._load_week();
+			var src_ref = me.state.dp_submit_refs && me.state.dp_submit_refs[src_day];
+			var tgt_ref = me.state.dp_submit_refs && me.state.dp_submit_refs[tgt_day];
+			if (src_ref || tgt_ref) {
+				frappe.show_alert({
+					message: __("Cross-day moves require both days to have no Work Orders."),
+					indicator: "red"
+				});
+				me._load_week();
+				return;
+			}
+			var other = $(to_slot).children(".schedule-item").not(el).filter(function () {
+				return $(this).data("recipe");
+			}).first();
+			if (other.length) {
+				this._swap_recipes(from_slot, to_slot, el, other[0]);
+			} else {
+				this._do_move_item(el, from_slot, to_slot);
+			}
 			return;
 		}
 

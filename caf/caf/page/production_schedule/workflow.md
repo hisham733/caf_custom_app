@@ -64,9 +64,22 @@
 11. DP is saved
 12. `_background_move_wo_migration` enqueued (cancels Cook/Pack for new link_id, recreates, relinks quality docs)
 
-### Cross-day moves — **not allowed**
+### Cross-day moves
 
-The endpoint returns an error for cross-day moves.
+Cross-day moves are allowed when **neither** the source DP nor the target DP has Work Orders created (`custom_submit_ref` is empty on both).
+
+**Block rule**: If either DP has `custom_submit_ref` filled, the cross-day move is rejected with: _"Both days must have no Work Orders to move across days"_.
+
+**Move to empty slot**:
+1. Frontend checks `dp_submit_refs` for both days — blocks if either has WOs
+2. Backend fetches target DP (draft, docstatus=0)
+3. Backend validates neither DP has `custom_submit_ref`
+4. Source row is cleared to "No Cooking" (keeps its link_id and slot position), no status set
+5. Target "No Cooking" row receives the recipe data (keeps its own link_id and slot position)
+6. Target row gets `produ_status = "Change Slot"`; source row gets no status
+7. No background WO processing needed (no WOs exist)
+
+**Rearrange (swap two recipes)**: Also allowed across days under the same rule — both DPs must have no WOs. Simple data swap with no status or background processing.
 
 ## Swap (Rearrange) Flow (`swap_recipes`)
 
@@ -270,7 +283,7 @@ After `_swap_db_link_ids`: WOs at X now belong to Beta's old slot, WOs at Y now 
 |----------|-----------|
 | Batch save (`save_item_fields`) | Sequential per-field saves caused inter-field validation races (e.g., `number_of_pack` saved before `pack_name`) |
 | link_id static to slot, not recipe | Allows undo, quality doc relinking, and WO tracking by slot position |
-| No cross-day moves | Prevents complex multi-DP sync issues; users must use separate weekly view |
+| Cross-day moves gated on WOs | Prevents complex WO migration across DPs; only allowed when neither DP has WOs |
 | All WO processing enqueued | UI never blocks; errors set `custom_wo_status = "Failed"` |
 | Row reset to No Cooking after cancel | Frees the slot for new schedules without requiring page reload |
 | `document.activeElement.blur()` before save | Forces Frappe control finalization for typed-but-not-blurred values |

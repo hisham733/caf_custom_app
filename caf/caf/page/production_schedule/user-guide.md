@@ -89,7 +89,9 @@ After typing in any field, click elsewhere or tab out before clicking **Save**. 
 6. Work Orders are migrated and reprocessed in the background
 
 **Rules:**
-- You can only move recipes within the **same day** (cross-day moves are not supported)
+- You can only move recipes within the **same day** if Work Orders have been created for either day
+- Cross-day moves are allowed when neither day has Work Orders created
+- Cross-day rearranges (swapping two recipes across days) are also allowed when neither day has Work Orders
 - The recipe swaps position with the "No Cooking" placeholder at the target slot
 - The slot's original workstation and round are preserved
 
@@ -163,7 +165,7 @@ After typing in any field, click elsewhere or tab out before clicking **Save**. 
 |-------|-------------|----------|
 | Save button does nothing | Field not blurred | Click another field first, then Save |
 | Background processing stuck | RQ worker not running | Contact admin to start `bench worker` |
-| Drag-drop doesn't work | Cross-day move attempted | Only same-day moves are allowed |
+| Drag-drop doesn't work | Cross-day move attempted with WOs | Both days must have no Work Orders for cross-day moves |
 | Recipe not showing after add | Page needs refresh | Reload the page |
 | "Failed" status on card | Background job error | Check error logs, retry the operation |
 | "No Cooking" appears after cancel | Cancel completed normally | Slot is free for new recipe |

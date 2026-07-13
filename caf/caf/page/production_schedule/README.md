@@ -26,6 +26,7 @@ Fryer 1  | ...                  | ...                |
 - **R1/R2/R3 cells**: Recipe name + status emoji + size badge
 - **Note/Pack**: Combined recipe notes and pack remarks per workstation/day
 - **Mode toggle**: Edit Schedule (draft DPs) / View Schedule (submitted DPs)
+- **Cross-day moves**: Allowed when neither DP has Work Orders created
 
 ## Mode Behavior
 
