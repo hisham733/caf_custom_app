@@ -507,7 +507,10 @@ doc_events = {
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
 
+after_migrate = ["caf.setup.add_manufacturing_fields"]
+
 # Fixtures
-# fixtures = [
-#     {"dt": "Custom Field", "filters": [["module", "=", "Caf"]]},
-# ]
+fixtures = [
+    {"dt": "Property Setter"},
+    {"dt": "Custom Field"},
+]
