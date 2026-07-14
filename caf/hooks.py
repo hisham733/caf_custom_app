@@ -25,7 +25,8 @@ doctype_js = {
     "Leave Application": "public/js/leave_application.js",
     "BOM":"public/js/bom.js",
     "Purchase Receipt":"public/js/purchase_receipt.js",
-    "Material Request":"public/js/material_request.js"
+    "Material Request":"public/js/material_request.js",
+    "Task":"public/js/task.js"
 }
 override_whitelisted_methods = {
     "erpnext.manufacturing.doctype.production_plan.production_plan.combine_subassembly_items": "caf.caf.overrides.production_plan.combine_subassembly_items",
