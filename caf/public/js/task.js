@@ -2,8 +2,8 @@ frappe.ui.form.on("Task", {
     refresh: function (frm) {
         if (frm.doc.docstatus === 0 && frm.doc.custom_macequiitem) {
             frm.add_custom_button(__('Part Log'), function () {
-                fetch_maintenance_items(frm);
-            }).addClass("btn-primary-dark");
+            fetch_maintenance_items(frm);
+            }).addClass("btn-primary-dark").css("font-weight", "bold");
         }
     },
 });
