@@ -272,16 +272,14 @@
 }
 
 /* each day column color */
-.schedule-table tbody td:nth-child(n+2):nth-child(-n+7)   { background: rgba(59,130,246,0.03); }  /* Mon */
-.schedule-table tbody td:nth-child(n+8):nth-child(-n+13)  { background: rgba(34,197,94,0.03); }  /* Tue */
-.schedule-table tbody td:nth-child(n+14):nth-child(-n+19) { background: rgba(168,85,247,0.03); } /* Wed */
-.schedule-table tbody td:nth-child(n+20):nth-child(-n+25) { background: rgba(234,179,8,0.03); }  /* Thu */
-.schedule-table tbody td:nth-child(n+26):nth-child(-n+31) { background: rgba(249,115,22,0.03); } /* Fri */
-.schedule-table tbody td:nth-child(n+32):nth-child(-n+37) { background: rgba(239,68,68,0.03); }  /* Sat */
+.schedule-table tbody td:nth-child(n+2):nth-child(-n+6)   { background: rgba(59,130,246,0.07); }  /* Mon */
+.schedule-table tbody td:nth-child(n+7):nth-child(-n+11)  { background: rgba(34,197,94,0.07); }  /* Tue */
+.schedule-table tbody td:nth-child(n+12):nth-child(-n+16) { background: rgba(168,85,247,0.07); } /* Wed */
+.schedule-table tbody td:nth-child(n+17):nth-child(-n+21) { background: rgba(234,179,8,0.07); }  /* Thu */
+.schedule-table tbody td:nth-child(n+22):nth-child(-n+26) { background: rgba(249,115,22,0.07); } /* Fri */
+.schedule-table tbody td:nth-child(n+27):nth-child(-n+31) { background: rgba(239,68,68,0.07); }  /* Sat */
 
-.schedule-table tbody tr:hover td {
-	background: rgba(36, 144, 239, 0.02);
-}
+/* removed: tr:hover td was overriding per-day colors */
 
 /* sticky workstation label */
 .schedule-ws-label {
