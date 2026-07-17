@@ -194,6 +194,7 @@ def get_week_data(year, week_number, mode):
                 "number_of_pack", "recipe_note", "production_type",
                 "recipe_cook_time", "custom_yield", "link_id", "custom_pair_id",
                 "mr_reference", "production_plane", "urgent_check",
+                "custom_wo_status",
                 "pack_remark", "pack_remark_2", "pack_remark_3",
                 "pack_remark_4", "pack_remark_5", "pack_remark_6", "pack_remark_7",
                 "pack_name", "pack_name_2", "pack_name_3",
@@ -261,9 +262,9 @@ def get_week_data(year, week_number, mode):
 def save_move_item(item_id, source_date, target_date, target_cooker, target_round=None):
     """Move a child row between cookers, rounds, or DPs.
 
-    Workstation, round, and link_id are static to the slot — the recipe
-    inherits the target slot's values, and the No Cooking placeholder
-    inherits the source slot's values. Both slots are marked "Change Slot".
+    No WOs: recipe data moves, status preserved, ws/round/link_id stay static to slot.
+    Has WOs (same-day only): ws/round/link_id swap, "Change Slot" status, WO migration.
+    Cross-day: only allowed when neither DP has WOs. Recipe data moves, status preserved.
 
     Args:
         item_id: Child table row name
@@ -292,13 +293,11 @@ def save_move_item(item_id, source_date, target_date, target_cooker, target_roun
             break
     if source_row is None:
         return {"success": False, "message": "Source row not found"}
+    if source_row.custom_wo_status == "Processing":
+        return {"success": False, "message": "Work Orders are being processed. Please wait."}
 
-    # Same day: swap positions with the No Cooking row at target slot
+    # Same day: move recipe between slots
     if source_date == target_date:
-        old_ws = source_row.recipe_cook_workstaion
-        old_round = source_row.recipe_cook_round
-        old_link_id = source_row.link_id
-
         target_nc = None
         for r in source_dp.production_table:
             if (str(r.recipe_cook_workstaion or "") == str(target_cooker) and
@@ -308,57 +307,114 @@ def save_move_item(item_id, source_date, target_date, target_cooker, target_roun
                 target_nc = r
                 break
 
-        # Recipe row inherits target slot's static values
-        source_row.recipe_cook_workstaion = target_cooker
-        source_row.recipe_cook_round = int(target_round)
+        if not target_nc:
+            new_nc = source_dp.append("production_table", {})
+            new_nc.recipe_name = NO_COOKING
+            new_nc.recipe_cook_workstaion = target_cooker
+            new_nc.recipe_cook_round = int(target_round)
+            new_nc.required_date = source_date
+            target_nc = new_nc
 
-        pair_id = None
-        swap_executed = False
+        has_wos = bool(source_dp.custom_submit_ref)
 
-        if target_nc:
-            # No Cooking row inherits source slot's static values
+        if has_wos:
+            # ── Has WOs: swap ws/round/link_id + "Change Slot" + WO migration ──
+            old_ws = source_row.recipe_cook_workstaion
+            old_round = source_row.recipe_cook_round
+            old_link_id = source_row.link_id
+
+            source_row.recipe_cook_workstaion = target_cooker
+            source_row.recipe_cook_round = int(target_round)
+
             target_nc.recipe_cook_workstaion = old_ws
             target_nc.recipe_cook_round = old_round
 
-            # Assign new link_id if this slot has never been used
             if not target_nc.link_id:
                 target_nc.link_id = make_autoname("R-.YYYY.-.#####")
 
-            # Swap link_ids (static to slot, not recipe)
             target_link_id = target_nc.link_id
             target_nc.link_id = old_link_id
             source_row.link_id = target_link_id
 
-            # Mark both as Change Slot with shared pair_id
             from frappe.utils import now_datetime
             pair_id = now_datetime().strftime("%Y%m%d%H%M%S%f")
             source_row.produ_status = "Change Slot"
             target_nc.produ_status = "Change Slot"
             source_row.custom_pair_id = pair_id
             target_nc.custom_pair_id = pair_id
-            swap_executed = True
 
-            # Capture quality data BEFORE WO migration
             from caf.caf.doctype.daily_production.rearrange_and_change_slot import (
                 _get_quality_data_by_id,
             )
             quality_data = _get_quality_data_by_id(old_link_id)
 
-            # Migrate WOs from old link_id to new
             from caf.caf.doctype.daily_production.rearrange_and_change_slot import (
                 _migrate_db_link_ids,
             )
             _migrate_db_link_ids(source_id=old_link_id, target_id=source_row.link_id)
 
-            if source_dp.custom_submit_ref:
-                source_row.custom_wo_status = "Processing"
-                target_nc.custom_wo_status = "Processing"
+            source_row.custom_wo_status = "Processing"
+            target_nc.custom_wo_status = "Processing"
         else:
-            new_nc = source_dp.append("production_table", {})
-            new_nc.recipe_name = NO_COOKING
-            new_nc.recipe_cook_workstaion = old_ws
-            new_nc.recipe_cook_round = old_round
-            new_nc.required_date = source_date
+            # ── No WOs: just move recipe data, keep ws/round/link_id static ──
+            saved_status = source_row.produ_status
+            saved_ws = source_row.recipe_cook_workstaion
+            saved_round = source_row.recipe_cook_round
+            saved_link_id = source_row.link_id
+
+            # Save source recipe data
+            old_recipe = source_row.recipe_name
+            old_size = source_row.size
+            old_pack_count = source_row.number_of_pack
+            old_prod_type = source_row.production_type
+            old_urgent = source_row.urgent_check
+            old_note = source_row.recipe_note
+            old_prod_plane = source_row.production_plane
+            old_yield = source_row.custom_yield
+            old_packs = {}
+            for i in range(1, 8):
+                suffix = "" if i == 1 else f"_{i}"
+                old_packs[i] = {
+                    "name": source_row.get(f"pack_name{suffix}"),
+                    "qty": source_row.get(f"pack_qty{suffix}"),
+                    "remark": source_row.get(f"pack_remark{suffix}"),
+                }
+
+            # Clear source row → No Cooking (keep its own ws/round/link_id)
+            source_row.recipe_name = NO_COOKING
+            source_row.produ_status = ""
+            source_row.size = 0
+            source_row.number_of_pack = 0
+            source_row.production_type = ""
+            source_row.urgent_check = 0
+            source_row.recipe_note = ""
+            source_row.production_plane = ""
+            source_row.custom_yield = None
+            source_row.mr_reference = None
+            source_row.wo_list = None
+            source_row.wo_list_with_type = None
+            source_row.custom_pair_id = ""
+            for i in range(1, 8):
+                suffix = "" if i == 1 else f"_{i}"
+                source_row.set(f"pack_name{suffix}", None)
+                source_row.set(f"pack_qty{suffix}", 0)
+                source_row.set(f"pack_remark{suffix}", None)
+
+            # Target NC receives recipe data (keep its own ws/round/link_id)
+            target_nc.recipe_name = old_recipe
+            target_nc.size = old_size
+            target_nc.number_of_pack = old_pack_count
+            target_nc.production_type = old_prod_type
+            target_nc.urgent_check = old_urgent
+            target_nc.recipe_note = old_note
+            target_nc.production_plane = old_prod_plane
+            target_nc.custom_yield = old_yield
+            target_nc.produ_status = saved_status
+            for i in range(1, 8):
+                suffix = "" if i == 1 else f"_{i}"
+                target_nc.set(f"pack_name{suffix}", old_packs[i]["name"])
+                target_nc.set(f"pack_qty{suffix}", old_packs[i]["qty"])
+                target_nc.set(f"pack_remark{suffix}", old_packs[i]["remark"])
 
         for i, r in enumerate(source_dp.production_table):
             r.idx = i + 1
@@ -366,7 +422,7 @@ def save_move_item(item_id, source_date, target_date, target_cooker, target_roun
         source_dp.save(ignore_permissions=True)
         frappe.db.commit()
 
-        if swap_executed and source_dp.custom_submit_ref:
+        if has_wos:
             frappe.enqueue(
                 "caf.caf.page.production_schedule.production_schedule._background_move_wo_migration",
                 queue="long",
@@ -378,9 +434,10 @@ def save_move_item(item_id, source_date, target_date, target_cooker, target_roun
         return {
             "success": True,
             "message": "Moved",
+            "has_wos": has_wos,
         }
 
-    # ── Cross-day move ──────────────────────────────────────────
+        # ── Cross-day move ──────────────────────────────────────────
     target_dp_name = frappe.db.get_value(
         "Daily Production",
         {"required_by": target_date, "docstatus": 0},
@@ -417,7 +474,8 @@ def save_move_item(item_id, source_date, target_date, target_cooker, target_roun
     old_urgent = source_row.urgent_check
     old_note = source_row.recipe_note
     old_prod_plane = source_row.production_plane
-    old_wo_list_type = source_row.wo_list_with_type
+    old_status = source_row.produ_status
+    old_yield = source_row.custom_yield
     old_packs = {}
     for i in range(1, 8):
         suffix = "" if i == 1 else f"_{i}"
@@ -436,6 +494,7 @@ def save_move_item(item_id, source_date, target_date, target_cooker, target_roun
     source_row.urgent_check = 0
     source_row.recipe_note = ""
     source_row.production_plane = ""
+    source_row.custom_yield = None
     source_row.mr_reference = None
     source_row.wo_list = None
     source_row.wo_list_with_type = None
@@ -454,11 +513,11 @@ def save_move_item(item_id, source_date, target_date, target_cooker, target_roun
     target_nc.urgent_check = old_urgent
     target_nc.recipe_note = old_note
     target_nc.production_plane = old_prod_plane
-    target_nc.wo_list_with_type = old_wo_list_type
+    target_nc.custom_yield = old_yield
     target_nc.required_date = target_date
     target_nc.recipe_cook_workstaion = target_cooker
     target_nc.recipe_cook_round = int(target_round)
-    target_nc.produ_status = "Change Slot"
+    target_nc.produ_status = old_status
     for i in range(1, 8):
         suffix = "" if i == 1 else f"_{i}"
         target_nc.set(f"pack_name{suffix}", old_packs[i]["name"])
@@ -500,6 +559,8 @@ def save_update_item(item_id, field, value):
 
     for row in dp.production_table:
         if row.name == item_id:
+            if row.custom_wo_status == "Processing":
+                return {"success": False, "message": "Work Orders are being processed. Please wait."}
             if field == "produ_status" and value == "New Schedule":
                 row.mr_reference = None
                 row.wo_list = None
@@ -531,6 +592,8 @@ def save_item_fields(item_id, fields):
 
     for row in dp.production_table:
         if row.name == item_id:
+            if row.custom_wo_status == "Processing":
+                return {"success": False, "message": "Work Orders are being processed. Please wait."}
             for f in fields:
                 field = f.get("field")
                 value = f.get("value")
@@ -580,6 +643,10 @@ def process_day_dp(week_monday, day_index):
     dp = frappe.get_doc("Daily Production", dp_name)
     if dp.custom_submit_ref:
         return {"success": False, "message": _("Work Orders already created for {0}").format(str(day))}
+
+    for row in dp.production_table:
+        if row.custom_wo_status == "Processing":
+            return {"success": False, "message": _("Work Orders are being processed for {0}. Please wait.").format(str(day))}
 
     try:
         dp.process_manual_updates()
@@ -639,6 +706,10 @@ def submit_week(week_monday):
                 skipped_no_status += 1
                 continue
 
+            has_processing = any(row.custom_wo_status == "Processing" for row in dp.production_table)
+            if has_processing:
+                return {"success": False, "message": _("Work Orders are being processed for {0}. Please wait.").format(str(day))}
+
             try:
                 dp.submit()
                 submitted += 1
@@ -695,6 +766,8 @@ def add_recipe(day, recipe, size, cooker, pack_count, round_num, **kwargs):
             break
 
     if existing_row:
+        if existing_row.custom_wo_status == "Processing":
+            return {"success": False, "message": "Work Orders are being processed. Please wait."}
         row = existing_row
     else:
         row = dp.append("production_table", {})
@@ -795,9 +868,8 @@ def create_week_version(week_number):
 def swap_recipes(source_id, target_id):
     """Swap recipe data between two child rows, keeping slot identity fields.
 
-    Swaps recipe_name, size, produ_status, pack config, etc. between
-    two rows in the same DP.  Preserves link_id, recipe_cook_workstaion,
-    and recipe_cook_round in their original slots.
+    No WOs: swaps recipe data, keeps existing statuses.
+    Has WOs: swaps recipe data, sets both to "Rearrange" + pair_id, WO migration.
 
     Args:
         source_id: Child row name of the dragged recipe
@@ -833,6 +905,8 @@ def swap_recipes(source_id, target_id):
         row_b = next((r for r in tgt_doc.production_table if r.name == target_id), None)
         if not row_a or not row_b:
             return {"success": False, "message": "Row not found"}
+        if row_a.custom_wo_status == "Processing" or row_b.custom_wo_status == "Processing":
+            return {"success": False, "message": "Work Orders are being processed. Please wait."}
 
         swappable = [
             df.fieldname for df in _get_child_meta_fields()
@@ -860,10 +934,14 @@ def swap_recipes(source_id, target_id):
             row_b = row
     if row_a is None or row_b is None:
         return {"success": False, "message": "Row not found"}
+    if row_a.custom_wo_status == "Processing" or row_b.custom_wo_status == "Processing":
+        return {"success": False, "message": "Work Orders are being processed. Please wait."}
+
+    has_wos = bool(dp.custom_submit_ref)
 
     swappable = [
         df.fieldname for df in _get_child_meta_fields()
-        if df.fieldname not in SLOT_FIELDS
+        if df.fieldname not in SLOT_FIELDS and df.fieldname != "produ_status"
     ]
 
     for fn in swappable:
@@ -872,16 +950,20 @@ def swap_recipes(source_id, target_id):
         row_a.set(fn, val_b)
         row_b.set(fn, val_a)
 
+    if has_wos:
+        from frappe.utils import now_datetime
+        pair_id = now_datetime().strftime("%Y%m%d%H%M%S%f")
+        row_a.produ_status = "Rearrange"
+        row_b.produ_status = "Rearrange"
+        row_a.custom_pair_id = pair_id
+        row_b.custom_pair_id = pair_id
+        row_a.custom_wo_status = "Processing"
+        row_b.custom_wo_status = "Processing"
+
     dp.save(ignore_permissions=True)
     frappe.db.commit()
 
-    has_wos = bool(row_a.mr_reference) or bool(row_b.mr_reference)
-    if has_wos and dp.custom_submit_ref:
-        row_a.custom_wo_status = "Processing"
-        row_b.custom_wo_status = "Processing"
-        dp.save(ignore_permissions=True)
-        frappe.db.commit()
-
+    if has_wos:
         frappe.enqueue(
             "caf.caf.page.production_schedule.production_schedule._background_swap_recipes",
             queue="long",
@@ -1086,11 +1168,13 @@ def process_recipe_change(item_id):
     """Enqueue background recipe change WO reprocessing for a row."""
     row_data = frappe.db.get_value(
         CHILD_DOCTYPE, {"name": item_id},
-        ["parent", "produ_status", "mr_reference", "recipe_name"],
+        ["parent", "produ_status", "mr_reference", "recipe_name", "custom_wo_status"],
         as_dict=True,
     )
     if not row_data:
         return {"success": False, "message": "Item not found"}
+    if row_data.custom_wo_status == "Processing":
+        return {"success": False, "message": "Work Orders are being processed. Please wait."}
     if row_data.produ_status != "Recipe Change" or not row_data.mr_reference:
         return {"success": False, "message": "No recipe change needed"}
 
@@ -1125,6 +1209,9 @@ def cancel_item(item_id):
     row = next((r for r in dp.production_table if r.name == item_id), None)
     if not row:
         return {"success": False, "message": "Row not found in DP"}
+
+    if row.custom_wo_status == "Processing":
+        return {"success": False, "message": "Work Orders are being processed. Please wait."}
 
     row.produ_status = "Cancelled"
     if dp.custom_submit_ref:
@@ -1302,7 +1389,7 @@ def _background_move_wo_migration(source_row_name, quality_data):
         row_data = frappe.db.get_value(
             CHILD_DOCTYPE,
             {"name": source_row_name},
-            ["parent", "recipe_name", "link_id", "mr_reference", "custom_wo_status"],
+            ["parent", "recipe_name", "link_id", "mr_reference", "custom_wo_status", "custom_pair_id"],
             as_dict=True,
         )
         if not row_data or row_data.custom_wo_status != "Processing":
@@ -1340,6 +1427,23 @@ def _background_move_wo_migration(source_row_name, quality_data):
                 _relink_quality_docs(quality_data, new_cook_wo)
 
         frappe.db.set_value(CHILD_DOCTYPE, source_row_name, "custom_wo_status", "Done")
+
+        # Clear paired target NC row status
+        if row_data.custom_pair_id:
+            pair_rows = frappe.get_all(
+                CHILD_DOCTYPE,
+                filters={"parent": row_data.parent, "custom_pair_id": row_data.custom_pair_id},
+                fields=["name"],
+            )
+            for pr in pair_rows:
+                if pr.name != source_row_name:
+                    frappe.db.set_value(CHILD_DOCTYPE, pr.name, "produ_status", "")
+                    frappe.db.set_value(CHILD_DOCTYPE, pr.name, "custom_pair_id", "")
+                    frappe.db.set_value(CHILD_DOCTYPE, pr.name, "custom_wo_status", "Done")
+
+        frappe.db.set_value(CHILD_DOCTYPE, source_row_name, "produ_status", "")
+        frappe.db.set_value(CHILD_DOCTYPE, source_row_name, "custom_pair_id", "")
+        frappe.db.commit()
     except Exception:
         frappe.log_error(title="Background move WO migration failed", message=frappe.get_traceback())
         frappe.db.set_value(CHILD_DOCTYPE, source_row_name, "custom_wo_status", "Failed")
@@ -1389,6 +1493,10 @@ def process_dp_updates(item_id):
     dp = frappe.get_doc("Daily Production", dp_name)
     if dp.docstatus != 0:
         return {"success": False, "message": "DP is not in draft state"}
+
+    for row in dp.production_table:
+        if row.recipe_name != NO_COOKING and row.custom_wo_status == "Processing":
+            return {"success": False, "message": "Work Orders are being processed. Please wait."}
 
     _set_rows_wo_status(dp, "Processing")
     dp.save(ignore_permissions=True)

@@ -656,7 +656,49 @@ frappe.ui.form.on("Create ProExl Items", {
     recipe_cook_round: function(frm, cdt, cdn) { if (validate_field_dependency(frm, cdt, cdn, 'recipe_cook_round', 'recipe_name', 'Recipe Name')) { try { validate_unique_cook_combination(frm, cdt, cdn); } catch (e) { frappe.model.set_value(cdt, cdn, 'recipe_cook_workstaion', ''); } } },
     pack_machine: function(frm, cdt, cdn) { if (validate_field_dependency(frm, cdt, cdn, 'pack_machine', 'pack_name', 'Pack Name')) { try { validate_unique_cook_combination_pack(frm, cdt, cdn); } catch (e) { frappe.model.set_value(cdt, cdn, 'pack_round', ''); } } },
     pack_round: function(frm, cdt, cdn) { if (validate_field_dependency(frm, cdt, cdn, 'pack_round', 'pack_name', 'Pack Name')) { try { validate_unique_cook_combination_pack(frm, cdt, cdn); } catch (e) { frappe.model.set_value(cdt, cdn, 'pack_machine', ''); } } },
-    recipe_cook_time: function(frm, cdt, cdn) { if (validate_field_dependency(frm, cdt, cdn, 'recipe_cook_time', 'recipe_name', 'Recipe Name')) { revalidate_subsequent_pack_times(frm, cdt, cdn); } }
+    recipe_cook_time: function(frm, cdt, cdn) { if (validate_field_dependency(frm, cdt, cdn, 'recipe_cook_time', 'recipe_name', 'Recipe Name')) { revalidate_subsequent_pack_times(frm, cdt, cdn); } },
+    pack_qty_2: function(frm, cdt, cdn) {
+        const row = locals[cdt][cdn];
+        if (row.pack_qty_2 && !row.pack_qty) {
+            frappe.msgprint(__('Please fill Pack 1 Qty first before entering Pack 2 Qty.'));
+            frappe.model.set_value(cdt, cdn, 'pack_qty_2', 0);
+        }
+    },
+    pack_qty_3: function(frm, cdt, cdn) {
+        const row = locals[cdt][cdn];
+        if (row.pack_qty_3 && !row.pack_qty_2) {
+            frappe.msgprint(__('Please fill Pack 2 Qty first before entering Pack 3 Qty.'));
+            frappe.model.set_value(cdt, cdn, 'pack_qty_3', 0);
+        }
+    },
+    pack_qty_4: function(frm, cdt, cdn) {
+        const row = locals[cdt][cdn];
+        if (row.pack_qty_4 && !row.pack_qty_3) {
+            frappe.msgprint(__('Please fill Pack 3 Qty first before entering Pack 4 Qty.'));
+            frappe.model.set_value(cdt, cdn, 'pack_qty_4', 0);
+        }
+    },
+    pack_qty_5: function(frm, cdt, cdn) {
+        const row = locals[cdt][cdn];
+        if (row.pack_qty_5 && !row.pack_qty_4) {
+            frappe.msgprint(__('Please fill Pack 4 Qty first before entering Pack 5 Qty.'));
+            frappe.model.set_value(cdt, cdn, 'pack_qty_5', 0);
+        }
+    },
+    pack_qty_6: function(frm, cdt, cdn) {
+        const row = locals[cdt][cdn];
+        if (row.pack_qty_6 && !row.pack_qty_5) {
+            frappe.msgprint(__('Please fill Pack 5 Qty first before entering Pack 6 Qty.'));
+            frappe.model.set_value(cdt, cdn, 'pack_qty_6', 0);
+        }
+    },
+    pack_qty_7: function(frm, cdt, cdn) {
+        const row = locals[cdt][cdn];
+        if (row.pack_qty_7 && !row.pack_qty_6) {
+            frappe.msgprint(__('Please fill Pack 6 Qty first before entering Pack 7 Qty.'));
+            frappe.model.set_value(cdt, cdn, 'pack_qty_7', 0);
+        }
+    }
 });
 
 
@@ -1020,15 +1062,15 @@ window.apply_edit_restrictions = function(frm, cdt, cdn) {
             frm.set_df_property('production_table', 'read_only', field_configs[fn], frm.doc.name, fn, row.name);
         });
 
-        PROTECTED_HARDWARE.forEach(fn => {
-            frm.set_df_property('production_table', 'read_only', 1, frm.doc.name, fn, row.name);
-        });
-
         let grid = frm.get_field("production_table").grid;
         if (grid) {
             grid.refresh_row(row.name);
             if (grid.grid_row_form && grid.grid_row_form.wrapper.is(':visible')) grid.grid_row_form.refresh();
         }
+
+        PROTECTED_HARDWARE.forEach(fn => {
+            frm.set_df_property('production_table', 'read_only', 1, frm.doc.name, fn, row.name);
+        });
     });
 };
 

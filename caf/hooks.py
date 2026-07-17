@@ -48,8 +48,8 @@ override_whitelisted_methods = {
 # ------------------
 
 # include js, css files in header of desk.html
-# app_include_css = "/assets/caf/css/caf.css"
-# app_include_js = "/assets/caf/js/stock_entry.js"
+app_include_css = ["/assets/caf/css/ai_assistant.css"]
+app_include_js = ["/assets/caf/js/ai_assistant_widget.js"]
 
 # include js, css files in header of web template
 # web_include_css = "/assets/caf/css/caf.css"
@@ -68,6 +68,7 @@ override_whitelisted_methods = {
 # include js in doctype views
 # doctype_js = {"doctype" : "public/js/doctype.js"}
 doctype_list_js = {"Material Request" : "public/js/material_request_list.js"}
+page_js = {"ai-assistant" : "public/js/ai_assistant.js"}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
@@ -437,6 +438,9 @@ scheduler_events = {
 # override_doctype_dashboards = {
 # 	"Task": "caf.task.get_dashboard_data"
 # }
+
+assistant_tools = []
+
 override_doctype_dashboards = {
     "Purchase Receipt": "caf.caf.overrides.purchase_receipt_dashboard.get_data",
     "Stock Entry": "caf.caf.overrides.stock_entry_dashboard.get_data",

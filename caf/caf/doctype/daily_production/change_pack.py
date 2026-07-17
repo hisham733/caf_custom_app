@@ -66,7 +66,7 @@ def process_pack_change_or_add(doc_name: str, child_doctype: str) -> None:
         _cleanup_everything_except_new_pack(newly_born_wos, row_doc, child_doctype, start_time)
 
         # Finalize status
-        # row_doc.db_set("produ_status", "")
+        row_doc.db_set("produ_status", "")
 
     rws(doc_name, child_doctype)
 #     frappe.msgprint(_("✅ Packing update complete. Only the Packing Work Order was regenerated."),ala)

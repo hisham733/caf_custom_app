@@ -170,6 +170,7 @@ def _group_rows_by_pair(rows: list, status_label: str) -> list:
     """
     Groups rows by custom_pair_id. Each group must have exactly 2 rows.
     Falls back to sequential pairing (2 at a time by idx) if no pair_id is set.
+    Orphaned single rows (partner already cleared) are cleaned up automatically.
     """
     groups = defaultdict(list)
 
@@ -182,14 +183,16 @@ def _group_rows_by_pair(rows: list, status_label: str) -> list:
             if i + 1 < len(rows):
                 groups[f"seq_{i//2}"] = [rows[i], rows[i + 1]]
 
+    valid_pairs = []
     for pid, group in groups.items():
-        if len(group) != 2:
-            frappe.throw(
-                _("{0}: Pair has {1} rows instead of 2 (Row {2}). Please redo the operation.")
-                .format(status_label, len(group), group[0].idx)
-            )
+        if len(group) == 2:
+            valid_pairs.append(group)
+        elif len(group) == 1:
+            frappe.db.set_value(group[0].name, "produ_status", "")
+            frappe.db.set_value(group[0].name, "custom_pair_id", "")
+            frappe.db.commit()
 
-    return list(groups.values())
+    return valid_pairs
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -219,6 +222,9 @@ def process_switch(doc_name: str, child_doctype: str) -> None:
 
     for pair in pairs:
         _process_one_switch_pair(pair, parent_doc, child_doctype, start_time)
+
+    for row in rows:
+        frappe.db.set_value(child_doctype, row.name, "produ_status", "")
 
     rws(doc_name, child_doctype)
     frappe.msgprint(_("✅ Rearrange Complete. {0} pair(s) processed.").format(len(pairs)))
@@ -272,6 +278,9 @@ def process_slot_swaps(doc_name: str, child_doctype: str) -> None:
 
     for pair in pairs:
         _process_one_slot_swap_pair(pair, parent_doc, child_doctype, start_time)
+
+    for row in rows:
+        frappe.db.set_value(child_doctype, row.name, "produ_status", "")
 
     frappe.msgprint(_("✅ Slot swap complete. {0} pair(s) processed.").format(len(pairs)))
 

@@ -84,8 +84,8 @@
   },
   {
    "fieldname": "recipe_note",
-   "fieldtype": "Small Text",
-   "label": "Recipe Note",
+   "fieldtype": "Data",
+    "label": "Recipe Note",
    "read_only": 1
   },
   {

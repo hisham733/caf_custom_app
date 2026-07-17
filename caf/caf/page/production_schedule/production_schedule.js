@@ -141,6 +141,10 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 		});
 
 		m.on("click", ".round-slot .schedule-item", function () {
+			if (this.dataset.woStatus === "Processing") {
+				frappe.show_alert({ message: __("Work Orders are being processed. Please wait…"), indicator: "orange" });
+				return;
+			}
 			var slot = this.closest(".round-slot");
 			var row = slot ? slot.closest("tr") : null;
 			var ws = row ? row.dataset.workstation : "";
@@ -168,6 +172,11 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			var row = cell.closest("tr");
 			var ws = row ? row.dataset.workstation : "";
 			if (me.state.past_days.indexOf(day) !== -1 || me.state.ws_problems.indexOf(ws) !== -1) return;
+			var items = $(cell.closest("tr")).find(".schedule-item[data-wo-status='Processing']");
+			if (items.length) {
+				frappe.show_alert({ message: __("Work Orders are being processed. Please wait…"), indicator: "orange" });
+				return;
+			}
 			var field = cell.classList.contains("note-slot") ? "recipe_note" : "pack_remark";
 			me._show_inline_edit(cell, row.dataset.workstation, day, field);
 		});
@@ -196,8 +205,8 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 
 	_update_submit_btn() {
 		var btn = this.page.main.find("#schedule-submit-btn");
-		var has_past = this.state.past_days && this.state.past_days.length > 0;
-		btn.toggle(this.state.mode !== "View Schedule" && !has_past);
+		var all_past = this.state.past_days && this.state.past_days.length === this.state.days.length;
+		btn.toggle(this.state.mode !== "View Schedule" && !all_past);
 	}
 
 	_update_action_btns() {
@@ -362,19 +371,15 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			var past_cls = is_past ? " schedule-past-day" : "";
 			var label_html = this.state.day_labels[di];
 
-			if (me.state.mode === "View Schedule") {
-				var submit_ref = (me.state.dp_submit_refs && me.state.dp_submit_refs[day]) || "";
-				var disabled = submit_ref ? " disabled" : "";
-				var btn_text = "Create WO";
-				if (submit_ref) {
-					var parts = submit_ref.split("-");
-					var serial = parts[parts.length - 1];
-					btn_text = "Create WO (" + serial + ")";
-				}
-				label_html += '<br><button class="btn btn-xs btn-primary schedule-wo-btn"' +
-					disabled +
-					' data-day="' + day + '"' +
-					'>' + btn_text + '</button>';
+			var submit_ref = (me.state.dp_submit_refs && me.state.dp_submit_refs[day]) || "";
+			if (submit_ref) {
+				var parts = submit_ref.split("-");
+				var serial = parts[parts.length - 1];
+				label_html += '<br><button class="btn btn-xs btn-default schedule-wo-btn" disabled data-day="' + day + '">Created WO (' + serial + ')</button>';
+			} else if (is_past) {
+				label_html += '<br><button class="btn btn-xs btn-default schedule-wo-btn" disabled data-day="' + day + '">Create WO</button>';
+			} else if (me.state.mode === "View Schedule") {
+				label_html += '<br><button class="btn btn-xs btn-primary schedule-wo-btn" data-day="' + day + '">Create WO</button>';
 			}
 
 			html +=
@@ -550,7 +555,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			? '<span class="schedule-item-wo-badge" data-value="' + me._escape(r.wo_status) + '">' + me._escape(r.wo_status) + "</span>"
 			: "";
 		return (
-			'<div class="schedule-item' + (r.status ? ' schedule-item-locked' : '') + '"' +
+			'<div class="schedule-item' + (r.status ? ' schedule-item-locked' : '') + (r.wo_status === 'Processing' ? ' schedule-item-processing' : '') + '"' +
 			' data-item-id="' + (r.id || "") + '"' +
 			' data-dp-name="' + me._escape(dp_name || "") + '"' +
 			' data-recipe="' + me._escape(r.recipe || "") + '"' +
@@ -639,7 +644,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 	}
 
 	_apply_dialog_restrictions(d, status_val, is_no_cook_val) {
-		var ALWAYS_READ_ONLY = ['cook_station', 'cook_round', 'yield', 'total_output', 'mr_reference', 'production_plane'];
+		var ALWAYS_READ_ONLY = ['cook_station', 'cook_round', 'yield', 'total_output', 'mr_reference', 'production_plane','link_id'];
 		var config = {};
 		var dlg = d;
 
@@ -747,7 +752,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 	}
 
 	_apply_add_dialog_restrictions(d, status_val, is_no_cook_val) {
-		var ALWAYS_READ_ONLY = ['cooker', 'round', 'yield', 'total_output', 'mr_reference', 'production_plane'];
+		var ALWAYS_READ_ONLY = ['cooker', 'round', 'yield', 'total_output', 'mr_reference', 'production_plane','link_id'];
 		var config = {};
 		var dlg = d;
 
@@ -899,6 +904,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 
 		this._destroy_sortable();
 		this._sortables = [];
+		this._drag_scroll_handler = null;
 
 		slots.each(function () {
 			var slot = this;
@@ -914,8 +920,33 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 				onStart: function (evt) {
 					me.page.main.find(".schedule-table").addClass("drag-active");
 					me._highlight_target_slots(evt.item);
+					var wrapper = me.page.main.find(".schedule-board-wrapper")[0];
+					if (wrapper) {
+						var ZONE = 100;
+						var SPEED = 18;
+						me._drag_scroll_handler = function (e) {
+							var rect = wrapper.getBoundingClientRect();
+							var x = e.clientX;
+							var y = e.clientY;
+							if (x - rect.left < ZONE) {
+								wrapper.scrollLeft -= SPEED;
+							} else if (rect.right - x < ZONE) {
+								wrapper.scrollLeft += SPEED;
+							}
+							if (y - rect.top < ZONE) {
+								wrapper.scrollTop -= SPEED;
+							} else if (rect.bottom - y < ZONE) {
+								wrapper.scrollTop += SPEED;
+							}
+						};
+						document.addEventListener("mousemove", me._drag_scroll_handler);
+					}
 				},
 				onEnd: function (evt) {
+					if (me._drag_scroll_handler) {
+						document.removeEventListener("mousemove", me._drag_scroll_handler);
+						me._drag_scroll_handler = null;
+					}
 					me.page.main.find(".schedule-table").removeClass("drag-active");
 					me._clear_target_highlights();
 					me._handle_drop(evt);
@@ -975,6 +1006,18 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 		var me = this;
 		var el = evt.item;
 		if (!el || !el.classList.contains("schedule-item")) return;
+
+		if ($(el).data("recipe") === "No Cooking") {
+			frappe.show_alert({ message: __("Cannot move a No Cooking row."), indicator: "red" });
+			me._load_week();
+			return;
+		}
+
+		if (el.dataset.woStatus === "Processing") {
+			frappe.show_alert({ message: __("Work Orders are being processed. Please wait…"), indicator: "orange" });
+			me._load_week();
+			return;
+		}
 
 		var from_slot = evt.from;
 		var to_slot = evt.to;
@@ -1071,6 +1114,9 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 					frappe.show_alert({ message: r.message.message, indicator: "green" });
 					me._set_metabase_cookie();
 					me._load_week();
+					if (r.message.has_wos) {
+						me._poll_row_status(item_id, function () { me._load_week(); });
+					}
 				} else {
 					frappe.show_alert({ message: __("Save failed — reloading."), indicator: "red" });
 					me._load_week();
@@ -1195,7 +1241,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			},
 			{ fieldname: "sec_recipe_note", fieldtype: "Section Break", label: __("Recipe Note") },
 			{
-				label: __("Recipe Note"), fieldname: "recipe_note", fieldtype: "Small Text",
+				label: __("Recipe Note"), fieldname: "recipe_note", fieldtype: "Data",
 				default: recipe_note,
 			},
 			{ fieldtype: "Column Break" },
@@ -1370,13 +1416,49 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 				var status_val = values.status || "";
 				var size_val = parseFloat(values.size) || 0;
 				var nop = parseInt(values.number_of_pack) || 0;
+				var is_no_cook = !recipe_val || recipe_val === "No Cooking";
 				if (recipe_val && recipe_val !== "No Cooking" && size_val === 0) {
 					frappe.msgprint(__("Size is required when a recipe is set."));
 					return;
 				}
-				if (["New Schedule", "Recipe Change"].includes(status_val) && nop >= 1 && !values.pack_name) {
-					frappe.msgprint(__("Pack 1 Name is required."));
-					return;
+				if (!is_no_cook && nop >= 1) {
+					var missing_name = false;
+					for (var i = 1; i <= nop; i++) {
+						var suffix = i === 1 ? "" : "_" + i;
+						if (!values["pack_name" + suffix]) {
+							$(d.wrapper).find('[data-fieldname="pack_name' + suffix + '"]').closest(".frappe-control").addClass("has-error");
+							missing_name = true;
+						}
+					}
+					if (missing_name) {
+						frappe.msgprint(__("All packs must have a pack name."));
+						return;
+					}
+				}
+				if (!is_no_cook && nop > 1) {
+					var missing_qty = false;
+					for (var i = 1; i < nop; i++) {
+						var suffix = i === 1 ? "" : "_" + i;
+						var qty = parseFloat(values["pack_qty" + suffix]) || 0;
+						if (qty <= 0) {
+							$(d.wrapper).find('[data-fieldname="pack_qty' + suffix + '"]').closest(".frappe-control").addClass("has-error");
+							missing_qty = true;
+						}
+					}
+					if (missing_qty) {
+						frappe.msgprint(__("Please fill qty for all packs except the last one."));
+						return;
+					}
+					for (var i = 2; i <= nop; i++) {
+						var suffix = "_" + i;
+						var prev_suffix = i === 2 ? "" : "_" + (i - 1);
+						var qty = parseFloat(values["pack_qty" + suffix]) || 0;
+						var prev_qty = parseFloat(values["pack_qty" + prev_suffix]) || 0;
+						if (qty > 0 && prev_qty <= 0) {
+							frappe.msgprint(__("Please fill Pack {0} Qty first before entering Pack {1} Qty.", [i - 1, i]));
+							return;
+						}
+					}
 				}
 				var to_save = [];
 				save_fields.forEach(function (sf) {
@@ -1590,7 +1672,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			},
 			{ fieldtype: "Column Break" },
 			{
-				label: __("Recipe Note"), fieldname: "recipe_note", fieldtype: "Small Text",
+				label: __("Recipe Note"), fieldname: "recipe_note", fieldtype: "Data",
 			},
 			
 			{ fieldname: "sec_pack", fieldtype: "Section Break", label: __("Pack Details") },
@@ -1710,7 +1792,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 				}
 				if (pc > 1) {
 					var missing_qty = false;
-					for (var i = 1; i <= pc; i++) {
+					for (var i = 1; i < pc; i++) {
 						var suffix = i === 1 ? "" : "_" + i;
 						var qty = parseFloat(values["pack_qty" + suffix]) || 0;
 						if (qty <= 0) {
@@ -1719,8 +1801,18 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 						}
 					}
 					if (missing_qty) {
-						frappe.msgprint(__("All packs must have a quantity when using more than 1 pack."));
+						frappe.msgprint(__("Please fill qty for all packs except the last one."));
 						return;
+					}
+					for (var i = 2; i < pc; i++) {
+						var suffix = "_" + i;
+						var prev_suffix = i === 2 ? "" : "_" + (i - 1);
+						var qty = parseFloat(values["pack_qty" + suffix]) || 0;
+						var prev_qty = parseFloat(values["pack_qty" + prev_suffix]) || 0;
+						if (qty > 0 && prev_qty <= 0) {
+							frappe.msgprint(__("Please fill Pack {0} Qty first before entering Pack {1} Qty.", [i - 1, i]));
+							return;
+						}
 					}
 				}
 				var args = {

@@ -53,14 +53,16 @@ class DailyProduction(Document):
                     _("Row {0}: This row already has Work Orders. You cannot select <b>{1}</b>. Please clear the status.")
                     .format(item.idx, NEW_SCHEDULE)
                 )
-            # if item.produ_status and item.produ_status != "Change Slot" and item.recipe_name == NO_COOKING:
-
-            #     frappe.throw(
-            #         _("Row Number {0}: You cannot set a Production Status <strong>\"{2}\"</strong> if the Recipe is <b>{1}</b>. Please clear the status or select a valid recipe.")
-            #         .format(item.idx, NO_COOKING, item.produ_status)
-            #     )
-            # if not item.size and item.recipe_name not in ("No Cooking", None, "") and item.produ_status != "New Schedule":
-            #     frappe.throw(f"Size can't be 0 or Empty for Recipe: {item.recipe_name}")
+            if item.produ_status and item.produ_status != "Change Slot" and item.recipe_name == NO_COOKING:
+                frappe.throw(
+                    _("Row Number {0}: You cannot set a Production Status <strong>\"{2}\"</strong> if the Recipe is <b>{1}</b>. Please clear the status or select a valid recipe.")
+                    .format(item.idx, NO_COOKING, item.produ_status)
+                )
+            if not item.size and item.recipe_name not in ("No Cooking", None, "") and item.produ_status != "New Schedule":
+                frappe.throw(
+                    _("Row {0}: Size can't be 0 or Empty for Recipe: <strong>{1}</strong>")
+                    .format(item.idx, item.recipe_name)
+                )
         if self.docstatus == 1:
             # ✅ NEW RULE: at least 1 status must exist
             has_status = any(
@@ -90,13 +92,13 @@ class DailyProduction(Document):
             pack_count = frappe.utils.cint(row.number_of_pack)
 
             # Validate pack selection first
-            # if recipe_name and pack_count <= 0:
-            #     frappe.throw(
-            #         _(
-            #             "Row {0}: Please select a Pack Quantity before submitting "
-            #             "the recipe <strong>{1}</strong>."
-            #         ).format(row.idx, recipe_name)
-            #     )
+            if recipe_name and pack_count <= 0:
+                frappe.throw(
+                    _(
+                        "Row {0}: Please select a Pack Quantity before submitting "
+                        "the recipe <strong>{1}</strong>."
+                    ).format(row.idx, recipe_name)
+                )
 
             # Validate pack fields
             for i in range(1, pack_count + 1):
@@ -114,13 +116,27 @@ class DailyProduction(Document):
                         ).format(row.idx, i, recipe_name)
                     )
 
-                # Qty required when multiple packs
-                if pack_count >= 2 and not pack_qty:
+                # Qty required for all packs except the last one
+                if pack_count >= 2 and i < pack_count and not pack_qty:
                     frappe.throw(
                         _(
                             "Row {0}: Pack {1} Quantity is required "
                             "for recipe <strong>{2}</strong>."
                         ).format(row.idx, i, recipe_name)
+                    )
+
+            # Sequential pack qty: cannot fill pack N if pack N-1 is empty
+            for i in range(2, pack_count + 1):
+                suffix = f"_{i}"
+                prev_suffix = "" if i == 2 else f"_{i - 1}"
+                qty = row.get(f"pack_qty{suffix}") or 0
+                prev_qty = row.get(f"pack_qty{prev_suffix}") or 0
+                if qty and not prev_qty:
+                    frappe.throw(
+                        _(
+                            "Row {0}: Please fill Pack {1} Quantity first before Pack {2} "
+                            "for recipe <strong>{3}</strong>."
+                        ).format(row.idx, i - 1, i, recipe_name)
                     )
     # ── Naming ────────────────────────────────────────────────────────────────
     def autoname(self):
