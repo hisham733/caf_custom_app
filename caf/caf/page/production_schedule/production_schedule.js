@@ -767,7 +767,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 	}
 
 	_apply_dialog_restrictions(d, status_val, is_no_cook_val) {
-		var ALWAYS_READ_ONLY = ['cook_station', 'cook_round', 'yield', 'total_output', 'mr_reference', 'production_plane','link_id'];
+		var ALWAYS_READ_ONLY = ['cook_station', 'cook_round', 'yield', 'total_output', 'mr_reference', 'production_plane','link_id', 'wo_status'];
 		var config = {};
 		var dlg = d;
 

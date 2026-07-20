@@ -62,7 +62,11 @@ const setup_production_grid = function(frm) {
     };
 
     grid.docfields.forEach(df => {
-        if (grid_layout[df.fieldname]) {
+        if (df.fieldname === "custom_wo_status") {
+            df.hidden = 1;
+            df.in_list_view = 0;
+            df.columns = 0;
+        } else if (grid_layout[df.fieldname]) {
             df.in_list_view = 1;
             df.columns = grid_layout[df.fieldname];
         } else {
@@ -1024,10 +1028,10 @@ window.apply_edit_restrictions = function(frm, cdt, cdn) {
         const is_no_cook = !row.recipe_name || row.recipe_name === "" || row.recipe_name === "No Cooking";
 
         if (status === "New Schedule") {
-            all_fields.forEach(f => field_configs[f] = 0);
+            all_fields.forEach(f => { if (!ALWAYS_READ_ONLY.includes(f)) field_configs[f] = 0; });
         }
         else if (status === "Recipe Change") {
-            all_fields.forEach(f => field_configs[f] = 0);
+            all_fields.forEach(f => { if (!ALWAYS_READ_ONLY.includes(f)) field_configs[f] = 0; });
         }
         else if (status === "" || status === "Cancelled") {
             all_fields.forEach(f => field_configs[f] = 1);
@@ -1057,7 +1061,7 @@ window.apply_edit_restrictions = function(frm, cdt, cdn) {
             field_configs.produ_status = 0;
         }
         else {
-            all_fields.forEach(f => field_configs[f] = 0);
+            all_fields.forEach(f => { if (!ALWAYS_READ_ONLY.includes(f)) field_configs[f] = 0; });
         }
 
         if (is_no_cook && !["New Schedule", "Single WO","Recipe Change"].includes(status)) {

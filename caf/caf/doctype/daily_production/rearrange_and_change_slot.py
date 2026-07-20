@@ -1,7 +1,7 @@
 # Copyright (c) 2025, hisham and contributors
 # rearrange_and_change_slot.py — ID-Driven Production Handover & Migration
 
-import pdb
+import time
 from collections import defaultdict
 import frappe
 from frappe import _
@@ -21,44 +21,47 @@ WO_DOCTYPE          = "Work Order"
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _swap_db_link_ids(id_a: str, id_b: str) -> None:
-    """Swap custom_link_id between two rows using a temp ID.
-
-    Swaps Work Orders and Stock Entries by reassigning custom_link_id.
-    Uses a temporary hash to avoid collisions during the swap.
-    Commits if not in_submit.
-    """
+    """Swap custom_link_id between two rows using a temp ID."""
     cnt_a = frappe.db.count("Work Order", {"custom_link_id": id_a})
     cnt_b = frappe.db.count("Work Order", {"custom_link_id": id_b})
 
     temp_id = f"TEMP-{frappe.generate_hash(length=8)}"
-    
 
-    
-    # ─ SWAP WORK ORDERS
-    frappe.db.sql("UPDATE `tabWork Order` SET custom_link_id = %s WHERE custom_link_id = %s", (temp_id, id_a))
-    frappe.db.sql("UPDATE `tabWork Order` SET custom_link_id = %s WHERE custom_link_id = %s", (id_a, id_b))
-    frappe.db.sql("UPDATE `tabWork Order` SET custom_link_id = %s WHERE custom_link_id = %s", (id_b, temp_id))
+    for attempt in range(3):
+        try:
+            frappe.db.sql("UPDATE `tabWork Order` SET custom_link_id = %s WHERE custom_link_id = %s", (temp_id, id_a))
+            frappe.db.sql("UPDATE `tabWork Order` SET custom_link_id = %s WHERE custom_link_id = %s", (id_a, id_b))
+            frappe.db.sql("UPDATE `tabWork Order` SET custom_link_id = %s WHERE custom_link_id = %s", (id_b, temp_id))
+            break
+        except frappe.QueryDeadlockError:
+            if attempt == 2:
+                raise
+            time.sleep(0.5)
     
     # ─ SWAP STOCK ENTRIES
     se_cnt_a = frappe.db.count("Stock Entry", {"custom_link_id": id_a})
     se_cnt_b = frappe.db.count("Stock Entry", {"custom_link_id": id_b})
-    
-    if se_cnt_a > 0 or se_cnt_b > 0:
 
-        
-        frappe.db.sql(
-            "UPDATE `tabStock Entry` SET custom_link_id = %s WHERE custom_link_id = %s", 
-            (temp_id, id_a)
-        )
-        frappe.db.sql(
-            "UPDATE `tabStock Entry` SET custom_link_id = %s WHERE custom_link_id = %s", 
-            (id_a, id_b)
-        )
-        frappe.db.sql(
-            "UPDATE `tabStock Entry` SET custom_link_id = %s WHERE custom_link_id = %s", 
-            (id_b, temp_id)
-        )
-        
+    if se_cnt_a > 0 or se_cnt_b > 0:
+        for attempt in range(3):
+            try:
+                frappe.db.sql(
+                    "UPDATE `tabStock Entry` SET custom_link_id = %s WHERE custom_link_id = %s",
+                    (temp_id, id_a)
+                )
+                frappe.db.sql(
+                    "UPDATE `tabStock Entry` SET custom_link_id = %s WHERE custom_link_id = %s",
+                    (id_a, id_b)
+                )
+                frappe.db.sql(
+                    "UPDATE `tabStock Entry` SET custom_link_id = %s WHERE custom_link_id = %s",
+                    (id_b, temp_id)
+                )
+                break
+            except frappe.QueryDeadlockError:
+                if attempt == 2:
+                    raise
+                time.sleep(0.5)
     else:
         print(f"   ⚠️  No Stock Entries found with custom_link_id")
 
@@ -68,26 +71,22 @@ def _migrate_db_link_ids(source_id: str, target_id: str) -> None:
     One-way move (not a swap). Used for Change Slot where a recipe
     moves into an empty slot. Reassigns Work Orders and Stock Entries
     from source link_id to target link_id.
-
-    Args:
-        source_id: Link ID with active WOs (currently has the recipe)
-        target_id: Link ID in the target slot (becomes new home)
     """
-    # ─────────────────────────────────────────────────────────────────────
-    # 1. MIGRATE WORK ORDERS
-    # ─────────────────────────────────────────────────────────────────────
-    frappe.db.sql(
-        "UPDATE `tabWork Order` SET custom_link_id = %s WHERE custom_link_id = %s", 
-        (target_id, source_id)
-    )
-    
-    # ─────────────────────────────────────────────────────────────────────
-    # 2. MIGRATE STOCK ENTRIES
-    # ─────────────────────────────────────────────────────────────────────
-    frappe.db.sql(
-        "UPDATE `tabStock Entry` SET custom_link_id = %s WHERE custom_link_id = %s", 
-        (target_id, source_id)
-    )
+    for attempt in range(3):
+        try:
+            frappe.db.sql(
+                "UPDATE `tabWork Order` SET custom_link_id = %s WHERE custom_link_id = %s",
+                (target_id, source_id)
+            )
+            frappe.db.sql(
+                "UPDATE `tabStock Entry` SET custom_link_id = %s WHERE custom_link_id = %s",
+                (target_id, source_id)
+            )
+            return
+        except frappe.QueryDeadlockError:
+            if attempt == 2:
+                raise
+            time.sleep(0.5)
 
 
 def _cancel_cook_pack_by_id(link_id: str) -> None:
