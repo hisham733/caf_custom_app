@@ -437,6 +437,16 @@ def save_move_item(item_id, source_date, target_date, target_cooker, target_roun
             source_row.custom_pair_id = pair_id
             target_nc.custom_pair_id = pair_id
 
+            from caf.caf.doctype.daily_production.rearrange_and_change_slot import (
+                _get_quality_data_by_id,
+            )
+            quality_data = _get_quality_data_by_id(old_link_id)
+
+            from caf.caf.doctype.daily_production.rearrange_and_change_slot import (
+                _migrate_db_link_ids,
+            )
+            _migrate_db_link_ids(source_id=old_link_id, target_id=source_row.link_id)
+
             source_row.rq_status = "Processing"
             target_nc.rq_status = "Processing"
         else:
@@ -1551,15 +1561,17 @@ def _background_pack_change(item_id, dp_name):
 
 
 def _background_swap_recipes(row_a_name, row_b_name):
-    """Background worker: process WO swap for a Rearrange pair via DP's process_switch."""
+    """Background worker: process WO swap, cancel, recreate for a Rearrange pair."""
     try:
         data_a = frappe.db.get_value(
             CHILD_DOCTYPE, row_a_name,
-            ["parent", "rq_status"], as_dict=True,
+            ["parent", "rq_status", "mr_reference", "link_id", "recipe_name"],
+            as_dict=True,
         )
         data_b = frappe.db.get_value(
             CHILD_DOCTYPE, row_b_name,
-            ["parent", "rq_status"], as_dict=True,
+            ["parent", "rq_status", "mr_reference", "link_id", "recipe_name"],
+            as_dict=True,
         )
         if (not data_a or not data_b or
             data_a.rq_status != "Processing" or data_b.rq_status != "Processing"):
@@ -1570,14 +1582,49 @@ def _background_swap_recipes(row_a_name, row_b_name):
             frappe.db.commit()
             return
 
-        from caf.caf.doctype.daily_production.rearrange_and_change_slot import process_switch
-        process_switch(doc_name=data_a.parent, child_doctype=CHILD_DOCTYPE)
+        dp = frappe.get_doc("Daily Production", data_a.parent)
+        row_a = next((r for r in dp.production_table if r.name == row_a_name), None)
+        row_b = next((r for r in dp.production_table if r.name == row_b_name), None)
+        if not row_a or not row_b:
+            for name in [row_a_name, row_b_name]:
+                frappe.db.set_value(CHILD_DOCTYPE, name, "rq_status", "")
+            frappe.db.commit()
+            return
 
-        processing_rows = frappe.get_all(CHILD_DOCTYPE,
-            filters={"parent": data_a.parent, "rq_status": "Processing"},
-            fields=["name"])
-        for pr in processing_rows:
-            frappe.db.set_value(CHILD_DOCTYPE, pr.name, "rq_status", "Done")
+        from caf.caf.doctype.daily_production.rearrange_and_change_slot import (
+            _get_quality_data_by_id,
+            _relink_quality_docs,
+            _swap_db_link_ids,
+            _cleanup_redundant_wips,
+        )
+        from caf.caf.doctype.daily_production.cancellation import _cancel_work_orders_by_id
+        from caf.caf.doctype.daily_production.wo_helpers import get_wo_by_type
+        from frappe.utils import now_datetime
+
+        qual_a = _get_quality_data_by_id(row_a.link_id)
+        qual_b = _get_quality_data_by_id(row_b.link_id)
+
+        _swap_db_link_ids(row_a.link_id, row_b.link_id)
+
+        _cancel_work_orders_by_id(row_a.link_id)
+        _cancel_work_orders_by_id(row_b.link_id)
+
+        new_wos_a = dp.create_material_request_after_change_size(row_a.recipe_name, [row_a])
+        new_wos_b = dp.create_material_request_after_change_size(row_b.recipe_name, [row_b])
+
+        _cleanup_redundant_wips(new_wos_a, row_a, CHILD_DOCTYPE, now_datetime())
+        _cleanup_redundant_wips(new_wos_b, row_b, CHILD_DOCTYPE, now_datetime())
+
+        new_cook_a = get_wo_by_type(row_a.link_id, "Cook")
+        new_cook_b = get_wo_by_type(row_b.link_id, "Cook")
+
+        if new_cook_a:
+            _relink_quality_docs(qual_b, new_cook_a)
+        if new_cook_b:
+            _relink_quality_docs(qual_a, new_cook_b)
+
+        frappe.db.set_value(CHILD_DOCTYPE, row_a_name, "rq_status", "Done")
+        frappe.db.set_value(CHILD_DOCTYPE, row_b_name, "rq_status", "Done")
         frappe.db.commit()
     except Exception as e:
         frappe.log_error(title="Background swap recipes failed", message=frappe.get_traceback())
@@ -1588,29 +1635,74 @@ def _background_swap_recipes(row_a_name, row_b_name):
 
 
 def _background_move_wo_migration(dp_name):
-    """Background worker: process ALL Change Slot / Rearrange migrations via DP functions."""
+    """Background worker: process ALL Change Slot WO migrations for a DP at once."""
     processing_rows = []
     try:
+        from caf.caf.doctype.daily_production.rearrange_and_change_slot import (
+            _relink_quality_docs,
+            _cleanup_redundant_wips,
+            _get_quality_data_by_id,
+        )
+        from caf.caf.doctype.daily_production.cancellation import _cancel_work_orders_by_id
+        from caf.caf.doctype.daily_production.wo_helpers import get_wo_by_type
+        from frappe.utils import now_datetime
+
+        # Find ALL Processing rows for this DP (handles multiple concurrent moves)
         processing_rows = frappe.get_all(
             CHILD_DOCTYPE,
             filters={"parent": dp_name, "rq_status": "Processing"},
-            fields=["name"],
+            fields=["name", "recipe_name", "link_id", "mr_reference", "custom_pair_id"],
         )
         if not processing_rows:
             return
 
-        from caf.caf.doctype.daily_production.rearrange_and_change_slot import (
-            process_slot_swaps,
-            process_switch,
-        )
-        process_slot_swaps(doc_name=dp_name, child_doctype=CHILD_DOCTYPE)
-        process_switch(doc_name=dp_name, child_doctype=CHILD_DOCTYPE)
+        dp = frappe.get_doc("Daily Production", dp_name)
+        start_time = now_datetime()
 
-        for pr in processing_rows:
-            frappe.db.set_value(CHILD_DOCTYPE, pr.name, "rq_status", "Done")
+        for pr_data in processing_rows:
+            row = next((r for r in dp.production_table if r.name == pr_data.name), None)
+            if not row:
+                frappe.db.set_value(CHILD_DOCTYPE, pr_data.name, "rq_status", "Done")
+                continue
+            if row.recipe_name == NO_COOKING:
+                frappe.db.set_value(CHILD_DOCTYPE, pr_data.name, "rq_status", "Done")
+                continue
+
+            quality_data = _get_quality_data_by_id(pr_data.link_id)
+
+            if pr_data.mr_reference:
+                _cancel_work_orders_by_id(row.link_id)
+
+            new_wos = dp.create_material_request_after_change_size(
+                row.recipe_name, [row]
+            )
+            _cleanup_redundant_wips(new_wos, row, CHILD_DOCTYPE, start_time)
+
+            if pr_data.mr_reference:
+                new_cook_wo = get_wo_by_type(row.link_id, "Cook")
+                if new_cook_wo:
+                    _relink_quality_docs(quality_data, new_cook_wo)
+
+            frappe.db.set_value(CHILD_DOCTYPE, pr_data.name, "rq_status", "Done")
+
+            # Clear paired NC row status
+            if pr_data.custom_pair_id:
+                pair_rows = frappe.get_all(
+                    CHILD_DOCTYPE,
+                    filters={"parent": dp_name, "custom_pair_id": pr_data.custom_pair_id},
+                    fields=["name"],
+                )
+                for ppr in pair_rows:
+                    frappe.db.set_value(CHILD_DOCTYPE, ppr.name, "produ_status", "")
+                    frappe.db.set_value(CHILD_DOCTYPE, ppr.name, "custom_pair_id", "")
+                    frappe.db.set_value(CHILD_DOCTYPE, ppr.name, "rq_status", "Done")
+
+            frappe.db.set_value(CHILD_DOCTYPE, pr_data.name, "custom_pair_id", "")
+
         frappe.db.commit()
     except Exception as e:
         frappe.log_error(title="Background move WO migration failed", message=frappe.get_traceback())
+        # Mark all Processing rows as Failed
         for pr_data in processing_rows:
             frappe.db.set_value(CHILD_DOCTYPE, pr_data.name, "rq_status", "Failed")
             frappe.db.set_value(CHILD_DOCTYPE, pr_data.name, "custom_wo_error", _extract_friendly_error(e))
