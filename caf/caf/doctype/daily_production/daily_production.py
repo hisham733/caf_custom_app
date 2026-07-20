@@ -389,9 +389,8 @@ class DailyProduction(Document):
     def create_material_request_after_change_size(self, recipe_name: str, rows: list) -> list:
             """Force-update production after a size change while preserving the existing Link ID.
 
-            Detaches the old Material Request globally, creates a new one
-            bypassing workflow approval, submits it, and writes back the
-            new MR + WO references to the child row.
+            Creates the new Material Request first, then detaches the old one
+            only if the new one succeeds — keeping the old MR intact on failure.
 
             Args:
                 recipe_name: Recipe to create the MR for
@@ -406,26 +405,26 @@ class DailyProduction(Document):
             if not old_mr_name:
                 self.create_material_request(recipe_name, rows)
                 return []
-            # 1. Detach old MR globally
-            frappe.db.sql("UPDATE `tabCreate ProExl Items` SET mr_reference = NULL WHERE mr_reference = %s", (old_mr_name,))
-            if frappe.db.exists("Material Request", old_mr_name):
-                frappe.db.set_value("Material Request", old_mr_name, {"custom_link_id": "", "custom_daily_production_id": ""})
-            # frappe.db.commit()
-            # 2. Create New M
+            # 1. Create New MR
             new_mr = frappe.new_doc("Material Request")
             new_mr.custom_link_id = existing_link_id
-            new_mr.custom_daily_production_id = self.name 
+            new_mr.custom_daily_production_id = self.name
             _build_mr_header(new_mr, self, first)
             _append_pack_items(new_mr, rows)
             _append_recipe_row(new_mr, recipe_name, first)
-            # 3. Bypass Workflow & Submit
+            # 2. Bypass Workflow & Submit
             new_mr.flags.ignore_permissions = True
             new_mr.flags.ignore_workflow = True
             if frappe.get_meta("Material Request").has_field("workflow_state"):
-                new_mr.workflow_state = "Approved" 
+                new_mr.workflow_state = "Approved"
             new_mr.insert()
             new_mr.flags.ignore_workflow = True
             new_mr.submit()
+            # 3. New MR created successfully — now detach old MR
+            frappe.db.sql("UPDATE `tabCreate ProExl Items` SET mr_reference = NULL WHERE mr_reference = %s", (old_mr_name,))
+            if frappe.db.exists("Material Request", old_mr_name):
+                frappe.db.set_value("Material Request", old_mr_name, {"custom_link_id": "", "custom_daily_production_id": ""})
+            # 4. Write back new MR reference
             newly_born_wos = getattr(new_mr, "wo_list", [])
             _write_back_to_row_additive(rows[0], new_mr.name, new_mr)
             return newly_born_wos
