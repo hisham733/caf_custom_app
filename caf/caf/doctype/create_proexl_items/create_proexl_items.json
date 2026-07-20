@@ -413,7 +413,7 @@
    "fieldname": "custom_wo_status",
    "fieldtype": "Select",
    "hidden": 1,
-   "label": "WO Status",
+    "label": "RQ Status",
    "options": "\nProcessing\nDone\nFailed",
    "read_only": 1
   },

@@ -1439,7 +1439,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 				read_only: 1, default: link_id,
 			},
 			{
-				label: __("WO Status"), fieldname: "wo_status", fieldtype: "Data",
+				label: __("RQ Status"), fieldname: "wo_status", fieldtype: "Data",
 				read_only: 1, default: wo_status,
 			},
 			{
