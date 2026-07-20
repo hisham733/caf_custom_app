@@ -241,7 +241,10 @@ frappe.ui.form.on("Daily Production", {
                 grid.grid_pagination.page_length = MAX_ROWS;
                 grid.grid_pagination.go_to_page(1);
             }
-            grid.cannot_add_rows = (frm.doc.production_table || []).length >= MAX_ROWS;
+            grid.cannot_add_rows = true;
+            grid.cannot_delete_rows = true;
+            grid.df.cannot_add_rows = true;
+            grid.df.cannot_delete_rows = true;
         }
         setup_production_grid(frm);
 
@@ -659,6 +662,8 @@ frappe.ui.form.on("Create ProExl Items", {
     recipe_cook_time: function(frm, cdt, cdn) { if (validate_field_dependency(frm, cdt, cdn, 'recipe_cook_time', 'recipe_name', 'Recipe Name')) { revalidate_subsequent_pack_times(frm, cdt, cdn); } },
     pack_qty_2: function(frm, cdt, cdn) {
         const row = locals[cdt][cdn];
+        const nop = parseInt(row.number_of_pack) || 1;
+        if (nop <= 2) return;
         if (row.pack_qty_2 && !row.pack_qty) {
             frappe.msgprint(__('Please fill Pack 1 Qty first before entering Pack 2 Qty.'));
             frappe.model.set_value(cdt, cdn, 'pack_qty_2', 0);
@@ -666,6 +671,8 @@ frappe.ui.form.on("Create ProExl Items", {
     },
     pack_qty_3: function(frm, cdt, cdn) {
         const row = locals[cdt][cdn];
+        const nop = parseInt(row.number_of_pack) || 1;
+        if (nop <= 3) return;
         if (row.pack_qty_3 && !row.pack_qty_2) {
             frappe.msgprint(__('Please fill Pack 2 Qty first before entering Pack 3 Qty.'));
             frappe.model.set_value(cdt, cdn, 'pack_qty_3', 0);
@@ -673,6 +680,8 @@ frappe.ui.form.on("Create ProExl Items", {
     },
     pack_qty_4: function(frm, cdt, cdn) {
         const row = locals[cdt][cdn];
+        const nop = parseInt(row.number_of_pack) || 1;
+        if (nop <= 4) return;
         if (row.pack_qty_4 && !row.pack_qty_3) {
             frappe.msgprint(__('Please fill Pack 3 Qty first before entering Pack 4 Qty.'));
             frappe.model.set_value(cdt, cdn, 'pack_qty_4', 0);
@@ -680,6 +689,8 @@ frappe.ui.form.on("Create ProExl Items", {
     },
     pack_qty_5: function(frm, cdt, cdn) {
         const row = locals[cdt][cdn];
+        const nop = parseInt(row.number_of_pack) || 1;
+        if (nop <= 5) return;
         if (row.pack_qty_5 && !row.pack_qty_4) {
             frappe.msgprint(__('Please fill Pack 4 Qty first before entering Pack 5 Qty.'));
             frappe.model.set_value(cdt, cdn, 'pack_qty_5', 0);
@@ -687,6 +698,8 @@ frappe.ui.form.on("Create ProExl Items", {
     },
     pack_qty_6: function(frm, cdt, cdn) {
         const row = locals[cdt][cdn];
+        const nop = parseInt(row.number_of_pack) || 1;
+        if (nop <= 6) return;
         if (row.pack_qty_6 && !row.pack_qty_5) {
             frappe.msgprint(__('Please fill Pack 5 Qty first before entering Pack 6 Qty.'));
             frappe.model.set_value(cdt, cdn, 'pack_qty_6', 0);
@@ -694,6 +707,8 @@ frappe.ui.form.on("Create ProExl Items", {
     },
     pack_qty_7: function(frm, cdt, cdn) {
         const row = locals[cdt][cdn];
+        const nop = parseInt(row.number_of_pack) || 1;
+        if (nop <= 7) return;
         if (row.pack_qty_7 && !row.pack_qty_6) {
             frappe.msgprint(__('Please fill Pack 6 Qty first before entering Pack 7 Qty.'));
             frappe.model.set_value(cdt, cdn, 'pack_qty_7', 0);
@@ -795,7 +810,8 @@ function calculate_qty_or_size_WO(frm, row, field_changed) {
 // DYNAMIC FIELD HELPERS
 // =================================================================
 
-const PROTECTED_HARDWARE = ['recipe_cook_workstaion', 'recipe_cook_round', 'link_id'];
+const ALWAYS_READ_ONLY = ['recipe_cook_workstaion', 'recipe_cook_round', 'link_id',
+    'mr_reference', 'custom_wo_status', 'custom_yield', 'production_plane', 'custom_pair_id'];
 const SYSTEM_FIELDS = ['name', 'owner', 'creation', 'modified', 'modified_by', 'parent', 'parentfield', 'parenttype', 'idx', 'doctype'];
 
 /** Gets all user-data fields that are allowed to be moved or swapped */
@@ -803,7 +819,7 @@ function get_moveable_fields(doctype) {
     const meta = frappe.get_meta(doctype);
     const non_data_types = ['Section Break', 'Column Break', 'Tab Break', 'HTML', 'Button', 'Heading', 'Fold'];
     return meta.fields
-        .filter(f => !PROTECTED_HARDWARE.includes(f.fieldname) && !SYSTEM_FIELDS.includes(f.fieldname) && !non_data_types.includes(f.fieldtype))
+        .filter(f => !ALWAYS_READ_ONLY.includes(f.fieldname) && !SYSTEM_FIELDS.includes(f.fieldname) && !non_data_types.includes(f.fieldtype))
         .map(f => f.fieldname);
 }
 
@@ -1007,9 +1023,8 @@ window.apply_edit_restrictions = function(frm, cdt, cdn) {
         const status = row.produ_status;
         const is_no_cook = !row.recipe_name || row.recipe_name === "" || row.recipe_name === "No Cooking";
 
-        if (status === "New Schedule" ){
-            if (is_no_cook){
-            all_fields.forEach(f => field_configs[f] = 0);}
+        if (status === "New Schedule") {
+            all_fields.forEach(f => field_configs[f] = 0);
         }
         else if (status === "Recipe Change") {
             all_fields.forEach(f => field_configs[f] = 0);
@@ -1028,7 +1043,6 @@ window.apply_edit_restrictions = function(frm, cdt, cdn) {
             all_fields.forEach(f => field_configs[f] = 1);
             all_note_fields.forEach(f => field_configs[f] = 0);
             field_configs.produ_status = 0;
-            field_configs.custom_pair_id = 0;
         }
         else if (status === "Only Remark") {
             all_fields.forEach(f => field_configs[f] = 1);
@@ -1058,6 +1072,16 @@ window.apply_edit_restrictions = function(frm, cdt, cdn) {
             }
         }
 
+        // No-recipe lock: when recipe is empty/No Cooking, lock everything except recipe_name and produ_status
+        if (is_no_cook) {
+            all_fields.forEach(fn => {
+                if (fn !== "produ_status" && fn !== "recipe_name"
+                    && !ALWAYS_READ_ONLY.includes(fn)) {
+                    field_configs[fn] = 1;
+                }
+            });
+        }
+
         Object.keys(field_configs).forEach(fn => {
             frm.set_df_property('production_table', 'read_only', field_configs[fn], frm.doc.name, fn, row.name);
         });
@@ -1068,7 +1092,7 @@ window.apply_edit_restrictions = function(frm, cdt, cdn) {
             if (grid.grid_row_form && grid.grid_row_form.wrapper.is(':visible')) grid.grid_row_form.refresh();
         }
 
-        PROTECTED_HARDWARE.forEach(fn => {
+        ALWAYS_READ_ONLY.forEach(fn => {
             frm.set_df_property('production_table', 'read_only', 1, frm.doc.name, fn, row.name);
         });
     });
@@ -1083,6 +1107,9 @@ frappe.ui.form.on('Create ProExl Items', {
             frappe.model.set_value(cdt, cdn, "recipe_name", "No Cooking");
         }
 
+        window.apply_edit_restrictions(frm, cdt, cdn);
+    },
+    recipe_name(frm, cdt, cdn) {
         window.apply_edit_restrictions(frm, cdt, cdn);
     }
 });

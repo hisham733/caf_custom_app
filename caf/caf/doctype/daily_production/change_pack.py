@@ -65,8 +65,9 @@ def process_pack_change_or_add(doc_name: str, child_doctype: str) -> None:
         # 5. Targeted Deletion: Remove everything EXCEPT the New Pack WO
         _cleanup_everything_except_new_pack(newly_born_wos, row_doc, child_doctype, start_time)
 
-        # Finalize status
-        row_doc.db_set("produ_status", "")
+        # Finalize status (keep on recipe rows, only clear No Cooking)
+        if row_doc.recipe_name == "No Cooking":
+            row_doc.db_set("produ_status", "")
 
     rws(doc_name, child_doctype)
 #     frappe.msgprint(_("✅ Packing update complete. Only the Packing Work Order was regenerated."),ala)

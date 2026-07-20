@@ -453,6 +453,18 @@
 	background: #ef4444;
 	color: #fff;
 }
+.schedule-item-wo-failed {
+	cursor: pointer;
+	animation: item-failed-pulse 2s ease-in-out infinite;
+}
+.schedule-item-wo-failed:hover {
+	background: #dc2626 !important;
+	box-shadow: 0 0 6px 2px rgba(239, 68, 68, 0.4);
+}
+@keyframes item-failed-pulse {
+	0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.3); }
+	50%      { box-shadow: 0 0 6px 2px rgba(239, 68, 68, 0.25); }
+}
 
 .schedule-item-size {
 	font-size: 10px;
@@ -661,4 +673,120 @@
 .ws-problem.pack-slot {
 	cursor: default !important;
 	opacity: 0.5;
+}
+
+/* ── Activity Log Panel ─────────────────────────────────────── */
+.schedule-log-panel {
+	display: none;
+	position: fixed;
+	top: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 1050;
+}
+.schedule-log-panel.open {
+	display: flex;
+}
+.schedule-log-overlay {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background: rgba(0, 0, 0, 0.3);
+	z-index: 1050;
+}
+.schedule-log-drawer {
+	position: fixed;
+	top: 0;
+	right: 0;
+	bottom: 0;
+	width: 420px;
+	max-width: 90vw;
+	background: #fff;
+	box-shadow: -4px 0 20px rgba(0, 0, 0, 0.15);
+	z-index: 1051;
+	display: flex;
+	flex-direction: column;
+	animation: slideInRight 0.2s ease-out;
+}
+@keyframes slideInRight {
+	from { transform: translateX(100%); }
+	to { transform: translateX(0); }
+}
+.schedule-log-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 12px 16px;
+	border-bottom: 1px solid #e8e8e8;
+	background: #f8f8f8;
+	flex-shrink: 0;
+}
+.schedule-log-header h5 {
+	margin: 0;
+	font-weight: 600;
+}
+.schedule-log-body {
+	flex: 1;
+	overflow-y: auto;
+	padding: 8px 0;
+}
+.schedule-log-entry {
+	padding: 10px 16px;
+	border-bottom: 1px solid #f0f0f0;
+}
+.schedule-log-entry:last-child {
+	border-bottom: none;
+}
+.schedule-log-entry-header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 4px;
+}
+.schedule-log-who {
+	font-weight: 500;
+	font-size: 12px;
+	color: #555;
+}
+.schedule-log-when {
+	font-size: 11px;
+	color: #999;
+	margin-left: auto;
+}
+.schedule-log-summary {
+	font-size: 13px;
+	color: #333;
+	line-height: 1.4;
+}
+.schedule-log-details {
+	margin-top: 6px;
+}
+.schedule-log-diff {
+	font-size: 12px;
+	margin-bottom: 0;
+}
+.schedule-log-diff th {
+	font-weight: 600;
+	font-size: 11px;
+	text-transform: uppercase;
+	color: #888;
+	padding: 3px 6px;
+}
+.schedule-log-diff td {
+	padding: 3px 6px;
+	vertical-align: middle;
+}
+.schedule-log-diff td:first-child {
+	font-weight: 500;
+	color: #555;
+}
+.schedule-log-entry .label {
+	font-size: 10px;
+	font-weight: 600;
+	padding: 2px 6px;
+	border-radius: 3px;
+	text-transform: uppercase;
+	letter-spacing: 0.3px;
 }

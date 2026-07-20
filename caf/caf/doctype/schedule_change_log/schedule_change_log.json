@@ -1,0 +1,161 @@
+{
+ "actions": [],
+ "autoname": "naming_series:",
+ "creation": "2026-07-17 10:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "change_datetime",
+  "changed_by",
+  "action_type",
+  "section_break_slot",
+  "day",
+  "workstation",
+  "column_break_round",
+  "cook_round",
+  "column_break_recipe",
+  "recipe_name",
+  "section_break_context",
+  "dp_name",
+  "child_row_name",
+  "column_break_summary",
+  "summary",
+  "section_break_diff",
+  "changes_json"
+ ],
+ "fields": [
+  {
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "options": "SCH-LOG-.YYYY.-"
+  },
+  {
+   "fieldname": "change_datetime",
+   "fieldtype": "Datetime",
+   "label": "When",
+   "reqd": 1,
+   "default": "Now"
+  },
+  {
+   "fieldname": "changed_by",
+   "fieldtype": "Data",
+   "label": "Changed By",
+   "reqd": 1,
+   "default": "__user"
+  },
+  {
+   "fieldname": "action_type",
+   "fieldtype": "Select",
+   "label": "Action",
+   "options": "Move\nSwap\nEdit\nAdd Recipe\nCancel\nCreate WO\nSubmit Week",
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_break_slot",
+   "fieldtype": "Section Break",
+   "label": "Slot Info"
+  },
+  {
+   "fieldname": "day",
+   "fieldtype": "Date",
+   "label": "Day"
+  },
+  {
+   "fieldname": "workstation",
+   "fieldtype": "Data",
+   "label": "Workstation"
+  },
+  {
+   "fieldname": "column_break_round",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "cook_round",
+   "fieldtype": "Int",
+   "label": "Round"
+  },
+  {
+   "fieldname": "column_break_recipe",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "recipe_name",
+   "fieldtype": "Data",
+   "label": "Recipe"
+  },
+  {
+   "fieldname": "section_break_context",
+   "fieldtype": "Section Break",
+   "label": "Context"
+  },
+  {
+   "fieldname": "dp_name",
+   "fieldtype": "Link",
+   "label": "DP",
+   "options": "Daily Production"
+  },
+  {
+   "fieldname": "child_row_name",
+   "fieldtype": "Data",
+   "label": "Child Row"
+  },
+  {
+   "fieldname": "column_break_summary",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "summary",
+   "fieldtype": "Small Text",
+   "label": "Summary"
+  },
+  {
+   "fieldname": "section_break_diff",
+   "fieldtype": "Section Break",
+   "label": "Change Details"
+  },
+  {
+   "fieldname": "changes_json",
+   "fieldtype": "Code",
+   "label": "Changes (JSON)",
+   "options": "JSON",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-07-17 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Caf",
+ "name": "Schedule Change Log",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "Stock User"
+  },
+  {
+   "read": 1,
+   "role": "Stock Manager"
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

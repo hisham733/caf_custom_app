@@ -13,9 +13,10 @@ frappe.pages["production-schedule"].on_page_show = function () {
 caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 	constructor(wrapper) {
 		this.wrapper = wrapper;
+		var saved = this._load_week_state();
 		this.state = {
-			year: new Date().getFullYear(),
-			week: null,
+			year: saved.year || new Date().getFullYear(),
+			week: saved.week || null,
 			mode: "View Schedule",
 			week_monday: null,
 			workstations: [],
@@ -28,6 +29,9 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			ws_problems: [],
 			last_action: null,
 		};
+		console.log("this",this);
+		console.log("===="*50);
+		console.log("this.state",this.state);
 		this.page = frappe.ui.make_app_page({
 			parent: wrapper,
 			title: __("Production Schedule"),
@@ -47,10 +51,42 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 	}
 
 	refresh() {
-		var now = new Date();
-		this._compute_iso_week(now);
+		console.log("this",this);
+		console.log("===="*50);
+		console.log("this.state",this.state);
+		if (!this.state.week) {
+			var saved = this._load_week_state();
+			if (saved.week) {
+				this.state.week = saved.week;
+				this.state.year = saved.year;
+			} else {
+				var now = new Date();
+				this._compute_iso_week(now);
+			}
+		}
 		this._sync_inputs();
 		this._load_week();
+	}
+
+	_load_week_state() {
+		console.log("this",this);
+		console.log("===="*50);
+		console.log("this.state",this.state);
+		try {
+			var v = JSON.parse(localStorage.getItem("ps_week_state"));
+			return v && v.week ? v : {};
+		} catch (e) {
+			return {};
+		}
+	}
+
+	_save_week_state() {
+		try {
+			localStorage.setItem("ps_week_state", JSON.stringify({
+				week: this.state.week,
+				year: this.state.year,
+			}));
+		} catch (e) { /* ignore */ }
 	}
 
 	// ══════════════════════════════════════════════════════════════
@@ -98,7 +134,21 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			'<div class="schedule-board-wrapper" role="region" aria-label="' + __("Production schedule grid") + '">' +
 			'  <div class="schedule-board" id="schedule-board"></div>' +
 			'</div>' +
-			'<div class="schedule-status" id="schedule-status" aria-live="polite"></div>'
+			'<div class="schedule-status" id="schedule-status" aria-live="polite"></div>' +
+			'<div class="schedule-log-panel" id="schedule-log-panel">' +
+			'  <div class="schedule-log-overlay" id="schedule-log-overlay"></div>' +
+			'  <div class="schedule-log-drawer">' +
+			'    <div class="schedule-log-header">' +
+			'      <h5>' + __("Change Log") + '</h5>' +
+			'      <button class="btn btn-xs btn-default schedule-log-close" id="schedule-log-close">' +
+			'        <svg class="icon icon-sm"><use href="#icon-close"></use></svg>' +
+			'      </button>' +
+			'    </div>' +
+			'    <div class="schedule-log-body" id="schedule-log-body">' +
+			'      <div class="text-muted text-center" style="padding:40px 0">' + __("Loading…") + '</div>' +
+			'    </div>' +
+			'  </div>' +
+			'</div>'
 		);
 	}
 
@@ -111,17 +161,31 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			me._load_week();
 		});
 
+		m.find("#schedule-log-btn").on("click", function () {
+			me._toggle_log_panel();
+		});
+
+		m.find("#schedule-log-close, #schedule-log-overlay").on("click", function () {
+			me._close_log_panel();
+		});
+
 		m.find("#schedule-submit-btn").on("click", function () {
 			me._submit_week();
 		});
 
 		m.find("#schedule-year").on("change", function () {
+			me.state.mode = "View Schedule";
+			me.page.main.find("#schedule-mode").val("View Schedule");
 			me._read_inputs();
+			me._save_week_state();
 			me._load_week();
 		});
 
 		m.find("#schedule-week").on("change", function () {
+			me.state.mode = "View Schedule";
+			me.page.main.find("#schedule-mode").val("View Schedule");
 			me._read_inputs();
+			me._save_week_state();
 			me._load_week();
 		});
 
@@ -141,10 +205,6 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 		});
 
 		m.on("click", ".round-slot .schedule-item", function () {
-			if (this.dataset.woStatus === "Processing") {
-				frappe.show_alert({ message: __("Work Orders are being processed. Please wait…"), indicator: "orange" });
-				return;
-			}
 			var slot = this.closest(".round-slot");
 			var row = slot ? slot.closest("tr") : null;
 			var ws = row ? row.dataset.workstation : "";
@@ -153,6 +213,14 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 				return;
 			}
 			me._show_edit_dialog(this);
+		});
+
+		m.on("click", ".schedule-item-wo-failed", function (e) {
+			e.stopPropagation();
+			var item = $(this).closest(".schedule-item");
+			var item_id = item.data("item-id") || item[0].dataset.itemId;
+			if (!item_id) return;
+			me._show_failed_error(item_id);
 		});
 
 		m.on("click", ".round-slot-empty.addable", function () {
@@ -552,7 +620,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			? '<span class="schedule-item-badge">' + emoji + " " + me._escape(r.status) + "</span>"
 			: "";
 		var wo_badge_html = r.wo_status
-			? '<span class="schedule-item-wo-badge" data-value="' + me._escape(r.wo_status) + '">' + me._escape(r.wo_status) + "</span>"
+			? '<span class="schedule-item-wo-badge' + (r.wo_status === 'Failed' ? ' schedule-item-wo-failed' : '') + '" data-value="' + me._escape(r.wo_status) + '">' + me._escape(r.wo_status) + (r.wo_status === 'Failed' ? ' &#x21bb;' : '') + "</span>"
 			: "";
 		return (
 			'<div class="schedule-item' + (r.status ? ' schedule-item-locked' : '') + (r.wo_status === 'Processing' ? ' schedule-item-processing' : '') + '"' +
@@ -641,6 +709,61 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 				},
 			});
 		}, 5000);
+	}
+
+	_show_failed_error(item_id) {
+		var me = this;
+		frappe.call({
+			method: "caf.caf.page.production_schedule.production_schedule.get_row_error",
+			args: { item_id: item_id },
+			callback: function (r) {
+				var err = (r.message && r.message.error) || "";
+				var has_error = err.length > 0;
+				var d = new frappe.ui.Dialog({
+					title: __("Work Order Issue"),
+					indicator: "red",
+					size: "large",
+					fields: [
+						{
+							fieldname: "error_msg",
+							fieldtype: "HTML",
+							options: '<div style="padding:8px 0;font-size:14px;color:#333;line-height:1.6;">' + (has_error ? frappe.utils.escape_html(err) : __("No error details available.")) + "</div>",
+						},
+					],
+					primary_action_label: __("Retry"),
+					primary_action: function () {
+						d.hide();
+						me._retry_failed_row(item_id);
+					},
+				});
+				if (!has_error) {
+					d.get_primary_btn().addClass("hidden");
+				}
+				d.show();
+			},
+		});
+	}
+
+	_retry_failed_row(item_id) {
+		var me = this;
+		frappe.call({
+			method: "caf.caf.page.production_schedule.production_schedule.retry_failed_row",
+			args: { item_id: item_id },
+			freeze: true,
+			freeze_message: __("Retrying…"),
+			callback: function (r) {
+				if (r.message && r.message.success) {
+					frappe.show_alert({ message: r.message.message, indicator: "green" });
+					me._load_week();
+					me._poll_row_status(item_id, function () { me._load_week(); });
+				} else {
+					frappe.show_alert({ message: r.message ? r.message.message : __("Retry failed"), indicator: "red" });
+				}
+			},
+			error: function () {
+				frappe.show_alert({ message: __("Retry failed"), indicator: "red" });
+			},
+		});
 	}
 
 	_apply_dialog_restrictions(d, status_val, is_no_cook_val) {
@@ -752,7 +875,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 	}
 
 	_apply_add_dialog_restrictions(d, status_val, is_no_cook_val) {
-		var ALWAYS_READ_ONLY = ['cooker', 'round', 'yield', 'total_output', 'mr_reference', 'production_plane','link_id'];
+		var ALWAYS_READ_ONLY = ['cooker', 'round', 'yield', 'total_output', 'mr_reference', 'production_plane','link_id','wo_status'];
 		var config = {};
 		var dlg = d;
 
@@ -1183,12 +1306,16 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 		var dp_name = el.dataset.dpName || "";
 		var wo_status = el.dataset.woStatus || "";
 
+		var orig_recipe = recipe;
+		var orig_size = size;
+		var orig_pack_items = JSON.stringify(pack_items);
+
 		var is_no_cook = !recipe || recipe === "No Cooking";
 		var _status_options;
-		if (is_no_cook) {
-			_status_options = "\nNew Schedule\nChange Slot";
+		if (is_no_cook || !mr_reference) {
+			_status_options = "\nNew Schedule";
 		} else {
-			_status_options = "\nRecipe Change\nCancelled\nChange Slot\nRearrange\nOnly Remark\nPack Change\nSingle WO";
+			_status_options = "\nRecipe Change\nCancelled\nOnly Remark\nPack Change\nSingle WO";
 		}
 
 		var fields = [
@@ -1247,7 +1374,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			{ fieldtype: "Column Break" },
 			{
 				label: __("Number of Packs"), fieldname: "number_of_pack", fieldtype: "Select",
-				options: "0\n1\n2\n3\n4\n5\n6\n7", default: String(pack_count || 0),
+				options: "1\n2\n3\n4\n5\n6\n7", default: String(pack_count || 1),
 			},
 			{ fieldname: "sec_pack", fieldtype: "Section Break", label: __("Pack Details") },
 		];
@@ -1326,7 +1453,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			}
 		);
 
-		if (!is_past && !is_no_cook) {
+		if (!is_past && !is_no_cook && mr_reference) {
 			fields.push(
 				{ fieldname: "sec_actions", fieldtype: "Section Break", label: __("Actions") },
 				{
@@ -1467,24 +1594,44 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 						to_save.push({ field: sf.field, value: val });
 					}
 				});
-				me._save_item_fields(item_id, to_save, function (ok) {
-					if (ok) {
-						if (status_val === "Recipe Change" && recipe_val !== recipe) {
-							frappe.call({
-								method: "caf.caf.page.production_schedule.production_schedule.process_recipe_change",
-								args: { item_id: item_id },
-							});
-						}
-						frappe.call({
-							method: "caf.caf.page.production_schedule.production_schedule.process_dp_updates",
-							args: { item_id: item_id },
+			me._save_item_fields(item_id, to_save, function (ok) {
+				if (ok) {
+					var recipe_changed = recipe_val !== orig_recipe;
+					var size_changed = parseFloat(d.get_value("size")) !== parseFloat(orig_size);
+					var current_packs = [];
+					var pc = parseInt(d.get_value("number_of_pack")) || 0;
+					for (var i = 1; i <= pc; i++) {
+						var s = i === 1 ? "" : "_" + i;
+						current_packs.push({
+							name: d.get_value("pack_name" + s) || "",
+							qty: parseFloat(d.get_value("pack_qty" + s)) || 0,
+							remark: d.get_value("pack_remark" + s) || "",
 						});
 					}
+					var packs_changed = JSON.stringify(current_packs) !== orig_pack_items;
+				var _after_rerun = function () {
 					me._load_week();
 					me._poll_row_status(item_id, function () {
 						me._load_week();
 					});
-				});
+				};
+				if (status_val === "Recipe Change" && (recipe_changed || size_changed || packs_changed)) {
+					frappe.call({
+						method: "caf.caf.page.production_schedule.production_schedule.process_recipe_change",
+						args: { item_id: item_id },
+						callback: function () { _after_rerun(); },
+					});
+				} else if (status_val === "Pack Change" && packs_changed && mr_reference) {
+					frappe.call({
+						method: "caf.caf.page.production_schedule.production_schedule.process_pack_change",
+						args: { item_id: item_id },
+						callback: function () { _after_rerun(); },
+					});
+				} else {
+					_after_rerun();
+				}
+				}
+			});
 				d.hide();
 			};
 		}
@@ -1508,13 +1655,10 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 				var no_cook = !recipe_val || recipe_val === "No Cooking";
 				var status_field = d.get_field("status");
 				if (status_field) {
-					if (no_cook) {
-						status_field.df.options = mr_reference ? "\nChange Slot" : "\nNew Schedule\nChange Slot";
+					if (no_cook || !mr_reference) {
+						status_field.df.options = "\nNew Schedule";
 					} else {
-						var opts = "\nRecipe Change\nCancelled\nChange Slot\nRearrange\nOnly Remark\nPack Change\nSingle WO";
-						if (!mr_reference) {
-							opts = "\nNew Schedule" + opts;
-						}
+						var opts = "\nRecipe Change\nCancelled\nOnly Remark\nPack Change\nSingle WO";
 						status_field.df.options = opts;
 					}
 					status_field.set_options();
@@ -1543,6 +1687,16 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 								d.$wrapper.data("raw_materials", rm);
 								var sz = parseFloat(d.get_value("size")) || 0;
 								d.set_value("total_output", rm * sz);
+								var pc = r.message.pack_count || 1;
+								var opts = [];
+								for (var i = 1; i <= pc; i++) opts.push(i);
+								var pc_field = d.get_field("number_of_pack");
+								if (pc_field) {
+									pc_field.df.options = opts.join("\n");
+									pc_field.set_options();
+									var cur = parseInt(d.get_value("number_of_pack")) || 1;
+									if (cur > pc) d.set_value("number_of_pack", "1");
+								}
 							}
 						},
 					});
@@ -1568,9 +1722,9 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 				var recipe_val = d.get_value("recipe");
 				var no_cook = !recipe_val || recipe_val === "No Cooking";
 				me._apply_dialog_restrictions(d, new_status, no_cook);
-				var raw_mat = parseFloat(d.$wrapper.data("raw_materials")) || 0;
+				var total_input_from_page = parseFloat(d.$wrapper.data("raw_materials")) || 0;
 				var size_val = parseFloat(d.get_value("size")) || 0;
-				d.set_value("total_output", raw_mat * size_val);
+				d.set_value("total_output", total_input_from_page * size_val);
 			});
 			var nop_field = d.get_field("number_of_pack");
 			if (nop_field) {
@@ -1668,7 +1822,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			{ fieldname: "sec_recipe_note", fieldtype: "Section Break", label: __("Recipe Note") },
 			{
 				label: __("Number of Packs"), fieldname: "pack_count", fieldtype: "Select",
-				options: "0\n1\n2\n3\n4\n5\n6\n7", default: "1",
+				options: "1\n2\n3\n4\n5\n6\n7", default: "1",
 			},
 			{ fieldtype: "Column Break" },
 			{
@@ -1914,6 +2068,16 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 								dlg.$wrapper.data("raw_materials", rm);
 								var sz = parseFloat(dlg.get_value("size")) || 0;
 								dlg.set_value("total_output", rm * sz);
+								var pc = r.message.pack_count || 1;
+								var opts = [];
+								for (var i = 1; i <= pc; i++) opts.push(i);
+								var pc_field = dlg.get_field("pack_count");
+								if (pc_field) {
+									pc_field.df.options = opts.join("\n");
+									pc_field.set_options();
+									var cur = parseInt(dlg.get_value("pack_count")) || 1;
+									if (cur > pc) dlg.set_value("pack_count", "1");
+								}
 							}
 						},
 					});
@@ -1951,9 +2115,9 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			var recipe_val = d.get_value("recipe");
 			var no_cook = !recipe_val || recipe_val === "No Cooking";
 			me._apply_add_dialog_restrictions(d, status_val, no_cook);
-			var raw_mat = parseFloat(d.$wrapper.data("raw_materials")) || 0;
+			var total_input_from_page = parseFloat(d.$wrapper.data("raw_materials")) || 0;
 			var size_val = parseFloat(d.get_value("size")) || 0;
-			d.set_value("total_output", raw_mat * size_val);
+			d.set_value("total_output", total_input_from_page * size_val);
 		});
 
 		setTimeout(function () {
@@ -2107,6 +2271,83 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 					},
 				});
 			}
+		);
+	}
+
+	_toggle_log_panel() {
+		var panel = this.page.main.find("#schedule-log-panel");
+		if (panel.hasClass("open")) {
+			this._close_log_panel();
+		} else {
+			panel.addClass("open");
+			this._load_log_entries();
+		}
+	}
+
+	_close_log_panel() {
+		this.page.main.find("#schedule-log-panel").removeClass("open");
+	}
+
+	_load_log_entries() {
+		var me = this;
+		var body = me.page.main.find("#schedule-log-body");
+		body.html('<div class="text-muted text-center" style="padding:40px 0"><i class="fa fa-spinner fa-spin"></i> ' + __("Loading…") + '</div>');
+
+		frappe.call({
+			method: "caf.caf.page.production_schedule.production_schedule.get_schedule_logs",
+			args: { year: me.state.year, week_number: me.state.week },
+			callback: function (r) {
+				var logs = r.message || [];
+				if (!logs.length) {
+					body.html('<div class="text-muted text-center" style="padding:40px 0">' + __("No changes logged for this week.") + '</div>');
+					return;
+				}
+				var html = "";
+				for (var i = 0; i < logs.length; i++) {
+					html += me._render_log_entry(logs[i]);
+				}
+				body.html(html);
+			},
+		});
+	}
+
+	_render_log_entry(log) {
+		var when = log.change_datetime ? frappe.datetime.str_to_user(log.change_datetime) : "";
+		var badge_cls = {
+			"Move": "label-primary",
+			"Swap": "label-info",
+			"Edit": "label-success",
+			"Add Recipe": "label-success",
+			"Cancel": "label-danger",
+			"Create WO": "label-warning",
+			"Submit Week": "label-default",
+		};
+		var cls = badge_cls[log.action_type] || "label-default";
+		var changes_html = "";
+		if (log.changes_json) {
+			try {
+				var changes = JSON.parse(log.changes_json);
+				if (changes.length) {
+					changes_html = '<table class="table table-condensed schedule-log-diff">';
+					changes_html += '<thead><tr><th>' + __("Field") + '</th><th>' + __("Old") + '</th><th>' + __("New") + '</th></tr></thead><tbody>';
+					for (var j = 0; j < changes.length; j++) {
+						var c = changes[j];
+						changes_html += '<tr><td>' + frappe.utils.escape_html(c.field) + '</td><td>' + frappe.utils.escape_html(String(c.old == null ? "" : c.old)) + '</td><td>' + frappe.utils.escape_html(String(c.new == null ? "" : c.new)) + '</td></tr>';
+					}
+					changes_html += '</tbody></table>';
+				}
+			} catch (e) { /* ignore parse errors */ }
+		}
+		return (
+			'<div class="schedule-log-entry">' +
+			'  <div class="schedule-log-entry-header">' +
+			'    <span class="label ' + cls + '">' + frappe.utils.escape_html(log.action_type) + '</span>' +
+			'    <span class="schedule-log-who">' + frappe.utils.escape_html(log.changed_by || "") + '</span>' +
+			'    <span class="schedule-log-when">' + when + '</span>' +
+			'  </div>' +
+			'  <div class="schedule-log-summary">' + frappe.utils.escape_html(log.summary || "") + '</div>' +
+			(changes_html ? '<div class="schedule-log-details">' + changes_html + '</div>' : '') +
+			'</div>'
 		);
 	}
 };

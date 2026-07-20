@@ -59,9 +59,6 @@ def _swap_db_link_ids(id_a: str, id_b: str) -> None:
             (id_b, temp_id)
         )
         
-        if not frappe.flags.in_submit:
-            frappe.db.commit()
-
     else:
         print(f"   ⚠️  No Stock Entries found with custom_link_id")
 
@@ -188,9 +185,9 @@ def _group_rows_by_pair(rows: list, status_label: str) -> list:
         if len(group) == 2:
             valid_pairs.append(group)
         elif len(group) == 1:
-            frappe.db.set_value(group[0].name, "produ_status", "")
+            if group[0].get("recipe_name") == NO_COOKING:
+                frappe.db.set_value(group[0].name, "produ_status", "")
             frappe.db.set_value(group[0].name, "custom_pair_id", "")
-            frappe.db.commit()
 
     return valid_pairs
 
@@ -211,7 +208,7 @@ def process_switch(doc_name: str, child_doctype: str) -> None:
     rows = frappe.get_all(
         child_doctype,
         filters={"parent": doc_name, "produ_status": STATUS_SWITCH},
-        fields=["name", "link_id", "idx", "custom_pair_id"],
+        fields=["name", "recipe_name", "link_id", "idx", "custom_pair_id"],
         order_by="idx asc"
     )
     if not rows:
@@ -224,7 +221,8 @@ def process_switch(doc_name: str, child_doctype: str) -> None:
         _process_one_switch_pair(pair, parent_doc, child_doctype, start_time)
 
     for row in rows:
-        frappe.db.set_value(child_doctype, row.name, "produ_status", "")
+        if row.get("recipe_name") == NO_COOKING:
+            frappe.db.set_value(child_doctype, row.name, "produ_status", "")
 
     rws(doc_name, child_doctype)
     frappe.msgprint(_("✅ Rearrange Complete. {0} pair(s) processed.").format(len(pairs)))
@@ -280,7 +278,8 @@ def process_slot_swaps(doc_name: str, child_doctype: str) -> None:
         _process_one_slot_swap_pair(pair, parent_doc, child_doctype, start_time)
 
     for row in rows:
-        frappe.db.set_value(child_doctype, row.name, "produ_status", "")
+        if row.get("recipe_name") == NO_COOKING:
+            frappe.db.set_value(child_doctype, row.name, "produ_status", "")
 
     frappe.msgprint(_("✅ Slot swap complete. {0} pair(s) processed.").format(len(pairs)))
 

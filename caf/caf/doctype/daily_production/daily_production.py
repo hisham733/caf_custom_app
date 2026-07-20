@@ -63,17 +63,6 @@ class DailyProduction(Document):
                     _("Row {0}: Size can't be 0 or Empty for Recipe: <strong>{1}</strong>")
                     .format(item.idx, item.recipe_name)
                 )
-        if self.docstatus == 1:
-            # ✅ NEW RULE: at least 1 status must exist
-            has_status = any(
-                item.produ_status and item.produ_status.strip()
-                for item in self.production_table
-                )
-
-            if not has_status:
-                frappe.throw(
-                    _("At least one row must have Production Status set.")
-            )
         self.validate_table_fields()
 
     def validate_table_fields(self):
@@ -198,6 +187,15 @@ class DailyProduction(Document):
         On failure: rolls back, logs error, throws user message.
         """
         try:
+            # Guard: if custom_submit_ref is set but no MRs exist, clear it
+            # (handles stuck state from failed process_manual_updates where
+            # internal commits persisted the flag but rollback couldn't undo it)
+            if self.custom_submit_ref:
+                has_mr = any(row.mr_reference for row in self.production_table)
+                if not has_mr:
+                    self.db_set("custom_submit_ref", "")
+                    frappe.db.commit()
+
             process_cancellations(self.name, self.doctype, CHILD_DOCTYPE)
             process_size_change(self.name, CHILD_DOCTYPE)
             process_slot_swaps(self.name, CHILD_DOCTYPE)
@@ -271,16 +269,18 @@ class DailyProduction(Document):
         Groups rows by recipe, creates one MR per group, then:
         - Sets produ_status → "New Schedule"
         - If row has link_id and Reheat type, removes all WIP WOs
+
+        On failure: exception propagates to process_manual_updates which
+        rolls back the entire transaction (no partial WOs created).
         """
         recipe_groups = _group_rows_by_recipe(self.production_table)
         for group in recipe_groups:
             if group["rows"][0].produ_status == NEW_SCHEDULE or (not group["rows"][0].mr_reference and not group["rows"][0].production_plane):
                 self.create_material_request(group["recipe"], group["rows"])
-                frappe.db.set_value(CHILD_DOCTYPE, group["rows"][0].name, "produ_status", "")
                 link_id = group["rows"][0].link_id
                 reheat = group["rows"][0].production_type
                 if link_id and reheat == "Reheat":
-                    remove_all_wip_wo(link_id, work = True)
+                    remove_all_wip_wo(link_id, work=True)
 
     # ── Obsolete Older Records ─────────────────────────────────────────────────
     def _obsolete_older_records(self) -> None:

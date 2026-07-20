@@ -151,8 +151,9 @@ def process_size_change(doc_name: str, child_doctype: str) -> None:
             if new_cook_wo and quality_docs:
                 _relink_quality_docs(quality_docs, new_cook_wo)
 
-            # Update status to finalized
-            row_doc.db_set("produ_status", "")
+            # Update status to finalized (keep on recipe rows, only clear No Cooking)
+            if row_doc.recipe_name == "No Cooking":
+                row_doc.db_set("produ_status", "")
             if link_id and reheat == "Reheat":
                 remove_all_wip_wo(link_id,work=True)
 
