@@ -62,7 +62,7 @@ const setup_production_grid = function(frm) {
     };
 
     grid.docfields.forEach(df => {
-        if (df.fieldname === "custom_wo_status") {
+        if (df.fieldname === "rq_status") {
             df.hidden = 1;
             df.in_list_view = 0;
             df.columns = 0;
@@ -815,7 +815,7 @@ function calculate_qty_or_size_WO(frm, row, field_changed) {
 // =================================================================
 
 const ALWAYS_READ_ONLY = ['recipe_cook_workstaion', 'recipe_cook_round', 'link_id',
-    'mr_reference', 'custom_wo_status', 'custom_yield', 'production_plane', 'custom_pair_id'];
+    'mr_reference', 'rq_status', 'custom_yield', 'production_plane', 'custom_pair_id'];
 const SYSTEM_FIELDS = ['name', 'owner', 'creation', 'modified', 'modified_by', 'parent', 'parentfield', 'parenttype', 'idx', 'doctype'];
 
 /** Gets all user-data fields that are allowed to be moved or swapped */
