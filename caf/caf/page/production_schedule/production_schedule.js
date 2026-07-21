@@ -1789,11 +1789,6 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 				label: __("Round"), fieldname: "round", fieldtype: "Select",
 				options: "1\n2\n3", default: String(round), read_only: 1,
 			},
-			{ fieldtype: "Column Break" },
-			{
-				label: __("Link ID"), fieldname: "link_id", fieldtype: "Data",
-				default: link_id, read_only: 1,
-			},
 			
 			{ fieldname: "sec_prod", fieldtype: "Section Break", label: __("Production") },
 			{
@@ -1896,6 +1891,11 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			{
 				label: __("MR Reference"), fieldname: "mr_reference", fieldtype: "Data",
 				read_only: 1,
+			},
+			{ fieldtype: "Column Break" },
+			{
+				label: __("Link ID"), fieldname: "link_id", fieldtype: "Data",
+				default: link_id, read_only: 1,
 			},
 			{ fieldtype: "Column Break" },
 			{
