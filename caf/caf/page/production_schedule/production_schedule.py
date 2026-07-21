@@ -1718,11 +1718,12 @@ def _background_swap_recipes(row_a_name, row_b_name):
         _cancel_cook_pack_by_id(row_a.link_id)
         _cancel_cook_pack_by_id(row_b.link_id)
 
+        start_time = now_datetime()
         new_wos_a = dp.create_material_request_after_change_size(row_a.recipe_name, [row_a])
         new_wos_b = dp.create_material_request_after_change_size(row_b.recipe_name, [row_b])
 
-        _cleanup_redundant_wips(new_wos_a, row_a, CHILD_DOCTYPE, now_datetime())
-        _cleanup_redundant_wips(new_wos_b, row_b, CHILD_DOCTYPE, now_datetime())
+        _cleanup_redundant_wips(new_wos_a, row_a, CHILD_DOCTYPE, start_time)
+        _cleanup_redundant_wips(new_wos_b, row_b, CHILD_DOCTYPE, start_time)
 
         new_cook_a = get_wo_by_type(row_a.link_id, "Cook")
         new_cook_b = get_wo_by_type(row_b.link_id, "Cook")
