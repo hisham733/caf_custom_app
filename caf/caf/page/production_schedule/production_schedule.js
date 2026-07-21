@@ -1315,8 +1315,10 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 
 		var is_no_cook = !recipe || recipe === "No Cooking";
 		var _status_options;
-		if (is_no_cook || !mr_reference) {
+		if (is_no_cook) {
 			_status_options = "\nNew Schedule";
+		} else if (!mr_reference) {
+			_status_options = "\nNew Schedule\nRecipe Change\nCancelled";
 		} else {
 			_status_options = "\nRecipe Change\nCancelled\nOnly Remark\nPack Change\nSingle WO";
 		}
@@ -1619,12 +1621,26 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 					}
 				}
 				var to_save = [];
-				save_fields.forEach(function (sf) {
-					var val = values[sf.dialog_field];
-					if (val !== undefined) {
-						to_save.push({ field: sf.field, value: val });
+				// Cancelled without WOs — clear the slot directly
+				if (status_val === "Cancelled" && !mr_reference) {
+					to_save.push({ field: "recipe_name", value: "No Cooking" });
+					to_save.push({ field: "produ_status", value: "" });
+					to_save.push({ field: "size", value: 0 });
+					to_save.push({ field: "number_of_pack", value: 0 });
+					for (var i = 1; i <= 7; i++) {
+						var s = i === 1 ? "" : "_" + i;
+						to_save.push({ field: "pack_name" + s, value: "" });
+						to_save.push({ field: "pack_qty" + s, value: 0 });
+						to_save.push({ field: "pack_remark" + s, value: "" });
 					}
-				});
+				} else {
+					save_fields.forEach(function (sf) {
+						var val = values[sf.dialog_field];
+						if (val !== undefined) {
+							to_save.push({ field: sf.field, value: val });
+						}
+					});
+				}
 			me._save_item_fields(item_id, to_save, function (ok) {
 				if (ok) {
 					var recipe_changed = recipe_val !== orig_recipe;
@@ -1646,7 +1662,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 						me._load_week();
 					});
 				};
-				if (status_val === "Recipe Change" && (recipe_changed || size_changed || packs_changed)) {
+				if (status_val === "Recipe Change" && (recipe_changed || size_changed || packs_changed) && mr_reference) {
 					frappe.call({
 						method: "caf.caf.page.production_schedule.production_schedule.process_recipe_change",
 						args: { item_id: item_id },
@@ -1686,8 +1702,10 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 				var no_cook = !recipe_val || recipe_val === "No Cooking";
 				var status_field = d.get_field("status");
 				if (status_field) {
-					if (no_cook || !mr_reference) {
+					if (no_cook) {
 						status_field.df.options = "\nNew Schedule";
+					} else if (!mr_reference) {
+						status_field.df.options = "\nNew Schedule\nRecipe Change\nCancelled";
 					} else {
 						var opts = "\nRecipe Change\nCancelled\nOnly Remark\nPack Change\nSingle WO";
 						status_field.df.options = opts;
