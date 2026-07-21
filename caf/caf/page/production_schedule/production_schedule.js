@@ -1886,12 +1886,13 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			});
 		}
 
+		fields.push({
+			fieldname: "pack_weight_msg", fieldtype: "HTML",
+			options: '<div class="pack-weight-msg" style="display:none;color:#e53e3e;font-size:12px;padding:6px 0;"></div>',
+		});
+
 		fields.push(
 			{ fieldname: "sec_note", fieldtype: "Section Break", label: __("System Info") },
-			{
-				fieldname: "pack_weight_msg", fieldtype: "HTML",
-				options: '<div class="pack-weight-msg" style="display:none;color:#e53e3e;font-size:12px;padding:6px 0;"></div>',
-			},
 			{
 				label: __("MR Reference"), fieldname: "mr_reference", fieldtype: "Data",
 				read_only: 1,
@@ -2182,12 +2183,6 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 		});
 
 		$(d.wrapper).on("input", "[data-fieldname^='pack_qty']", function () {
-			var debounce = d._pack_weight_timer;
-			if (debounce) clearTimeout(debounce);
-			d._pack_weight_timer = setTimeout(_validate_pack_weights, 300);
-		});
-
-		$(d.wrapper).on("change", "[data-fieldname^='pack_qty']", function () {
 			var debounce = d._pack_weight_timer;
 			if (debounce) clearTimeout(debounce);
 			d._pack_weight_timer = setTimeout(_validate_pack_weights, 300);

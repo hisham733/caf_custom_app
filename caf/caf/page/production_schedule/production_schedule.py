@@ -1371,9 +1371,10 @@ def validate_pack_weights(recipe_name, size, packs):
         weighted_sum += qty * weight
 
     if weighted_sum > total_output:
+        min_size = int(weighted_sum / float(bom.custom_raw_materails)) + 1
         return {
             "valid": False,
-            "message": _("Not enough output: total input is {0:.2f} kg but packs need {1:.2f} kg").format(total_output, weighted_sum),
+            "message": _("Not enough output: total input is {0:.2f} kg but packs need {1:.2f} kg. Increase size to at least {2}.").format(total_output, weighted_sum, min_size),
         }
 
     return {"valid": True, "message": ""}
