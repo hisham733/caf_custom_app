@@ -878,7 +878,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 	}
 
 	_apply_add_dialog_restrictions(d, status_val, is_no_cook_val) {
-		var ALWAYS_READ_ONLY = ['cooker', 'round', 'yield', 'total_output', 'mr_reference', 'production_plane','link_id','wo_status'];
+		var ALWAYS_READ_ONLY = ['cooker', 'round', 'yield', 'total_input', 'mr_reference', 'production_plane','link_id','wo_status'];
 		var config = {};
 		var dlg = d;
 
@@ -1820,7 +1820,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			},
 			{ fieldtype: "Column Break" },
 			{
-				label: __("Total Output"), fieldname: "total_output", fieldtype: "Float",
+				label: __("Total Input"), fieldname: "total_input", fieldtype: "Float",
 				read_only: 1, default: 0,
 			},
 			{ fieldname: "sec_recipe_note", fieldtype: "Section Break", label: __("Recipe Note") },
@@ -2071,7 +2071,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 								dlg.set_value("yield", y);
 								dlg.$wrapper.data("raw_materials", rm);
 								var sz = parseFloat(dlg.get_value("size")) || 0;
-								dlg.set_value("total_output", rm * sz);
+								dlg.set_value("total_input", rm * sz);
 								var pc = r.message.pack_count || 1;
 								var opts = [];
 								for (var i = 1; i <= pc; i++) opts.push(i);
@@ -2087,7 +2087,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 					});
 				} else {
 					dlg.set_value("yield", 0);
-					dlg.set_value("total_output", 0);
+					dlg.set_value("total_input", 0);
 				}
 			};
 			recipe_f.$input.on('awesomplete-selectcomplete', function () {
@@ -2121,7 +2121,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			me._apply_add_dialog_restrictions(d, status_val, no_cook);
 			var total_input_from_page = parseFloat(d.$wrapper.data("raw_materials")) || 0;
 			var size_val = parseFloat(d.get_value("size")) || 0;
-			d.set_value("total_output", total_input_from_page * size_val);
+			d.set_value("total_input", total_input_from_page * size_val);
 		});
 
 		setTimeout(function () {
