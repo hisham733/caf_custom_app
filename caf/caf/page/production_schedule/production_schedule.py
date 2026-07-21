@@ -437,6 +437,13 @@ def save_move_item(item_id, source_date, target_date, target_cooker, target_roun
             source_row.custom_pair_id = pair_id
             target_nc.custom_pair_id = pair_id
 
+            # Guard: Cook WO must not be Completed
+            cook_status = frappe.db.get_value("Work Order",
+                {"custom_link_id": old_link_id, "custom_item_type": "Cook", "docstatus": ["<", 2]},
+                "status")
+            if cook_status == "Completed":
+                return {"success": False, "message": _("Cook Work Order is already Completed. Cannot change slot.")}
+
             from caf.caf.doctype.daily_production.rearrange_and_change_slot import (
                 _get_quality_data_by_id,
             )
@@ -1122,6 +1129,15 @@ def swap_recipes(source_id, target_id):
 
     if has_wos:
         from frappe.utils import now_datetime
+
+        # Guard: neither Cook WO must be Completed
+        for check_row, check_name in [(row_a, "first"), (row_b, "second")]:
+            cook_status = frappe.db.get_value("Work Order",
+                {"custom_link_id": check_row.link_id, "custom_item_type": "Cook", "docstatus": ["<", 2]},
+                "status")
+            if cook_status == "Completed":
+                return {"success": False, "message": _("Cook Work Order is already Completed for {0} recipe. Cannot rearrange.").format(check_name)}
+
         pair_id = now_datetime().strftime("%Y%m%d%H%M%S%f")
         row_a.produ_status = "Rearrange"
         row_b.produ_status = "Rearrange"
@@ -1428,7 +1444,7 @@ def process_recipe_change(item_id):
     """Enqueue background recipe change WO reprocessing for a row."""
     row_data = frappe.db.get_value(
         CHILD_DOCTYPE, {"name": item_id},
-        ["parent", "produ_status", "mr_reference", "recipe_name", "rq_status"],
+        ["parent", "produ_status", "mr_reference", "recipe_name", "rq_status", "link_id"],
         as_dict=True,
     )
     if not row_data:
@@ -1437,6 +1453,14 @@ def process_recipe_change(item_id):
         return {"success": False, "message": "Work Orders are being processed. Please wait."}
     if row_data.produ_status != "Recipe Change" or not row_data.mr_reference:
         return {"success": False, "message": "No recipe change needed"}
+
+    # Guard: Cook WO must not be Completed
+    if row_data.link_id:
+        cook_status = frappe.db.get_value("Work Order",
+            {"custom_link_id": row_data.link_id, "custom_item_type": "Cook", "docstatus": ["<", 2]},
+            "status")
+        if cook_status == "Completed":
+            return {"success": False, "message": _("Cook Work Order is already Completed. Cannot change recipe.")}
 
     dp_custom_submit_ref = frappe.db.get_value("Daily Production", row_data.parent, "custom_submit_ref")
     if not dp_custom_submit_ref:
@@ -1460,7 +1484,7 @@ def process_pack_change(item_id):
     """Enqueue background pack change WO reprocessing for a row."""
     row_data = frappe.db.get_value(
         CHILD_DOCTYPE, {"name": item_id},
-        ["parent", "produ_status", "mr_reference", "rq_status"],
+        ["parent", "produ_status", "mr_reference", "rq_status", "link_id"],
         as_dict=True,
     )
     if not row_data:
@@ -1469,6 +1493,14 @@ def process_pack_change(item_id):
         return {"success": False, "message": "Work Orders are being processed. Please wait."}
     if row_data.produ_status != "Pack Change" or not row_data.mr_reference:
         return {"success": False, "message": "No pack change needed"}
+
+    # Guard: no Pack WO must be Completed
+    if row_data.link_id:
+        completed_pack = frappe.db.get_value("Work Order",
+            {"custom_link_id": row_data.link_id, "custom_item_type": "Pack", "docstatus": ["<", 2], "status": "Completed"},
+            "name")
+        if completed_pack:
+            return {"success": False, "message": _("A Pack Work Order is already Completed. Cannot change pack.")}
 
     dp_custom_submit_ref = frappe.db.get_value("Daily Production", row_data.parent, "custom_submit_ref")
     if not dp_custom_submit_ref:
