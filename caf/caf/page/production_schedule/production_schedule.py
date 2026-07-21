@@ -810,8 +810,9 @@ def submit_week(week_monday):
     Sets skip_wo_creation flag so on_submit does NOT run process_manual_updates.
     WO creation happens later via the Create WO button in View mode.
 
-    Skips: past days, days without DP, days without changes, days with Processing.
-    Submits all passing days — does NOT abort if one fails.
+    Only submits DPs that have at least one Schedule Change Log entry.
+    Skips past days (before today).
+    Returns JSON response.
 
     Args:
         week_monday: Date string of the Monday
@@ -824,7 +825,6 @@ def submit_week(week_monday):
     skipped_past = 0
     skipped_no_changes = 0
     skipped_no_dp = 0
-    skipped_processing = 0
 
     try:
         frappe.flags.skip_wo_creation = True
@@ -852,8 +852,7 @@ def submit_week(week_monday):
 
             has_processing = any(row.rq_status == "Processing" for row in dp.production_table)
             if has_processing:
-                skipped_processing += 1
-                continue
+                return {"success": False, "message": _("Work Orders are being processed for {0}. Please wait.").format(str(day))}
 
             try:
                 dp.submit()
@@ -864,19 +863,18 @@ def submit_week(week_monday):
         frappe.flags.pop('skip_wo_creation', None)
 
     if submitted == 0:
-        msg = _("No schedule changes found for this week.")
-        if skipped_processing:
-            msg = _("Work Orders are still being processed. Please wait.")
-        return {"success": False, "message": msg}
+        return {
+            "success": False,
+            "message": _("No schedule changes found for this week."),
+        }
 
     _log_schedule_change("Submit Week", day=str(monday), old_data={},
                          new_data={"submitted": submitted, "skipped_past": skipped_past,
-                                   "skipped_no_changes": skipped_no_changes,
-                                   "skipped_processing": skipped_processing})
+                                   "skipped_no_changes": skipped_no_changes})
 
     return {
         "success": True,
-        "message": _("Submitted {0} DP(s). Skipped {1} past, {2} with no changes, {3} processing.").format(submitted, skipped_past, skipped_no_changes, skipped_processing),
+        "message": _("Submitted {0} DP(s). Skipped {1} past, {2} with no changes.").format(submitted, skipped_past, skipped_no_changes),
     }
 
 
