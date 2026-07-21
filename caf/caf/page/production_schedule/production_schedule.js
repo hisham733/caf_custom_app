@@ -2162,11 +2162,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 				var no_cook = !recipe_val || recipe_val === "No Cooking";
 				var status_field = dlg.get_field("produ_status");
 				if (status_field) {
-					if (no_cook) {
-						status_field.df.options = "\nNew Schedule";
-					} else {
-						status_field.df.options = "\nNew Schedule\nRecipe Change\nCancelled\nOnly Remark\nPack Change\nSingle WO";
-					}
+					status_field.df.options = "\nNew Schedule";
 					status_field.set_options();
 				}
 				var cur_status = dlg.get_value("produ_status") || "";
