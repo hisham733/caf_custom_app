@@ -143,8 +143,43 @@ class DailyProduction(Document):
             if not d.link_id:
                 d.link_id = make_autoname("R-.YYYY.-.#####")
 
+    def _fill_missing_slots(self):
+        """Fill missing workstation+round combos with No Cooking placeholder rows."""
+        if self.docstatus != 0:
+            return
+
+        try:
+            template_name = _get_template_name()
+        except Exception:
+            return
+
+        existing = set()
+        for d in self.production_table:
+            existing.add((str(d.recipe_cook_workstaion or ""), str(d.recipe_cook_round or "")))
+
+        template_rows = frappe.get_all(
+            TEMPLATE_CHILD,
+            filters={"parent": template_name},
+            fields=["workstation", "round"],
+            order_by="idx asc",
+        )
+
+        for t in template_rows:
+            key = (str(t.workstation), str(t.round))
+            if key in existing:
+                continue
+            row = self.append("production_table", {})
+            row.recipe_cook_workstaion = t.workstation
+            row.recipe_cook_round = int(t.round)
+            row.recipe_name = NO_COOKING
+            row.size = 0
+            if self.required_by:
+                row.required_date = str(self.required_by)
+
     def before_save(self):
         self._assign_link_id()
+        self._fill_missing_slots()
+        self._assign_link_id()  # re-assign to cover new placeholder rows
 
     # ── Submit Hook ───────────────────────────────────────────────────────────
     def before_submit(self):

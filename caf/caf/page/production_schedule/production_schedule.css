@@ -553,6 +553,12 @@
 	border-color: var(--primary, #2490ef);
 }
 
+.round-slot-empty .link-id-hint {
+	font-size: 9px;
+	color: var(--text-muted, #9ca3af);
+	margin-left: 4px;
+}
+
 /* ── drag-active state ────────────────────────────────────────── */
 .drag-active .round-slot:not(.schedule-no-dp) {
 	transition: outline 0.12s, background 0.12s;
