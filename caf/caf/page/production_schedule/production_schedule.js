@@ -1718,6 +1718,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 								d.$wrapper.data("raw_materials", rm);
 								var sz = parseFloat(d.get_value("size")) || 0;
 								d.set_value("total_output", rm * sz);
+								setTimeout(_validate_edit_pack_weights, 100);
 								var pc = r.message.pack_count || 1;
 								var opts = [];
 								for (var i = 1; i <= pc; i++) opts.push(i);
@@ -1756,6 +1757,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 				var total_input_from_page = parseFloat(d.$wrapper.data("raw_materials")) || 0;
 				var size_val = parseFloat(d.get_value("size")) || 0;
 				d.set_value("total_output", total_input_from_page * size_val);
+				setTimeout(_validate_edit_pack_weights, 100);
 			});
 			var nop_field = d.get_field("number_of_pack");
 			if (nop_field) {
