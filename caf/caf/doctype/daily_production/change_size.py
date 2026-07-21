@@ -44,7 +44,8 @@ def _relink_quality_docs(quality_docs: list, new_cook_wo: str) -> None:
 
 def _cleanup_redundant_wips_targeted(newly_born_list: list, row_doc, child_doctype, start_time):
     """
-    Deletes only 'WIP' Work Orders created in this transaction.
+    Removes only 'WIP' Work Orders created in this transaction.
+    Draft WIPs: deleted directly. Submitted WIPs: cancelled.
     Protects original WIPs by checking the creation timestamp.
     """
     if not newly_born_list: return
@@ -52,10 +53,18 @@ def _cleanup_redundant_wips_targeted(newly_born_list: list, row_doc, child_docty
     for wo_name in newly_born_list:
         res = frappe.db.get_value(WO_DOCTYPE, wo_name, ["custom_item_type", "docstatus", "creation"], as_dict=True)
         
-        # Filter: WIP + Draft + Created AFTER the button was clicked
-        if res and res.custom_item_type == "WIP" and res.docstatus == 0 and res.creation >= start_time:
-            if frappe.db.exists(WO_DOCTYPE, wo_name):
-                frappe.delete_doc(WO_DOCTYPE, wo_name, ignore_permissions=True, force=True)
+        if not res or res.custom_item_type != "WIP" or res.creation < start_time:
+            continue
+        if not frappe.db.exists(WO_DOCTYPE, wo_name):
+            continue
+        
+        if res.docstatus == 0:
+            frappe.delete_doc(WO_DOCTYPE, wo_name, ignore_permissions=True, force=True)
+        elif res.docstatus == 1:
+            wo = frappe.get_doc(WO_DOCTYPE, wo_name)
+            wo.flags.ignore_permissions = True
+            wo.flags.ignore_workflow = True
+            wo.cancel()
     
     # # Update Grid UI to reflect the current active WOs in DB
     # from .rearrange_and_change_slot import _refresh_row_ui_strings
