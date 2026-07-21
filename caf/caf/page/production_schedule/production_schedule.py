@@ -824,6 +824,7 @@ def submit_week(week_monday):
     submitted = 0
     skipped_past = 0
     skipped_no_dp = 0
+    skipped_empty = 0
 
     try:
         frappe.flags.skip_wo_creation = True
@@ -845,6 +846,10 @@ def submit_week(week_monday):
 
             dp = frappe.get_doc("Daily Production", dp_name)
 
+            if not any(r.recipe_name != NO_COOKING for r in dp.production_table):
+                skipped_empty += 1
+                continue
+
             has_processing = any(row.rq_status == "Processing" for row in dp.production_table)
             if has_processing:
                 return {"success": False, "message": _("Work Orders are being processed for {0}. Please wait.").format(str(day))}
@@ -864,11 +869,12 @@ def submit_week(week_monday):
         }
 
     _log_schedule_change("Submit Week", day=str(monday), old_data={},
-                         new_data={"submitted": submitted, "skipped_past": skipped_past})
+                         new_data={"submitted": submitted, "skipped_past": skipped_past,
+                                   "skipped_empty": skipped_empty})
 
     return {
         "success": True,
-        "message": _("Submitted {0} DP(s). Skipped {1} past.").format(submitted, skipped_past),
+        "message": _("Submitted {0} DP(s). Skipped {1} past, {2} empty.").format(submitted, skipped_past, skipped_empty),
     }
 
 
