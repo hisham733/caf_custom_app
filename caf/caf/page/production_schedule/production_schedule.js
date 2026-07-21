@@ -505,6 +505,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 					var r = info.rounds[rn];
 					var no_dp_cls = !info.has_dp ? " schedule-no-dp" : "";
 					var ws_problem_cls = is_ws_problem ? " ws-problem" : "";
+					var td_link_id = (r && r.link_id) ? ' data-link-id="' + me._escape(r.link_id) + '"' : '';
 					html +=
 						'<td class="schedule-col-round round-slot' +
 						no_dp_cls +
@@ -518,7 +519,9 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 						rn +
 						'" data-has-dp="' +
 						info.has_dp +
-						'">';
+						'"' +
+						td_link_id +
+						'>';
 					html += r ? me._render_round_item(r, info.dp_name) : me._render_empty_slot(info.has_dp, is_past_cell, is_ws_problem);
 					html += "</td>";
 				}
@@ -610,8 +613,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 	_render_round_item(r, dp_name) {
 		var me = this;
 		if (r.recipe === "No Cooking" && !r.status) {
-			var link_hint = r.link_id ? ' <span class="link-id-hint">' + me._escape(r.link_id) + '</span>' : '';
-			return '<div class="round-slot-empty addable" role="button" tabindex="0" title="' + __("Add recipe") + '">+ ' + link_hint + '</div>';
+			return '<div class="round-slot-empty addable" role="button" tabindex="0" title="' + __("Add recipe") + '">+</div>';
 		}
 		var emoji = this._status_emoji(r.status);
 		var label = r.recipe || __("No Cooking");
@@ -1769,6 +1771,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 		var ws = slot.dataset.workstation;
 		var day = slot.dataset.day;
 		var round = parseInt(slot.dataset.round, 10);
+		var link_id = slot.dataset.linkId || "";
 
 		var fields = [
 			{ fieldname: "sec_slot", fieldtype: "Section Break", label: __("Slot Info") },
@@ -1785,6 +1788,11 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			{
 				label: __("Round"), fieldname: "round", fieldtype: "Select",
 				options: "1\n2\n3", default: String(round), read_only: 1,
+			},
+			{ fieldtype: "Column Break" },
+			{
+				label: __("Link ID"), fieldname: "link_id", fieldtype: "Data",
+				default: link_id, read_only: 1,
 			},
 			
 			{ fieldname: "sec_prod", fieldtype: "Section Break", label: __("Production") },
