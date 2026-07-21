@@ -1360,22 +1360,39 @@ def validate_pack_weights(recipe_name, size, packs):
     if not bom or not bom.custom_raw_materails:
         return {"valid": True, "message": ""}
 
-    total_output = float(bom.custom_raw_materails) * float(size)
-    weighted_sum = 0
+    raw_materials = float(bom.custom_raw_materails)
+    total_output = raw_materials * float(size)
 
-    for i, pack in enumerate(packs):
+    # Sum weighted qty of all packs except the last
+    weighted_sum = 0
+    for pack in packs[:-1]:
         if not pack.get("name") or not pack.get("qty"):
             continue
-        qty = float(pack["qty"])
         weight = _get_pack_weight(pack["name"])
-        weighted_sum += qty * weight
+        weighted_sum += float(pack["qty"]) * weight
 
-    if weighted_sum > total_output:
-        min_size = int(weighted_sum / float(bom.custom_raw_materails)) + 1
-        return {
-            "valid": False,
-            "message": _("Not enough output: total input is {0:.2f} kg but packs need {1:.2f} kg. Increase size to at least {2}.").format(total_output, weighted_sum, min_size),
-        }
+    last_pack = packs[-1]
+    last_qty = float(last_pack.get("qty") or 0)
+    last_weight = _get_pack_weight(last_pack.get("name") or "")
+
+    if last_qty > 0:
+        # User entered last pack qty — validate total weighted sum
+        weighted_sum += last_qty * last_weight
+        if weighted_sum > total_output:
+            min_size = int(weighted_sum / raw_materials) + 1
+            return {
+                "valid": False,
+                "message": _("Not enough output: total input is {0:.2f} kg but packs need {1:.2f} kg. Increase size to at least {2}.").format(total_output, weighted_sum, min_size),
+            }
+    else:
+        # Last pack gets remaining — check at least 1 unit possible
+        remaining = total_output - weighted_sum
+        if remaining < last_weight and last_weight > 0:
+            min_size = int((weighted_sum + last_weight) / raw_materials) + 1
+            return {
+                "valid": False,
+                "message": _("Not enough output: remaining {0:.2f} kg cannot pack '{1}' (min weight: {2:.2f} kg). Increase size to at least {3}.").format(remaining, last_pack.get("name") or "", last_weight, min_size),
+            }
 
     return {"valid": True, "message": ""}
 
