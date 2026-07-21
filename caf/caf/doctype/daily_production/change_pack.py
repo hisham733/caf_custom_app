@@ -153,20 +153,26 @@ def _cleanup_everything_except_new_pack(newly_born_wos, row_doc, child_doctype, 
     """
     The opposite of WIP cleanup. 
     Deletes any fresh Cook or WIP WOs, keeping ONLY the Pack WO.
+    Draft: deleted directly. Submitted: cancelled.
     """
     if not newly_born_wos:
         return
 
     for wo_name in newly_born_wos:
-        # Fetch details
         info = frappe.db.get_value("Work Order", wo_name, ["custom_item_type", "docstatus", "creation"], as_dict=True)
         if not info: continue
 
-        # Logic: If it is fresh (Draft + timestamp) and NOT a Pack WO, delete it.
-        is_fresh = info.docstatus == 0
+        # Logic: If it is fresh and NOT a Pack WO, delete/cancel it.
+        is_fresh = info.creation >= start_time if info.creation else False
         
         if is_fresh and info.custom_item_type in ["Cook", "WIP"]:
-            # print(f"[CLEANUP] >> Deleting redundant {info.custom_item_type}: {wo_name}")
-            frappe.delete_doc("Work Order", wo_name, ignore_permissions=True, force=True)
-        
+            if not frappe.db.exists("Work Order", wo_name):
+                continue
+            if info.docstatus == 0:
+                frappe.delete_doc("Work Order", wo_name, ignore_permissions=True, force=True)
+            elif info.docstatus == 1:
+                wo = frappe.get_doc("Work Order", wo_name)
+                wo.flags.ignore_permissions = True
+                wo.flags.ignore_workflow = True
+                wo.cancel()
 

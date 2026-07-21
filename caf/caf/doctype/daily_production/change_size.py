@@ -150,7 +150,7 @@ def process_size_change(doc_name: str, child_doctype: str) -> None:
 
             # ── STEP 5: PRECISION WIP CLEANUP ──────────────────────────────────
             # Deletes redundant WIP drafts created in Step 4
-            _cleanup_redundant_wips_targeted(newly_born_wos, row_doc, child_doctype, process_start_time)
+            # _cleanup_redundant_wips_targeted(newly_born_wos, row_doc, child_doctype, process_start_time)
 
             # ── STEP 6: RE-LINK PHASE ──────────────────────────────────────────
             # Reload to find the newly created Cook WO ID
