@@ -1669,12 +1669,12 @@ def _background_swap_recipes(row_a_name, row_b_name):
             return
 
         from caf.caf.doctype.daily_production.rearrange_and_change_slot import (
+            _cancel_cook_pack_by_id,
             _get_quality_data_by_id,
             _relink_quality_docs,
             _swap_db_link_ids,
             _cleanup_redundant_wips,
         )
-        from caf.caf.doctype.daily_production.cancellation import _cancel_work_orders_by_id
         from caf.caf.doctype.daily_production.wo_helpers import get_wo_by_type
         from frappe.utils import now_datetime
 
@@ -1683,8 +1683,8 @@ def _background_swap_recipes(row_a_name, row_b_name):
 
         _swap_db_link_ids(row_a.link_id, row_b.link_id)
 
-        _cancel_work_orders_by_id(row_a.link_id)
-        _cancel_work_orders_by_id(row_b.link_id)
+        _cancel_cook_pack_by_id(row_a.link_id)
+        _cancel_cook_pack_by_id(row_b.link_id)
 
         new_wos_a = dp.create_material_request_after_change_size(row_a.recipe_name, [row_a])
         new_wos_b = dp.create_material_request_after_change_size(row_b.recipe_name, [row_b])
@@ -1716,11 +1716,11 @@ def _background_move_wo_migration(dp_name):
     processing_rows = []
     try:
         from caf.caf.doctype.daily_production.rearrange_and_change_slot import (
+            _cancel_cook_pack_by_id,
             _relink_quality_docs,
             _cleanup_redundant_wips,
             _get_quality_data_by_id,
         )
-        from caf.caf.doctype.daily_production.cancellation import _cancel_work_orders_by_id
         from caf.caf.doctype.daily_production.wo_helpers import get_wo_by_type
         from frappe.utils import now_datetime
 
@@ -1748,7 +1748,7 @@ def _background_move_wo_migration(dp_name):
             quality_data = _get_quality_data_by_id(pr_data.link_id)
 
             if pr_data.mr_reference:
-                _cancel_work_orders_by_id(row.link_id)
+                _cancel_cook_pack_by_id(row.link_id)
 
             new_wos = dp.create_material_request_after_change_size(
                 row.recipe_name, [row]
