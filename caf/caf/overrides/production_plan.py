@@ -857,11 +857,6 @@ class CustomProductionPlan(ProductionPlan):
         self.show_list_created_message("Work Order", wo_list)
         self.show_list_created_message("Purchase Order", po_list)
 
-        if not wo_list:
-            frappe.msgprint(_("No Work Orders were created"))
-
-        if not po_list:
-            frappe.msgprint(_("No Purchase Orders were created"))
         for wo in wo_list:
             print(f"wo: {wo}")
             wor = frappe.get_doc("Work Order", wo)

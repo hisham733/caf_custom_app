@@ -335,11 +335,8 @@ def _process_cancel_row(row_name: str, child_doctype: str) -> None:
 
 @frappe.whitelist()
 def process_cancellations(doc_name: str, doctype: str, child_doctype: str) -> None:
-    frappe.msgprint(_("🚀 Starting cancellation process..."))
     cancel_rows = frappe.get_all(child_doctype, filters={"parent": doc_name, "produ_status": "Cancelled"}, fields=["name"])
-    frappe.msgprint(_("Found {0} rows to cancel. Processing...").format(len(cancel_rows)))
     if not cancel_rows: return
     for row in cancel_rows:
         _process_cancel_row(row.name, child_doctype)
-    frappe.msgprint(_("✅ All nested Work Orders and Stock Entries cleared."))
 
