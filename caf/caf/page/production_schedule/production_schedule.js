@@ -878,7 +878,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 	}
 
 	_apply_add_dialog_restrictions(d, status_val, is_no_cook_val) {
-		var ALWAYS_READ_ONLY = ['cooker', 'round', 'yield', 'total_input', 'mr_reference', 'production_plane','link_id','wo_status'];
+		var ALWAYS_READ_ONLY = ['cooker', 'round', 'yield', 'total_input', 'output', 'mr_reference', 'production_plane','link_id','wo_status'];
 		var config = {};
 		var dlg = d;
 
@@ -1906,6 +1906,11 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 				label: __("Total Input"), fieldname: "total_input", fieldtype: "Float",
 				read_only: 1, default: 0,
 			},
+			{ fieldtype: "Column Break" },
+			{
+				label: __("Output"), fieldname: "output", fieldtype: "Float",
+				read_only: 1, default: 0,
+			},
 			{ fieldname: "sec_recipe_note", fieldtype: "Section Break", label: __("Recipe Note") },
 			{
 				label: __("Number of Packs"), fieldname: "pack_count", fieldtype: "Select",
@@ -2179,6 +2184,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 								dlg.$wrapper.data("raw_materials", rm);
 								var sz = parseFloat(dlg.get_value("size")) || 0;
 								dlg.set_value("total_input", rm * sz);
+								dlg.set_value("output", (y || 0) * rm * sz);
 								var pc = r.message.pack_count || 1;
 								var opts = [];
 								for (var i = 1; i <= pc; i++) opts.push(i);
@@ -2195,6 +2201,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 				} else {
 					dlg.set_value("yield", 0);
 					dlg.set_value("total_input", 0);
+					dlg.set_value("output", 0);
 				}
 			};
 			recipe_f.$input.on('awesomplete-selectcomplete', function () {
@@ -2258,6 +2265,8 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			var total_input_from_page = parseFloat(d.$wrapper.data("raw_materials")) || 0;
 			var size_val = parseFloat(d.get_value("size")) || 0;
 			d.set_value("total_input", total_input_from_page * size_val);
+			var y = parseFloat(d.get_value("yield")) || 0;
+			d.set_value("output", y * total_input_from_page * size_val);
 			setTimeout(_validate_pack_weights, 100);
 		});
 
