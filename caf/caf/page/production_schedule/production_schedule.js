@@ -1889,6 +1889,10 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 		fields.push(
 			{ fieldname: "sec_note", fieldtype: "Section Break", label: __("System Info") },
 			{
+				fieldname: "pack_weight_msg", fieldtype: "HTML",
+				options: '<div class="pack-weight-msg" style="display:none;color:#e53e3e;font-size:12px;padding:6px 0;"></div>',
+			},
+			{
 				label: __("MR Reference"), fieldname: "mr_reference", fieldtype: "Data",
 				read_only: 1,
 			},
@@ -1971,6 +1975,29 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 							frappe.msgprint(__("Please fill Pack {0} Qty first before entering Pack {1} Qty.", [i - 1, i]));
 							return;
 						}
+					}
+					// Validate pack weights against total output
+					var pack_items = [];
+					for (var i = 1; i <= pc; i++) {
+						var s = i === 1 ? "" : "_" + i;
+						var pn = values["pack_name" + s];
+						var pq = parseFloat(values["pack_qty" + s]) || 0;
+						if (pn) pack_items.push({ name: pn, qty: pq });
+					}
+					if (pack_items.length > 1) {
+						var valid = null;
+						frappe.call({
+							method: "caf.caf.page.production_schedule.production_schedule.validate_pack_weights",
+							args: { recipe_name: values.recipe, size: values.size, packs: JSON.stringify(pack_items) },
+							async: false,
+							callback: function (vr) {
+								valid = vr.message ? vr.message.valid : true;
+								if (!valid) {
+									frappe.msgprint(vr.message.message);
+								}
+							}
+						});
+						if (!valid) return;
 					}
 				}
 				var args = {
@@ -2114,6 +2141,35 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			_on_recipe_change();
 		});
 
+		// Validate pack weights on pack qty change
+		var _validate_pack_weights = function () {
+			var pc = parseInt(d.get_value("pack_count")) || 0;
+			if (pc <= 1) return;
+			var recipe_val = d.get_value("recipe");
+			var size_val = d.get_value("size");
+			if (!recipe_val || !size_val) return;
+			var packs = [];
+			for (var i = 1; i <= pc; i++) {
+				var s = i === 1 ? "" : "_" + i;
+				var pn = d.get_value("pack_name" + s);
+				var pq = parseFloat(d.get_value("pack_qty" + s)) || 0;
+				if (pn) packs.push({ name: pn, qty: pq });
+			}
+			if (packs.length <= 1) return;
+			frappe.call({
+				method: "caf.caf.page.production_schedule.production_schedule.validate_pack_weights",
+				args: { recipe_name: recipe_val, size: size_val, packs: JSON.stringify(packs) },
+				callback: function (vr) {
+					var $msg = $(d.wrapper).find(".pack-weight-msg");
+					if (!vr.message || vr.message.valid) {
+						$msg.hide();
+					} else {
+						$msg.text(vr.message.message).show();
+					}
+				}
+			});
+		};
+
 		$(d.wrapper).on("change", "[data-fieldname='size']", function () {
 			var status_val = d.get_value("produ_status") || "";
 			var recipe_val = d.get_value("recipe");
@@ -2122,6 +2178,19 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			var total_input_from_page = parseFloat(d.$wrapper.data("raw_materials")) || 0;
 			var size_val = parseFloat(d.get_value("size")) || 0;
 			d.set_value("total_input", total_input_from_page * size_val);
+			setTimeout(_validate_pack_weights, 100);
+		});
+
+		$(d.wrapper).on("input", "[data-fieldname^='pack_qty']", function () {
+			var debounce = d._pack_weight_timer;
+			if (debounce) clearTimeout(debounce);
+			d._pack_weight_timer = setTimeout(_validate_pack_weights, 300);
+		});
+
+		$(d.wrapper).on("change", "[data-fieldname^='pack_qty']", function () {
+			var debounce = d._pack_weight_timer;
+			if (debounce) clearTimeout(debounce);
+			d._pack_weight_timer = setTimeout(_validate_pack_weights, 300);
 		});
 
 		setTimeout(function () {

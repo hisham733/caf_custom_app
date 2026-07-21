@@ -1333,6 +1333,65 @@ def get_recipe_bom_data(recipe_name):
 
 
 @frappe.whitelist()
+def validate_pack_weights(recipe_name, size, packs):
+    """Check if total output is enough for all pack quantities.
+
+    Args:
+        recipe_name: Item name (recipe)
+        size: Batch size
+        packs: JSON string — list of {name, qty}
+
+    Returns:
+        Dict with valid flag and error message if invalid
+    """
+    import json
+    packs = json.loads(packs) if isinstance(packs, str) else packs
+
+    if not packs or len(packs) <= 1:
+        return {"valid": True, "message": ""}
+
+    bom = frappe.db.get_value(
+        "BOM",
+        {"item": recipe_name, "docstatus": 1, "is_active": 1},
+        ["custom_raw_materails"],
+        as_dict=True,
+        order_by="modified desc",
+    )
+    if not bom or not bom.custom_raw_materails:
+        return {"valid": True, "message": ""}
+
+    total_output = float(bom.custom_raw_materails) * float(size)
+    weighted_sum = 0
+
+    for i, pack in enumerate(packs):
+        if not pack.get("name") or not pack.get("qty"):
+            continue
+        qty = float(pack["qty"])
+        weight = _get_pack_weight(pack["name"])
+        weighted_sum += qty * weight
+
+    if weighted_sum > total_output:
+        return {
+            "valid": False,
+            "message": _("Not enough output: total input is {0:.2f} kg but packs need {1:.2f} kg").format(total_output, weighted_sum),
+        }
+
+    return {"valid": True, "message": ""}
+
+
+def _get_pack_weight(item_code):
+    """Fetch pack item weight from Item Variant Attribute (Weight) or Item.weight_per_unit."""
+    weight = frappe.db.get_value(
+        "Item Variant Attribute",
+        {"parent": item_code, "attribute": "Weight"},
+        "attribute_value",
+    )
+    if weight is None:
+        weight = frappe.db.get_value("Item", item_code, "weight_per_unit")
+    return float(weight or 0)
+
+
+@frappe.whitelist()
 def get_row_status(item_id):
     """Lightweight poll: return wo_status and mr_reference for a row."""
     vals = frappe.db.get_value(
