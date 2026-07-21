@@ -805,13 +805,13 @@ def process_day_dp(week_monday, day_index):
 
 @frappe.whitelist()
 def submit_week(week_monday):
-    """Submit draft DPs that have schedule change logs for the week Mon-Sat.
+    """Submit all draft DPs for the week Mon-Sat.
 
     Sets skip_wo_creation flag so on_submit does NOT run process_manual_updates.
     WO creation happens later via the Create WO button in View mode.
 
-    Only submits DPs that have at least one Schedule Change Log entry.
     Skips past days (before today).
+    Aborts entire week if any DP has Processing rows.
     Returns JSON response.
 
     Args:
@@ -823,7 +823,6 @@ def submit_week(week_monday):
 
     submitted = 0
     skipped_past = 0
-    skipped_no_changes = 0
     skipped_no_dp = 0
 
     try:
@@ -845,10 +844,6 @@ def submit_week(week_monday):
                 continue
 
             dp = frappe.get_doc("Daily Production", dp_name)
-            has_log = frappe.db.exists("Schedule Change Log", {"dp_name": dp_name})
-            if not has_log:
-                skipped_no_changes += 1
-                continue
 
             has_processing = any(row.rq_status == "Processing" for row in dp.production_table)
             if has_processing:
@@ -865,16 +860,15 @@ def submit_week(week_monday):
     if submitted == 0:
         return {
             "success": False,
-            "message": _("No schedule changes found for this week."),
+            "message": _("No draft DPs found for this week."),
         }
 
     _log_schedule_change("Submit Week", day=str(monday), old_data={},
-                         new_data={"submitted": submitted, "skipped_past": skipped_past,
-                                   "skipped_no_changes": skipped_no_changes})
+                         new_data={"submitted": submitted, "skipped_past": skipped_past})
 
     return {
         "success": True,
-        "message": _("Submitted {0} DP(s). Skipped {1} past, {2} with no changes.").format(submitted, skipped_past, skipped_no_changes),
+        "message": _("Submitted {0} DP(s). Skipped {1} past.").format(submitted, skipped_past),
     }
 
 
