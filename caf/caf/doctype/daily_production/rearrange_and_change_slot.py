@@ -128,23 +128,17 @@ def _relink_quality_docs(quality_docs: list, new_cook_wo: str) -> None:
         frappe.db.set_value(doc["doctype"], doc["name"], "custom_work_order", new_cook_wo)
 
 def _cleanup_redundant_wips(newly_created_wos: list, row_doc, child_doctype: str, start_time) -> None:
-    """Removes only WIP Work Orders created in the current transaction.
-    Draft WIPs: deleted directly. Submitted WIPs: cancelled."""
+    """Deletes only WIP Work Orders created in the current transaction."""
     if not newly_created_wos: return
 
     for wo_name in newly_created_wos:
         res = frappe.db.get_value(WO_DOCTYPE, wo_name, ["custom_item_type", "docstatus", "creation"], as_dict=True)
-        if not res or res.custom_item_type != "WIP" or res.creation < start_time:
-            continue
-        if not frappe.db.exists(WO_DOCTYPE, wo_name):
-            continue
-        if res.docstatus == 0:
-            frappe.delete_doc(WO_DOCTYPE, wo_name, ignore_permissions=True, force=True)
-        elif res.docstatus == 1:
-            wo = frappe.get_doc(WO_DOCTYPE, wo_name)
-            wo.flags.ignore_permissions = True
-            wo.flags.ignore_workflow = True
-            wo.cancel()
+        if res and res.custom_item_type == "WIP" and res.docstatus == 0 :
+            if frappe.db.exists(WO_DOCTYPE, wo_name):
+                frappe.delete_doc(WO_DOCTYPE, wo_name, ignore_permissions=True, force=True)
+
+    # UI Cleanup: Regenerates the grid strings based on live database state
+    _refresh_row_from_db(row_doc, child_doctype)
 
 def _refresh_row_from_db(row_doc, child_doctype: str):
     """Syncs the grid UI with the current Work Orders in the database for this ID."""
