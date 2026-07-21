@@ -1893,11 +1893,6 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 
 		fields.push(
 			{ fieldname: "sec_note", fieldtype: "Section Break", label: __("System Info") },
-			
-			{
-				label: __("Link ID"), fieldname: "link_id", fieldtype: "Data",
-				read_only: 1,
-			},
 			{
 				label: __("MR Reference"), fieldname: "mr_reference", fieldtype: "Data",
 				read_only: 1,
