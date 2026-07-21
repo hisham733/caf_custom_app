@@ -1435,6 +1435,11 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			});
 		}
 
+		fields.push({
+			fieldname: "pack_weight_msg", fieldtype: "HTML",
+			options: '<div class="pack-weight-msg" style="display:none;color:#e53e3e;font-size:12px;padding:6px 0;"></div>',
+		});
+
 		fields.push(
 			{ fieldname: "sec_note", fieldtype: "Section Break", label: __("System Info") },
 			{
@@ -1588,6 +1593,29 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 							frappe.msgprint(__("Please fill Pack {0} Qty first before entering Pack {1} Qty.", [i - 1, i]));
 							return;
 						}
+					}
+					// Validate pack weights against total output
+					var edit_pack_items = [];
+					for (var i = 1; i <= nop; i++) {
+						var s = i === 1 ? "" : "_" + i;
+						var pn = values["pack_name" + s];
+						var pq = parseFloat(values["pack_qty" + s]) || 0;
+						if (pn) edit_pack_items.push({ name: pn, qty: pq });
+					}
+					if (edit_pack_items.length > 1) {
+						var valid = null;
+						frappe.call({
+							method: "caf.caf.page.production_schedule.production_schedule.validate_pack_weights",
+							args: { recipe_name: recipe_val, size: values.size, packs: JSON.stringify(edit_pack_items) },
+							async: false,
+							callback: function (vr) {
+								valid = vr.message ? vr.message.valid : true;
+								if (!valid) {
+									frappe.msgprint(vr.message.message);
+								}
+							}
+						});
+						if (!valid) return;
 					}
 				}
 				var to_save = [];
@@ -1743,6 +1771,41 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 				});
 				$(nop_field.$input).trigger("change");
 			}
+
+			// Validate pack weights on pack qty change
+			var _validate_edit_pack_weights = function () {
+				var nop = parseInt(d.get_value("number_of_pack")) || 0;
+				if (nop <= 1) return;
+				var recipe_val = d.get_value("recipe");
+				var size_val = d.get_value("size");
+				if (!recipe_val || recipe_val === "No Cooking" || !size_val) return;
+				var packs = [];
+				for (var i = 1; i <= nop; i++) {
+					var s = i === 1 ? "" : "_" + i;
+					var pn = d.get_value("pack_name" + s);
+					var pq = parseFloat(d.get_value("pack_qty" + s)) || 0;
+					if (pn) packs.push({ name: pn, qty: pq });
+				}
+				if (packs.length <= 1) return;
+				frappe.call({
+					method: "caf.caf.page.production_schedule.production_schedule.validate_pack_weights",
+					args: { recipe_name: recipe_val, size: size_val, packs: JSON.stringify(packs) },
+					callback: function (vr) {
+						var $msg = $(d.wrapper).find(".pack-weight-msg");
+						if (!vr.message || vr.message.valid) {
+							$msg.hide();
+						} else {
+							$msg.text(vr.message.message).show();
+						}
+					}
+				});
+			};
+			$(d.wrapper).on("input", "[data-fieldname^='pack_qty']", function () {
+				var debounce = d._pack_weight_timer;
+				if (debounce) clearTimeout(debounce);
+				d._pack_weight_timer = setTimeout(_validate_edit_pack_weights, 300);
+			});
+
 			setTimeout(function () {
 				me._apply_dialog_restrictions(d, status, is_no_cook);
 			}, 100);
