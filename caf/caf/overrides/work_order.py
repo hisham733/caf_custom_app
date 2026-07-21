@@ -244,16 +244,6 @@ class CustomWorkOrder(WorkOrder):
 
             if material_requests:
                 self.custom_link_id = material_requests[0].get("custom_link_id")
-                if not self.custom_link_id:
-                    frappe.msgprint(
-                        f"Production Plan [{self.production_plan}] does not have a Link ID.",
-                        alert=True
-                    )
-            else:
-                frappe.msgprint(
-                    f"No Material Requests found for Production Plan [{self.production_plan}].",
-                    alert=True
-                )
     @frappe.whitelist()
     def get_item_group_for_ig(self):
         item_group = frappe.get_value("Item", self.production_item, "item_group")
