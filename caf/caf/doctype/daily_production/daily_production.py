@@ -288,7 +288,7 @@ class DailyProduction(Document):
     def _on_submit_production_table(self) -> None:
         """Validate rows → group by recipe → create one MR per group."""
         _validate_production_rows(self.production_table)
-        recipe_groups = _group_rows_by_recipe(self.production_table)
+        recipe_groups = _get_recipe_rows(self.production_table)
         if not recipe_groups:
             frappe.throw(_("❌ No valid recipes found in the production table."))
         for group in recipe_groups:
@@ -301,14 +301,14 @@ class DailyProduction(Document):
     def _process_new_schedules(self):
         """Create Material Requests for 'New Schedule' rows.
 
-        Groups rows by recipe, creates one MR per group, then:
+        Collects recipe rows (one per non-No-Cooking row), creates one MR per row, then:
         - Sets produ_status → "New Schedule"
         - If row has link_id and Reheat type, removes all WIP WOs
 
         On failure: exception propagates to process_manual_updates which
         rolls back the entire transaction (no partial WOs created).
         """
-        recipe_groups = _group_rows_by_recipe(self.production_table)
+        recipe_groups = _get_recipe_rows(self.production_table)
         for group in recipe_groups:
             if group["rows"][0].produ_status == NEW_SCHEDULE or (not group["rows"][0].mr_reference and not group["rows"][0].production_plane):
                 self.create_material_request(group["recipe"], group["rows"])
@@ -656,8 +656,8 @@ def _validate_production_rows(rows: list) -> None:
                  frappe.throw(_("Row {0}: Pack Qty must be > 0").format(row.idx))
 
 
-def _group_rows_by_recipe(rows: list) -> list[dict]:
-    """Group non-'No Cooking' rows into standalone single-row groups.
+def _get_recipe_rows(rows: list) -> list[dict]:
+    """Collect non-'No Cooking' rows as standalone single-row groups.
 
     Each row with a recipe_name becomes its own group dict with
     {"recipe": recipe_name, "rows": [row]}.
