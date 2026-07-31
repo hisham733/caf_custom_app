@@ -1,7 +1,6 @@
 # Copyright (c) 2025, hisham and contributors
 # For license information, please see license.txt
 
-from imp import reload
 import frappe
 from frappe import _
 from frappe.utils import getdate, nowdate, today, add_days
@@ -11,14 +10,15 @@ from caf.caf.doctype.daily_production.cancellation import process_cancellations
 from .wo_helpers import remove_all_wip_wo
 from caf.caf.doctype.daily_production.rws import rws
 from .rearrange_and_change_slot import process_slot_swaps , process_switch
-from .change_size import process_size_change
+from .change_size import process_recipe_change_or_size_change
 from .change_pack import process_pack_change_or_add
 
 import json
-import pdb
 import datetime
 # from caf.caf.overrides.production_plan import get_items_for_material_requests
 
+import re
+# ... (keep existing imports)
 # ── Module-Level Constants ────────────────────────────────────────────────────
 MR_DOCTYPE          = "Material Request"
 CHILD_DOCTYPE       = "Create ProExl Items"
@@ -46,6 +46,8 @@ class DailyProduction(Document):
         3. Non-cooking rows must have a size > 0
         4. On submit, at least one row must have a produ_status
         """
+        if not self.workflow_state:
+            self.workflow_state = ""
         for item in self.production_table:
             # It CANNOT be set to "New Schedule" (preventing duplicate creation)
             if item.produ_status == NEW_SCHEDULE and item.wo_list and item.mr_reference:
@@ -88,6 +90,25 @@ class DailyProduction(Document):
                         "the recipe <strong>{1}</strong>."
                     ).format(row.idx, recipe_name)
                 )
+            if pack_count > 7:
+                frappe.throw(
+                    _("Row {0}: Number of packs cannot exceed 7 for recipe <strong>{1}</strong>.")
+                    .format(row.idx, recipe_name)
+                )
+            # Validate against recipe BOM's actual pack count
+            bom_pack_count = frappe.db.sql("""
+                SELECT COUNT(DISTINCT bom.item)
+                FROM `tabBOM` AS bom
+                INNER JOIN `tabBOM Item` AS bom_item ON bom_item.parent = bom.name
+                WHERE bom_item.item_code = %s
+                  AND bom.is_active = 1 AND bom.docstatus = 1
+                  AND bom.is_default = 1
+            """, recipe_name)[0][0]
+            if bom_pack_count and pack_count > bom_pack_count:
+                frappe.throw(
+                    _("Row {0}: Number of packs cannot exceed {1} for recipe <strong>{2}</strong>.")
+                    .format(row.idx, bom_pack_count, recipe_name)
+                )
 
             # Validate pack fields
             for i in range(1, pack_count + 1):
@@ -127,6 +148,77 @@ class DailyProduction(Document):
                             "for recipe <strong>{3}</strong>."
                         ).format(row.idx, i - 1, i, recipe_name)
                     )
+
+            # Pack weight validation: skip if row already has WOs (historical data)
+            # or if status doesn't involve pack changes
+            _status_needs_pack_check = row.produ_status in ("New Schedule", "Recipe Change", "Pack Change", "")
+            if pack_count > 1 and _status_needs_pack_check and not row.mr_reference and not row.wo_list:
+                pack_names = []
+                for i in range(1, pack_count + 1):
+                    suffix = "" if i == 1 else f"_{i}"
+                    name = row.get(f"pack_name{suffix}")
+                    if name:
+                        pack_names.append(name)
+
+                bom_raw = frappe.db.get_value(
+                    "BOM",
+                    {"item": recipe_name, "docstatus": 1, "is_active": 1},
+                    "custom_raw_materails",
+                    order_by="modified desc",
+                )
+                if bom_raw:
+                    raw_materials = frappe.utils.flt(bom_raw)
+                    total_output = raw_materials * frappe.utils.flt(row.size)
+
+                    # Batch fetch pack weights
+                    weight_map = {}
+                    iva_rows = frappe.get_all(
+                        "Item Variant Attribute",
+                        filters={"parent": ["in", pack_names], "attribute": "Weight"},
+                        fields=["parent", "attribute_value"],
+                    )
+                    for iva in iva_rows:
+                        weight_map[iva.parent] = frappe.utils.flt(iva.attribute_value)
+                    missing = [n for n in pack_names if n not in weight_map]
+                    if missing:
+                        item_rows = frappe.get_all(
+                            "Item",
+                            filters={"name": ["in", missing]},
+                            fields=["name", "weight_per_unit"],
+                        )
+                        for ir in item_rows:
+                            weight_map[ir.name] = frappe.utils.flt(ir.weight_per_unit)
+
+                    # Sum weighted qty of all packs except the last
+                    weighted_sum = 0
+                    for i in range(1, pack_count):
+                        suffix = "" if i == 1 else f"_{i}"
+                        name = row.get(f"pack_name{suffix}")
+                        qty = frappe.utils.flt(row.get(f"pack_qty{suffix}"))
+                        if name and qty:
+                            weighted_sum += qty * weight_map.get(name, 0)
+
+                    last_suffix = "" if pack_count == 1 else f"_{pack_count}"
+                    last_name = row.get(f"pack_name{last_suffix}")
+                    last_qty = frappe.utils.flt(row.get(f"pack_qty{last_suffix}"))
+                    last_weight = weight_map.get(last_name, 0) if last_name else 0
+
+                    if last_qty > 0:
+                        weighted_sum += last_qty * last_weight
+                        if weighted_sum > total_output:
+                            min_size = int(weighted_sum / raw_materials) + 1
+                            frappe.throw(_(
+                                "Row {0}: Not enough output — total input is {1:.2f} kg but packs need {2:.2f} kg. "
+                                "Increase size to at least {3}."
+                            ).format(row.idx, total_output, weighted_sum, min_size))
+                    elif last_weight > 0:
+                        remaining = total_output - weighted_sum
+                        if remaining < last_weight:
+                            min_size = int((weighted_sum + last_weight) / raw_materials) + 1
+                            frappe.throw(_(
+                                "Row {0}: Not enough output — remaining {1:.2f} kg cannot pack '{2}' "
+                                "(min weight: {3:.2f} kg). Increase size to at least {4}."
+                            ).format(row.idx, remaining, last_name, last_weight, min_size))
     # ── Naming ────────────────────────────────────────────────────────────────
     def autoname(self):
         """DP-YYYY-MM-DD-#### based on creation date."""
@@ -144,37 +236,55 @@ class DailyProduction(Document):
                 d.link_id = make_autoname("R-.YYYY.-.#####")
 
     def _fill_missing_slots(self):
-        """Fill missing workstation+round combos with No Cooking placeholder rows."""
-        if self.docstatus != 0:
-            return
+        """Fill missing workstation+round combos with No Cooking placeholder rows.
 
+        Reads distinct workstations from the Machine Table of the default template,
+        then generates rounds 1..default_rounds for each workstation.
+        """
         try:
-            template_name = _get_template_name()
+            template = frappe.get_doc(TEMPLATE_DOCTYPE, _get_template_name())
         except Exception:
             return
+
+        default_r = int(template.default_rounds or 3)
+        ws_rows = frappe.get_all(
+            TEMPLATE_CHILD,
+            filters={"parent": template.name},
+            fields=["workstation"],
+            order_by="idx asc",
+        )
+        workstations = []
+        seen_ws = set()
+        for wr in ws_rows:
+            if wr.workstation not in seen_ws:
+                workstations.append(wr.workstation)
+                seen_ws.add(wr.workstation)
 
         existing = set()
         for d in self.production_table:
             existing.add((str(d.recipe_cook_workstaion or ""), str(d.recipe_cook_round or "")))
 
-        template_rows = frappe.get_all(
-            TEMPLATE_CHILD,
-            filters={"parent": template_name},
-            fields=["workstation", "round"],
-            order_by="idx asc",
-        )
+        # Group workstations by type prefix (everything before the first digit)
+        ws_groups = {}
+        for ws in workstations:
+            m = re.match(r"^(\D+)", ws)
+            prefix = m.group(1).strip() if m else ws
+            ws_groups.setdefault(prefix, []).append(ws)
 
-        for t in template_rows:
-            key = (str(t.workstation), str(t.round))
-            if key in existing:
-                continue
-            row = self.append("production_table", {})
-            row.recipe_cook_workstaion = t.workstation
-            row.recipe_cook_round = int(t.round)
-            row.recipe_name = NO_COOKING
-            row.size = 0
-            if self.required_by:
-                row.required_date = str(self.required_by)
+        for prefix in sorted(ws_groups.keys(), key=lambda p: workstations.index(ws_groups[p][0])):
+            group = ws_groups[prefix]
+            for r in range(1, default_r + 1):
+                for ws in group:
+                    key = (str(ws), str(r))
+                    if key in existing:
+                        continue
+                    row = self.append("production_table", {})
+                    row.recipe_cook_workstaion = ws
+                    row.recipe_cook_round = r
+                    row.recipe_name = NO_COOKING
+                    row.size = 0
+                    if self.required_by:
+                        row.required_date = str(self.required_by)
 
     def before_save(self):
         self._assign_link_id()
@@ -183,22 +293,11 @@ class DailyProduction(Document):
 
     # ── Submit Hook ───────────────────────────────────────────────────────────
     def before_submit(self):
-        """Validate before submit.
+        """Redirect to custom submit — just sets workflow_state, no docstatus change."""
+        frappe.throw(_("Use 'Submit' button instead of document submission."))
 
-        - Reject if all rows are No Cooking without status
-        - Assign link_id to all rows if none has one yet
-        """
-        if all(d.recipe_name == NO_COOKING and not d.produ_status for d in self.production_table):
-            frappe.throw("All rows have recipe <strong>No Cooking</strong> — not allowed")
-        
     def on_submit(self):
-            """Entry point after DB commit.
-
-            If custom_submit_ref is already set AND the skip_wo_creation flag
-            is NOT active, runs process_manual_updates().
-            """
-            if self.custom_submit_ref and not frappe.flags.get("skip_wo_creation"):
-                self.process_manual_updates()
+        pass
                 
     @frappe.whitelist()
     def process_manual_updates(self):
@@ -209,7 +308,7 @@ class DailyProduction(Document):
 
         Execution order:
         1. process_cancellations    – Cancel WOs for "Cancelled" rows
-        2. process_size_change      – Re-create WOs for size-changed rows
+        2. process_recipe_change_or_size_change – Re-create WOs for size-changed rows
         3. process_slot_swaps       – Swap WOs between rearranged slots
         4. process_switch           – Migrate link_ids for "Change Slot" rows
         5. process_pack_change_or_add – Re-create WOs for changed packs
@@ -232,12 +331,12 @@ class DailyProduction(Document):
                     frappe.db.commit()
 
             process_cancellations(self.name, self.doctype, CHILD_DOCTYPE)
-            process_size_change(self.name, CHILD_DOCTYPE)
-            process_slot_swaps(self.name, CHILD_DOCTYPE)
-            process_switch(self.name, CHILD_DOCTYPE)
-            process_pack_change_or_add(self.name, CHILD_DOCTYPE)
+            process_recipe_change_or_size_change(self, CHILD_DOCTYPE)
+            process_slot_swaps(self, CHILD_DOCTYPE)
+            process_switch(self, CHILD_DOCTYPE)
+            process_pack_change_or_add(self, CHILD_DOCTYPE)
             
-            rws(self.name, CHILD_DOCTYPE)
+            rws(self, CHILD_DOCTYPE)
 
             # Pre-validate: "New Schedule" rows must have pack fields before creating MRs
             for row in self.production_table:
@@ -319,73 +418,8 @@ class DailyProduction(Document):
 
     # ── Obsolete Older Records ─────────────────────────────────────────────────
     def _obsolete_older_records(self) -> None:
-        """Mark all non-cancelled DPs for the same date as Obsolete.
-
-        For each older DP on the same date:
-        - Sets workflow_state → 'Obsolete'
-        - Sets all child rows' docstatus → 2 (Cancelled)
-        - Adds a Comment explaining why
-
-        Uses bulk SQL (avoids N get_doc calls).
-        Commits if not in_submit.
-        """
-        others = frappe.get_all(
-            "Daily Production",
-            filters={
-                "required_by"   : self.required_by,
-                "name"          : ["!=", self.name],
-                "docstatus"     : ["<", 2],
-                "workflow_state": ["!=", "Obsolete"],
-            },
-            fields=["name"],
-        )
-        
-        if not others:
-            return
-        
-        # Extract all record names
-        record_names = [record.name for record in others]
-        
-        # Bulk update: Mark all Daily Production records as Obsolete (single query)
-        frappe.db.sql(
-            f"UPDATE `tabDaily Production` SET workflow_state = 'Obsolete' WHERE name IN ({','.join(['%s']*len(record_names))})",
-            record_names
-        )
-        
-        # Bulk update: Mark all child rows as cancelled (single query)
-        frappe.db.sql(
-            f"UPDATE `tab{CHILD_DOCTYPE}` SET docstatus = 2 WHERE parent IN ({','.join(['%s']*len(record_names))})",
-            record_names
-        )
-        
-        # Bulk-insert comments directly (avoids N frappe.get_doc calls)
-        user = frappe.session.user
-        now = frappe.utils.now()
-        comment_text = f"Marked Obsolete because a newer version ({self.name}) was submitted."
-        comment_rows = []
-        for rn in record_names:
-            comment_rows.append((
-                frappe.generate_hash(length=10),  # name
-                "Info",                             # comment_type
-                comment_text,                       # content
-                "Daily Production",                 # reference_doctype
-                rn,                                 # reference_name
-                user,                               # owner
-                now,                                # creation
-                now,                                # modified
-                user,                               # modified_by
-            ))
-        frappe.db.sql("""
-            INSERT INTO `tabComment`
-                (name, comment_type, content, reference_doctype, reference_name,
-                 owner, creation, modified, modified_by)
-            VALUES
-        """ + ",".join(["(%s,%s,%s,%s,%s,%s,%s,%s,%s)"] * len(comment_rows)),
-            [v for row in comment_rows for v in row]
-        )
-        
-        if not frappe.flags.in_submit:
-            frappe.db.commit()
+        """No-op: versioning removed. Only one DP per date."""
+        pass
 
     # ── Create Material Request ────────────────────────────────────────────────
     def create_material_request(self, recipe_name: str, rows: list) -> None:
@@ -413,15 +447,15 @@ class DailyProduction(Document):
         _append_recipe_row(mr, recipe_name, first)
         mr.flags.ignore_permissions = True
         mr.insert()
-        frappe.db.set_value(first.doctype, first.name, "mr_reference", mr.name)
 
         mr.submit()
+        frappe.db.set_value(first.doctype, first.name, "mr_reference", mr.name)
         _write_back_to_row(first, mr.name, mr)
         if frappe.request:
             link = frappe.utils.get_link_to_form(MR_DOCTYPE, mr.name)
             frappe.msgprint(f"Material Request created for Recipe: {recipe_name}<br>{link}")
 
-    def create_material_request_after_change_size(self, recipe_name: str, rows: list) -> list:
+    def recreate_mr_after_update_slot(self, recipe_name: str, rows: list) -> list:
             """Force-update production after a size change while preserving the existing Link ID.
 
             Creates the new Material Request first, then detaches the old one
@@ -608,14 +642,20 @@ def _write_back_to_row_additive(first_row, mr_name: str, mr) -> list:
     # Merge and Purge Cancelled
     final_wos = []
     final_types = []
-    
-    # We look at every WO currently in the set
-    for wo in list(set(existing_wos + new_wos)):
-        res = frappe.db.get_value("Work Order", wo, ["docstatus", "custom_item_type"], as_dict=True)
-        # Keep only if it exists and is NOT cancelled (docstatus 2)
+
+    # Phase 4: Batch WO queries — single get_all instead of N+1
+    all_wo_names = list(set(existing_wos + new_wos))
+    wo_data = {}
+    if all_wo_names:
+        wo_records = frappe.get_all("Work Order",
+            filters={"name": ["in", all_wo_names]},
+            fields=["name", "docstatus", "custom_item_type"])
+        wo_data = {w.name: w for w in wo_records}
+
+    for wo in all_wo_names:
+        res = wo_data.get(wo)
         if res and res.docstatus != 2:
             final_wos.append(wo)
-            # Find the matching type string (e.g. "(MFG-WO-123,Cook)")
             match = next((t for t in (existing_types + new_types) if wo in t), f"({wo},{res.custom_item_type})")
             final_types.append(match)
 
@@ -725,13 +765,13 @@ def _serialize_row(row: dict, date_str: str) -> dict:
 def _get_template_name() -> str:
     """Return the default production template name, falling back to the latest created.
 
-    Tries custom_is_default=1 first, then creation desc order. Throws if
+    Tries is_default=1 first, then creation desc order. Throws if
     no template record exists at all.
 
     Returns:
         Name of the production template DocType record
     """
-    name = frappe.db.get_value(TEMPLATE_DOCTYPE, {"custom_is_default": 1}, "name")
+    name = frappe.db.get_value(TEMPLATE_DOCTYPE, {"is_default": 1}, "name")
     if not name:
         name = frappe.db.get_value(TEMPLATE_DOCTYPE, {}, "name", order_by="creation desc")
     if not name:
@@ -743,18 +783,8 @@ def _get_template_name() -> str:
 
 
 def _assert_submitted(doctype: str, record) -> None:
-    """Throw a user-friendly error if the record docstatus is 0 (Draft).
-
-    Args:
-        doctype: DocType name used for the clickable link in the error
-        record: Document dict/object with a docstatus field
-
-    Raises:
-        frappe.throw with a link to the form
-    """
-    if record.docstatus == 0:
-        link = frappe.utils.get_link_to_form(doctype, record.name)
-        frappe.throw(_("Please submit {0} before proceeding.").format(link))
+    """No-op: always allowed (non-submission workflow)."""
+    pass
 
 @frappe.whitelist()
 def get_merged_production_items(date: str, doctype: str) -> dict:
@@ -826,24 +856,42 @@ def get_merged_production_items(date: str, doctype: str) -> dict:
                 ))
 
         # ── Back-fill from Master Template ────────────────────────
-        template_rows = frappe.get_all(
+        template = frappe.get_doc(TEMPLATE_DOCTYPE, _get_template_name())
+        default_r = int(template.default_rounds or 3)
+        ws_rows = frappe.get_all(
             TEMPLATE_CHILD,
-            filters={"parent": _get_template_name()},
-            fields=["workstation", "round", "idx"],
+            filters={"parent": template.name},
+            fields=["workstation"],
             order_by="idx asc",
         )
+        workstations = []
+        seen_ws = set()
+        for wr in ws_rows:
+            if wr.workstation not in seen_ws:
+                workstations.append(wr.workstation)
+                seen_ws.add(wr.workstation)
 
-        for t in template_rows:
-            key = (str(t.workstation), str(t.round))
-            if key in seen:
-                continue
-            final.append({
-                "recipe_cook_workstaion": t.workstation,
-                "recipe_cook_round"     : t.round,
-                "recipe_name"           : NO_COOKING,
-                "size"                  : 0,
-                "required_date"         : date_str,
-            })
+        # Group workstations by type prefix (everything before the first digit)
+        ws_groups = {}
+        for ws in workstations:
+            m = re.match(r"^(\D+)", ws)
+            prefix = m.group(1).strip() if m else ws
+            ws_groups.setdefault(prefix, []).append(ws)
+
+        for prefix in sorted(ws_groups.keys(), key=lambda p: workstations.index(ws_groups[p][0])):
+            group = ws_groups[prefix]
+            for r in range(1, default_r + 1):
+                for ws in group:
+                    key = (str(ws), str(r))
+                    if key in seen:
+                        continue
+                    final.append({
+                        "recipe_cook_workstaion": ws,
+                        "recipe_cook_round"     : r,
+                        "recipe_name"           : NO_COOKING,
+                        "size"                  : 0,
+                        "required_date"         : date_str,
+                    })
 
         # ── Re-index ──────────────────────────────────────────────
         for i, row in enumerate(final, start=1):
@@ -983,7 +1031,6 @@ def check_bom_recursion(bom_no: str, visited_boms: list = None, depth: int = 0) 
 # ══════════════════════════════════════════════════════════════════════════════
 #  Pack Search
 # ══════════════════════════════════════════════════════════════════════════════
-import frappe
 @frappe.whitelist()
 def get_packs_for_recipe(doctype, txt, searchfield, start, page_len, filters):
     """Return pack items whose BOM contains the given recipe as an ingredient.
@@ -1050,81 +1097,12 @@ def get_packs_for_recipe(doctype, txt, searchfield, start, page_len, filters):
 from werkzeug.wrappers import Response
 @frappe.whitelist(allow_guest=True)
 def create_new_dp(docname, doctype=None):
-    """Create a new Daily Production version by cloning an existing one.
-
-    Copies the required_by date, merges production items from the latest
-    non-obsolete DP, copies the max_table (delta table), and inserts the
-    new doc.
-
-    Side effect: Inserts a new Daily Production record.
-
-    Args:
-        docname: Name of the existing DP to clone
-        doctype: DocType (defaults to "Daily Production")
-
-    Returns:
-        Name of the newly created DP
-    """
-    if frappe.session.user == "Guest":
-        frappe.throw(_("Not authorized. Please log in to ERPNext first."))
-    try:
-        old_doc = frappe.get_doc("Daily Production", docname)
-        # ── Validate link_id on source rows ──
-        missing_link_rows = [r for r in old_doc.get("production_table", []) if r.recipe_name and r.recipe_name != NO_COOKING and not r.link_id]
-        if missing_link_rows:
-            frappe.log_error(
-                title="New Version Failed - Missing Link IDs",
-                message=f"Source DP: {old_doc.name}\n"
-                        f"Rows without link_id (idx): {[r.idx for r in missing_link_rows]}\n"
-                        f"Recipe names: {[r.recipe_name for r in missing_link_rows]}"
-            )
-            frappe.throw(
-                _("Cannot create a new version of <b>{0}</b>. {1} row(s) are missing their Link ID "
-                  "(those rows were likely submitted before the Link ID logic was active). "
-                  "Please contact the Administrator.")
-                .format(old_doc.name, len(missing_link_rows))
-            )
-        new_doc = frappe.new_doc("Daily Production")
-        new_doc.required_by = old_doc.required_by
-        if old_doc.get("required_by_1"):
-            new_doc.required_by_1 = old_doc.required_by_1
-
-        data = get_merged_production_items(str(new_doc.required_by), doctype or "Daily Production")
-
-        if data and data.get("rows"):
-            #WO created at DB = custom_submit_ref
-            new_doc.custom_submit_ref = data.get("custom_submit_ref", "")
-            excluded = ["name", "parent", "parentfield", "parenttype", "doctype", "idx","docstatus"]
-            for item in data["rows"]:
-
-                child = new_doc.append("production_table", {})
-                for key, value in item.items():
-
-                    if key not in excluded:
-                        child.set(key, value)
-
-        new_doc.planner_name = frappe.get_value("User", frappe.session.user, "full_name")
-        
-        # Copy max_table (delta table) from old document
-        old_max_table = old_doc.get("max_table", [])
-        if old_max_table:
-            for old_row in old_max_table:
-                new_row = new_doc.append("max_table", {})
-                for key, value in old_row.as_dict().items():
-                    if key not in ["name", "parent", "parentfield", "parenttype", "doctype", "idx"]:
-                        new_row.set(key, value)
-        
-        new_doc.insert(ignore_permissions=True)
-        return new_doc.name
-    except Exception:
-        frappe.log_error(frappe.get_traceback(), "Create New Daily Production Failed")
-        frappe.throw(_("Unable to create a new version. Please contact Administrator."))
+    """No-op: versioning removed. Only one DP per date."""
+    pass
 
 
 
-import frappe
-from frappe import _
-from frappe.utils import today
+
 # EXCEL SYNC ENDPOINT: Receives data from Excel, finds or creates the Daily Production doc for the given date, and updates the production table accordingly. It also handles the logic for determining the recipe based on the pack and BOM structure.
 @frappe.whitelist()
 def sync_excel_production(data, date=None):
@@ -1540,7 +1518,6 @@ def submit_dp_week_by_number(week_number):
         
         year = datetime.date.today().year
         week_number = int(week_number)
-        print(week_number)
         jan4 = datetime.date(year, 1, 4)
         start = jan4 - datetime.timedelta(days=jan4.isocalendar()[2] - 1)
         monday = start + datetime.timedelta(weeks=week_number - 1)
@@ -1548,3 +1525,132 @@ def submit_dp_week_by_number(week_number):
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "submit_dp_week_by_number failed")
         frappe.respond_as_web_page("Error", f"<h2>Error</h2><p>{frappe.utils.cstr(e)}</p>")
+
+@frappe.whitelist()
+def add_extra_round(docname, workstation, total_rounds):
+    """Add all extra round rows between default_rounds+1 and total_rounds
+    for the given workstation, inserting each in the correct grouped position."""
+
+    total_rounds = int(total_rounds)
+    dp = frappe.get_doc("Daily Production", docname)
+    template = frappe.get_doc(TEMPLATE_DOCTYPE, _get_template_name())
+    default_rounds = template.default_rounds or 3
+    max_rounds = template.max_rounds or 99
+
+    if total_rounds <= default_rounds:
+        frappe.throw(_("Total rounds ({0}) must be greater than default rounds ({1}).")
+                     .format(total_rounds, default_rounds))
+
+    if total_rounds > max_rounds:
+        frappe.throw(_("Total rounds cannot exceed {0}.").format(max_rounds))
+
+    # Build set of existing (workstation, round) pairs
+    existing = set()
+    for row in dp.get("production_table"):
+        ws = str(row.recipe_cook_workstaion or "")
+        rnd = int(row.recipe_cook_round or 0)
+        existing.add((ws, rnd))
+
+    # Determine group prefix
+    m = re.match(r"^(\D+)", workstation)
+    group_prefix = m.group(1).strip() if m else workstation
+
+    # Find insert position: after the last row of the same group
+    rows = dp.get("production_table")
+    insert_idx = len(rows)
+    for i in range(len(rows) - 1, -1, -1):
+        row_ws = str(rows[i].recipe_cook_workstaion or "")
+        row_m = re.match(r"^(\D+)", row_ws)
+        row_prefix = row_m.group(1).strip() if row_m else row_ws
+        if row_prefix == group_prefix:
+            insert_idx = i + 1
+            break
+
+    # Add each missing round from default_rounds+1 to total_rounds
+    added = []
+    for rnd in range(default_rounds + 1, total_rounds + 1):
+        if (workstation, rnd) in existing:
+            continue
+        row = dp.append("production_table", {
+            "recipe_cook_workstaion": workstation,
+            "recipe_cook_round": rnd,
+            "recipe_name": NO_COOKING,
+            "size": 0,
+        })
+        dp.get("production_table").remove(row)
+        dp.get("production_table").insert(insert_idx, row)
+        insert_idx += 1  # next row goes after this one
+        added.append(rnd)
+
+    if not added:
+        frappe.throw(_("All rounds {0} to {1} for {2} already exist.")
+                     .format(default_rounds + 1, total_rounds, workstation))
+
+    # Re-index all rows
+    for i, r in enumerate(dp.get("production_table"), 1):
+        r.idx = i
+
+    dp.save(ignore_permissions=True)
+
+    # Log the change
+    frappe.get_doc({
+        "doctype": "Schedule Change Log",
+        "change_datetime": frappe.utils.now_datetime(),
+        "changed_by": frappe.session.user,
+        "action_type": "Edit",
+        "day": str(dp.required_by),
+        "dp_name": dp.name,
+        "workstation": workstation,
+        "summary": _("Added rounds {0} for {1}").format(", ".join(str(r) for r in added), workstation),
+        "changes_json": frappe.as_json({"added_rounds": added, "total_rounds": total_rounds}),
+    }).insert(ignore_permissions=True)
+
+    return {"workstation": workstation, "added_rounds": added}
+
+
+@frappe.whitelist()
+def get_machine_table_workstations(doctype, txt, searchfield, start, page_len, filters):
+    """Return workstations from the default template's Machine Table for dropdown filtering."""
+    template_name = _get_template_name()
+    raw = frappe.db.sql("""
+        SELECT DISTINCT mc.workstation
+        FROM `tabMachine Table` mc
+        WHERE mc.parent = %s
+          AND mc.workstation LIKE %s
+        ORDER BY mc.workstation
+        LIMIT %s OFFSET %s
+    """, (template_name, f"%{txt}%", page_len, start))
+    return raw
+
+
+@frappe.whitelist()
+def get_template_round_config():
+    """Return default_rounds and max_rounds from the default template."""
+    template = frappe.get_doc(TEMPLATE_DOCTYPE, _get_template_name())
+    return {
+        "default_rounds": template.default_rounds or 3,
+        "max_rounds": template.max_rounds or 99,
+    }
+
+
+@frappe.whitelist()
+def submit_dp(docname):
+    """Submit a Daily Production — sets workflow_state to 'Submitted', docstatus stays 0."""
+    dp = frappe.get_doc("Daily Production", docname)
+
+    if dp.docstatus != 0:
+        frappe.throw(_("Only draft documents can be submitted."))
+
+    if dp.workflow_state == "Submitted":
+        frappe.throw(_("Daily Production is already submitted."))
+
+    if all(d.recipe_name == NO_COOKING and not d.produ_status for d in dp.production_table):
+        frappe.throw(_("All rows have recipe <strong>No Cooking</strong> — not allowed"))
+
+    for row in dp.production_table:
+        if not row.link_id:
+            row.link_id = make_autoname("R-.YYYY.-.#####")
+
+    dp.workflow_state = "Submitted"
+    dp.save(ignore_permissions=True)
+    return {"success": True}

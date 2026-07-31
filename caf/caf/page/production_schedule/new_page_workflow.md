@@ -163,7 +163,7 @@ User clicks "Create WO" for Monday
   │   4. If custom_submit_ref already filled → error
   │   5. dp.process_manual_updates()
   │      → process_cancellations
-  │      → process_size_change
+  │      → process_recipe_change_or_size_change
   │      → process_slot_swaps (Change Slot)
   │      → process_switch (Rearrange)
   │      → process_pack_change_or_add

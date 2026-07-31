@@ -52,12 +52,14 @@ const setup_production_grid = function(frm) {
     if (!grid) return;
 
     const grid_layout = {
-        "recipe_name": 2,
-        "size": 1,
         "recipe_cook_workstaion": 2,
         "recipe_cook_round": 1,
-        "custom_yield": 1,
         "produ_status": 3,
+        "recipe_name": 2,
+        "size": 1,
+        "custom_yield": 1,
+        "total_input": 1,
+        "total_output": 1,
         "number_of_pack": 1
     };
 
@@ -123,6 +125,14 @@ function color_recipe_groups(frm) {
         const ui_row = grid.grid_rows_by_docname[row.name];
 
         if (ui_row?.wrapper) {
+            // Red tint for problem workstation rows (matching WPD)
+            var ws_name = row.recipe_cook_workstaion;
+            if (frm._ws_status && ws_name && frm._ws_status[ws_name] === "Problem") {
+                $(ui_row.wrapper).css("background-color", "rgba(239, 68, 68, 0.08)");
+                $(ui_row.wrapper).css("opacity", "0.65");
+                return;
+            }
+
             if (is_active_group) {
                 $(ui_row.wrapper).css("background-color", active_recipe_color);
             }
@@ -147,6 +157,32 @@ function color_recipe_groups(frm) {
 }
 
 const debounced_apply_colors = debounce((frm) => { color_recipe_groups(frm); }, 250);
+
+// Pack weight validation helper — real-time feedback like WPD
+function _validate_pack_weights(frm, cdt, cdn) {
+    const row = locals[cdt][cdn];
+    if (!row || !row.recipe_name || row.recipe_name === "No Cooking") return;
+    const pack_count = parseInt(row.number_of_pack) || 0;
+    if (pack_count <= 1) return;
+    var packs = [];
+    for (let i = 1; i <= pack_count; i++) {
+        let s = (i === 1) ? "" : "_" + i;
+        let name = row["pack_name" + s];
+        let qty = row["pack_qty" + s];
+        if (name) packs.push({ name: name, qty: qty || 0 });
+    }
+    if (packs.length <= 1) return;
+    frappe.call({
+        method: "caf.caf.page.production_schedule.production_schedule.validate_pack_weights",
+        args: { recipe_name: row.recipe_name, size: row.size, packs: packs },
+        callback: function(r) {
+            if (r.message && !r.message.valid) {
+                frappe.show_alert({ message: r.message.message, indicator: 'red' }, 8);
+            }
+        }
+    });
+}
+const debounced_validate_pack = debounce((frm, cdt, cdn) => { _validate_pack_weights(frm, cdt, cdn); }, 500);
 
 function validate_unique_cook_combination(frm, cdt, cdn) {
     const current_row = locals[cdt][cdn]; const workstation = current_row.recipe_cook_workstaion; const round = current_row.recipe_cook_round;
@@ -232,6 +268,7 @@ function filter_produ_status(frm, cdn) {
 frappe.ui.form.on("Daily Production", {
     onload: function(frm) {
         if (frm.is_new()) { frm.set_value("planner_name", frappe.session.user_fullname); }
+        if (!frm.doc.workflow_state) { frm.doc.workflow_state = ""; }
     },
 
   refresh: function(frm) {
@@ -251,6 +288,21 @@ frappe.ui.form.on("Daily Production", {
             grid.df.cannot_delete_rows = true;
         }
         setup_production_grid(frm);
+
+        // Fetch workstation statuses for problem-row detection
+        var ws_names = [...new Set((frm.doc.production_table || []).map(r => r.recipe_cook_workstaion).filter(Boolean))];
+        frm._ws_status = {};
+        if (ws_names.length) {
+            frappe.call({
+                method: "frappe.client.get_list",
+                args: { doctype: "Workstation", fields: ["name", "status"], filters: [["name", "in", ws_names]] },
+                callback: function(r) {
+                    (r.message || []).forEach(function(w) { frm._ws_status[w.name] = w.status; });
+                    color_recipe_groups(frm);
+                    if (typeof window.apply_edit_restrictions === 'function') { window.apply_edit_restrictions(frm); }
+                }
+            });
+        }
 
         const pack_fields = ["pack_name", "pack_name_2", "pack_name_3", "pack_name_4", "pack_name_5", "pack_name_6"];
 
@@ -289,7 +341,7 @@ frappe.ui.form.on("Daily Production", {
         });
 
         // Setup Buttons
-        if (frm.doc.docstatus === 1 && frm.doc.workflow_state === "Submitted") {
+        if (frm.doc.workflow_state === "Submitted") {
             if (!frm.doc.custom_submit_ref) {
                 frm.add_custom_button(__('Create Work Order'), function() {
                     frappe.confirm(__('This will process all production changes (Swaps, Size Changes, and Cancellations). Are you sure?'), () => {
@@ -326,20 +378,62 @@ frappe.ui.form.on("Daily Production", {
         }
     },
 
-    after_save: function(frm) { debounced_apply_colors(frm); },
+    after_save: function(frm) {
+        debounced_apply_colors(frm);
+        if (frm.doc.custom_submit_ref) {
+            var pending = (frm.doc.production_table || []).filter(function(r) {
+                return r.recipe_name !== "No Cooking"
+                    && r.produ_status
+                    && r.rq_status !== "Done"
+                    && r.rq_status !== "Processing";
+            });
+            if (pending.length > 0) {
+                show_loading_overlay();
+                frm.call({
+                    doc: frm.doc,
+                    method: 'process_manual_updates',
+                    callback: function(r) {
+                        hide_loading_overlay();
+                        if(!r.exc) {
+                            frm.reload_doc();
+                            frappe.show_alert({ message: __('✅ Changes processed'), indicator: 'green' });
+                        }
+                    },
+                    error: function() { hide_loading_overlay(); }
+                });
+            }
+        }
+    },
 
     before_submit: function(frm) {
         show_loading_overlay();
+        frappe.validated = false;
         const cancel_rows = (frm.doc.production_table || []).filter(r => r.produ_status === 'Cancelled');
+        const do_submit = function() {
+            frappe.call({
+                method: "caf.caf.doctype.daily_production.daily_production.submit_dp",
+                args: { docname: frm.doc.name },
+                callback: function(r) {
+                    hide_loading_overlay();
+                    if (r.message && r.message.success) {
+                        frm.reload_doc();
+                        frappe.show_alert({ message: __("✅ Submitted"), indicator: "green" });
+                    }
+                },
+                error: function() { hide_loading_overlay(); }
+            });
+        };
         if (cancel_rows.length > 0) {
-            frappe.validated = false;
             const recipe_list = cancel_rows.map(r => `<li>${r.recipe_name || 'Row ' + r.idx}</li>`).join('');
             frappe.confirm(
                 __(`<b>${cancel_rows.length} row(s) are marked for cancellation:</b><ul>${recipe_list}</ul> Their Work Orders will be cancelled on submit. Proceed?`),
-                () => { frappe.validated = true; frm.save('Submit'); },
+                do_submit,
                 () => { hide_loading_overlay(); }
             );
+        } else {
+            do_submit();
         }
+        return false;
     },
 
     on_submit: function(frm) { hide_loading_overlay(); },
@@ -499,6 +593,23 @@ frappe.ui.form.on("Create ProExl Items", {
             row.__prev_status = row.produ_status || '';
         }
         filter_produ_status(frm, cdn);
+        // Lazy-load total_input + total_output for existing rows
+        var _row = locals[cdt][cdn];
+        if (_row && _row.recipe_name && _row.recipe_name !== "No Cooking" && _row._raw_materials === undefined) {
+            frappe.call({
+                method: 'caf.caf.page.production_schedule.production_schedule.get_recipe_bom_data',
+                args: { recipe_name: _row.recipe_name },
+                callback: function(r) {
+                    if (r.message) {
+                        _row._raw_materials = r.message.raw_materials || 0;
+                        _row._max_packs = _row._max_packs || r.message.pack_count || 7;
+                        var ti = flt(r.message.raw_materials) * flt(_row.size);
+                        frappe.model.set_value(cdt, cdn, 'total_input', ti);
+                        frappe.model.set_value(cdt, cdn, 'total_output', ti * flt(_row.custom_yield));
+                    }
+                }
+            });
+        }
         if (typeof window.apply_edit_restrictions === 'function') { window.apply_edit_restrictions(frm, cdt, cdn); }
     },
 
@@ -580,8 +691,19 @@ frappe.ui.form.on("Create ProExl Items", {
             return;
         }
 
+        // ── Clear pack fields if recipe changed (matching WPD behavior) ──
+        if (current_row.produ_status === "Recipe Change" || !current_row.produ_status) {
+            for (let i = 1; i <= 7; i++) {
+                let s = i === 1 ? "" : "_" + i;
+                frappe.model.set_value(cdt, cdn, "pack_name" + s, null);
+                frappe.model.set_value(cdt, cdn, "pack_qty" + s, 0);
+                frappe.model.set_value(cdt, cdn, "pack_remark" + s, null);
+            }
+        }
+
         const start_index = current_row.idx - 1;
-        frappe.model.set_value(cdt, cdn, 'number_of_pack', 0);
+        const is_no_cook = !current_row.recipe_name || current_row.recipe_name === "No Cooking";
+        frappe.model.set_value(cdt, cdn, 'number_of_pack', is_no_cook ? 0 : 1);
 
         const pack_fields_to_clear = ['pack_name', 'pack_machine', 'pack_time', 'pack_round'];
         for (let i = start_index + 1; i < frm.doc.production_table.length; i++) {
@@ -593,6 +715,10 @@ frappe.ui.form.on("Create ProExl Items", {
         // ── Fetch custom_yield from BOM ──
         if (!current_row.recipe_name || current_row.recipe_name === "No Cooking") {
             frappe.model.set_value(cdt, cdn, 'custom_yield', null);
+            frappe.model.set_value(cdt, cdn, 'total_input', 0);
+            frappe.model.set_value(cdt, cdn, 'total_output', 0);
+            current_row._max_packs = 7;
+            current_row._raw_materials = 0;
         } else {
             frappe.call('caf.caf.doctype.daily_production.daily_production.get_bom_info', {
                 item_code: current_row.recipe_name
@@ -604,6 +730,24 @@ frappe.ui.form.on("Create ProExl Items", {
                 }
             }).catch(() => {
                 frappe.model.set_value(cdt, cdn, 'custom_yield', null);
+            });
+
+            // Fetch pack count from BOM (matching WPD's get_recipe_bom_data)
+            frappe.call('caf.caf.page.production_schedule.production_schedule.get_recipe_bom_data', {
+                recipe_name: current_row.recipe_name
+            }).then(r => {
+                if (r.message) {
+                    current_row._max_packs = r.message.pack_count || 7;
+                    current_row._raw_materials = r.message.raw_materials || 0;
+                    var ti = flt(r.message.raw_materials) * flt(current_row.size);
+                    frappe.model.set_value(cdt, cdn, 'total_input', ti);
+                    frappe.model.set_value(cdt, cdn, 'total_output', ti * flt(current_row.custom_yield));
+                }
+            }).catch(() => {
+                current_row._max_packs = 7;
+                current_row._raw_materials = 0;
+                frappe.model.set_value(cdt, cdn, 'total_input', 0);
+                frappe.model.set_value(cdt, cdn, 'total_output', 0);
             });
         }
 
@@ -630,21 +774,13 @@ frappe.ui.form.on("Create ProExl Items", {
 
     number_of_pack: function(frm, cdt, cdn) {
         const row = locals[cdt][cdn];
-        const size = flt(row.size);
+        const val = flt(row.number_of_pack);
 
-        if (size <= 0.0 && flt(row.number_of_pack) !== 0) {
-            frappe.show_alert({ message: __("Size is required!"), indicator: 'red' }, 3);
-            frappe.model.set_value(cdt, cdn, "number_of_pack", 0);
-
-            const grid_row = frm.fields_dict["production_table"].grid.get_row(cdn);
-            if (grid_row) {
-                const $size_field = grid_row.get_field("size").$wrapper;
-                $size_field.css({"background-color": "#ffcccc", "border": "2px solid red", "transition": "all 0.3s"});
-                $size_field.find('input').focus();
-                setTimeout(() => {
-                    $size_field.css({"background-color": "", "border": ""});
-                }, 2500);
-            }
+        if (val > (row._max_packs || 7)) {
+            var mp = row._max_packs || 7;
+            frappe.show_alert({ message: __('Number of packs cannot exceed {0} for this recipe.', [mp]), indicator: 'red' }, 3);
+            frappe.model.set_value(cdt, cdn, "number_of_pack", mp);
+            return;
         }
 
         const num = flt(row.number_of_pack);
@@ -656,9 +792,20 @@ frappe.ui.form.on("Create ProExl Items", {
                 frappe.model.set_value(cdt, cdn, "pack_note" + s, null);
             }
         }
+        debounced_validate_pack(frm, cdt, cdn);
     },
 
-    size: function(frm, cdt, cdn) { validate_field_dependency(frm, cdt, cdn, 'size', 'recipe_name', 'Recipe Name'); },
+    size: function(frm, cdt, cdn) {
+        validate_field_dependency(frm, cdt, cdn, 'size', 'recipe_name', 'Recipe Name');
+        if (typeof window.apply_edit_restrictions === 'function') { window.apply_edit_restrictions(frm, cdt, cdn); }
+        debounced_validate_pack(frm, cdt, cdn);
+        var r = locals[cdt][cdn];
+	if (r && r._raw_materials) {
+            var ti = flt(r._raw_materials) * flt(r.size);
+            frappe.model.set_value(cdt, cdn, 'total_input', ti);
+            frappe.model.set_value(cdt, cdn, 'total_output', ti * flt(r.custom_yield));
+        }
+    },
     recipe_cook_workstaion: function(frm, cdt, cdn) { if (validate_field_dependency(frm, cdt, cdn, 'recipe_cook_workstaion', 'recipe_name', 'Recipe Name')) { try { validate_unique_cook_combination(frm, cdt, cdn); } catch (e) { frappe.model.set_value(cdt, cdn, 'recipe_cook_round', ''); } } },
     recipe_cook_round: function(frm, cdt, cdn) { if (validate_field_dependency(frm, cdt, cdn, 'recipe_cook_round', 'recipe_name', 'Recipe Name')) { try { validate_unique_cook_combination(frm, cdt, cdn); } catch (e) { frappe.model.set_value(cdt, cdn, 'recipe_cook_workstaion', ''); } } },
     pack_machine: function(frm, cdt, cdn) { if (validate_field_dependency(frm, cdt, cdn, 'pack_machine', 'pack_name', 'Pack Name')) { try { validate_unique_cook_combination_pack(frm, cdt, cdn); } catch (e) { frappe.model.set_value(cdt, cdn, 'pack_round', ''); } } },
@@ -672,6 +819,7 @@ frappe.ui.form.on("Create ProExl Items", {
             frappe.msgprint(__('Please fill Pack 1 Qty first before entering Pack 2 Qty.'));
             frappe.model.set_value(cdt, cdn, 'pack_qty_2', 0);
         }
+        debounced_validate_pack(frm, cdt, cdn);
     },
     pack_qty_3: function(frm, cdt, cdn) {
         const row = locals[cdt][cdn];
@@ -681,6 +829,7 @@ frappe.ui.form.on("Create ProExl Items", {
             frappe.msgprint(__('Please fill Pack 2 Qty first before entering Pack 3 Qty.'));
             frappe.model.set_value(cdt, cdn, 'pack_qty_3', 0);
         }
+        debounced_validate_pack(frm, cdt, cdn);
     },
     pack_qty_4: function(frm, cdt, cdn) {
         const row = locals[cdt][cdn];
@@ -690,6 +839,7 @@ frappe.ui.form.on("Create ProExl Items", {
             frappe.msgprint(__('Please fill Pack 3 Qty first before entering Pack 4 Qty.'));
             frappe.model.set_value(cdt, cdn, 'pack_qty_4', 0);
         }
+        debounced_validate_pack(frm, cdt, cdn);
     },
     pack_qty_5: function(frm, cdt, cdn) {
         const row = locals[cdt][cdn];
@@ -699,6 +849,7 @@ frappe.ui.form.on("Create ProExl Items", {
             frappe.msgprint(__('Please fill Pack 4 Qty first before entering Pack 5 Qty.'));
             frappe.model.set_value(cdt, cdn, 'pack_qty_5', 0);
         }
+        debounced_validate_pack(frm, cdt, cdn);
     },
     pack_qty_6: function(frm, cdt, cdn) {
         const row = locals[cdt][cdn];
@@ -708,6 +859,7 @@ frappe.ui.form.on("Create ProExl Items", {
             frappe.msgprint(__('Please fill Pack 5 Qty first before entering Pack 6 Qty.'));
             frappe.model.set_value(cdt, cdn, 'pack_qty_6', 0);
         }
+        debounced_validate_pack(frm, cdt, cdn);
     },
     pack_qty_7: function(frm, cdt, cdn) {
         const row = locals[cdt][cdn];
@@ -717,6 +869,7 @@ frappe.ui.form.on("Create ProExl Items", {
             frappe.msgprint(__('Please fill Pack 6 Qty first before entering Pack 7 Qty.'));
             frappe.model.set_value(cdt, cdn, 'pack_qty_7', 0);
         }
+        debounced_validate_pack(frm, cdt, cdn);
     }
 });
 
@@ -815,7 +968,7 @@ function calculate_qty_or_size_WO(frm, row, field_changed) {
 // =================================================================
 
 const ALWAYS_READ_ONLY = ['recipe_cook_workstaion', 'recipe_cook_round', 'link_id',
-    'mr_reference', 'rq_status', 'custom_yield', 'production_plane', 'custom_pair_id'];
+    'mr_reference', 'rq_status', 'custom_yield', 'total_input', 'total_output', 'production_plane', 'custom_pair_id'];
 const SYSTEM_FIELDS = ['name', 'owner', 'creation', 'modified', 'modified_by', 'parent', 'parentfield', 'parenttype', 'idx', 'doctype'];
 
 /** Gets all user-data fields that are allowed to be moved or swapped */
@@ -1023,6 +1176,26 @@ window.apply_edit_restrictions = function(frm, cdt, cdn) {
 
     rows.forEach(row => {
         if (!row) return;
+
+        // Lock entire row if workstation has Problem status (matching WPD)
+        var ws_name = row.recipe_cook_workstaion;
+        if (frm._ws_status && ws_name && frm._ws_status[ws_name] === "Problem") {
+            all_fields.forEach(fn => {
+                if (!ALWAYS_READ_ONLY.includes(fn)) {
+                    frm.set_df_property('production_table', 'read_only', 1, frm.doc.name, fn, row.name);
+                }
+            });
+            ALWAYS_READ_ONLY.forEach(fn => {
+                frm.set_df_property('production_table', 'read_only', 1, frm.doc.name, fn, row.name);
+            });
+            var _grid = frm.get_field("production_table").grid;
+            if (_grid) {
+                _grid.refresh_row(row.name);
+                if (_grid.grid_row_form && _grid.grid_row_form.wrapper.is(':visible')) _grid.grid_row_form.refresh();
+            }
+            return;
+        }
+
         let field_configs = {};
         const status = row.produ_status;
         const is_no_cook = !row.recipe_name || row.recipe_name === "" || row.recipe_name === "No Cooking";
@@ -1064,6 +1237,18 @@ window.apply_edit_restrictions = function(frm, cdt, cdn) {
             all_fields.forEach(f => { if (!ALWAYS_READ_ONLY.includes(f)) field_configs[f] = 0; });
         }
 
+        // Lock pack fields when size is 0 (matching WPD behavior)
+        var size_val = flt(row.size);
+        if (size_val <= 0 && !is_no_cook) {
+            field_configs.number_of_pack = 1;
+            for (var _pi = 1; _pi <= 7; _pi++) {
+                var _ps = _pi === 1 ? "" : "_" + _pi;
+                field_configs["pack_name" + _ps] = 1;
+                field_configs["pack_qty" + _ps] = 1;
+                field_configs["pack_remark" + _ps] = 1;
+            }
+        }
+
         if (is_no_cook && !["New Schedule", "Single WO","Recipe Change"].includes(status)) {
             field_configs.recipe_name = 1;
             field_configs.size = 1;
@@ -1086,9 +1271,13 @@ window.apply_edit_restrictions = function(frm, cdt, cdn) {
             });
         }
 
-        Object.keys(field_configs).forEach(fn => {
-            frm.set_df_property('production_table', 'read_only', field_configs[fn], frm.doc.name, fn, row.name);
-        });
+        try {
+            Object.keys(field_configs).forEach(fn => {
+                frm.set_df_property('production_table', 'read_only', field_configs[fn], frm.doc.name, fn, row.name);
+            });
+        } catch (e) {
+            console.warn("apply_edit_restrictions error for row", row.name, e);
+        }
 
         let grid = frm.get_field("production_table").grid;
         if (grid) {
@@ -1119,44 +1308,8 @@ frappe.ui.form.on('Create ProExl Items', {
 });
 
 // =================================================================
-// New Version JS
+// New Version JS — REMOVED (non-submission workflow)
 // =================================================================
-
-frappe.ui.form.on("Daily Production", {
-    refresh: function(frm) {
-        if (frm.doc.docstatus === 1 && frm.doc.workflow_state === "Submitted") {
-            frappe.db.count("Daily Production", {
-                filters: {
-                    "custom_submit_ref": frm.doc.name
-                }
-            }).then(count => {
-                frm.add_custom_button("New Version", function() {
-                    frappe.confirm(
-                        "Are you sure you want to create a new version?",
-                        function() {
-                            frappe.call({
-                                method: "caf.caf.doctype.daily_production.daily_production.create_new_dp",
-                                args: {
-                                    docname: frm.doc.name,
-                                    doctype: frm.doc.doctype
-                                },
-                                callback: function(r) {
-                                    if (r.message) {
-                                        frappe.msgprint("New version created successfully!");
-                                        frappe.set_route("Form", "Daily Production", r.message);
-                                    }
-                                }
-                            });
-                        },
-                        function() {
-                            frappe.msgprint("Action cancelled");
-                        }
-                    );
-                });
-            });
-        }
-    }
-});
 
 // =================================================================
 // URL Param Row Opener
@@ -1164,6 +1317,71 @@ frappe.ui.form.on("Daily Production", {
 
 frappe.ui.form.on('Daily Production', {
     refresh: function(frm) {
+        if (!frm.is_new()) {
+            frm.add_custom_button(__('Add Extra Round'), function() {
+                frappe.call({
+                    method: "caf.caf.doctype.daily_production.daily_production.get_template_round_config",
+                    callback: function(rc) {
+                        if (!rc.message) return;
+                        var dr = rc.message.default_rounds || 3;
+                        var mr = rc.message.max_rounds || 99;
+                        let dialog = new frappe.ui.Dialog({
+                            title: __('Add Extra Round'),
+                            fields: [
+                                {
+                                    fieldname: 'workstation',
+                                    fieldtype: 'Link',
+                                    label: __('Workstation'),
+                                    options: 'Workstation',
+                                    reqd: 1,
+                                    get_query: function() {
+                                        return {
+                                            query: "caf.caf.doctype.daily_production.daily_production.get_machine_table_workstations",
+                                        };
+                                    }
+                                },
+                                {
+                                    fieldname: 'total_rounds',
+                                    fieldtype: 'Int',
+                                    label: __('Total Rounds'),
+                                    reqd: 1
+                                }
+                            ],
+                            primary_action_label: __('Add'),
+                            primary_action: function(values) {
+                                if (parseInt(values.total_rounds) <= dr) {
+                                    frappe.show_alert({ message: __('Total rounds must be greater than default ({0})', [dr]), indicator: 'red' }, 3);
+                                    return;
+                                }
+                                if (parseInt(values.total_rounds) > mr) {
+                                    frappe.show_alert({ message: __('Total rounds cannot exceed max ({0})', [mr]), indicator: 'red' }, 3);
+                                    return;
+                                }
+                                dialog.hide();
+                        frappe.call({
+                            method: "caf.caf.doctype.daily_production.daily_production.add_extra_round",
+                            args: {
+                                docname: frm.docname,
+                                workstation: values.workstation,
+                                total_rounds: values.total_rounds
+                            },
+                            callback: function(r) {
+                                if (r.message) {
+                                    frm.reload_doc();
+                                    frappe.show_alert({
+                                        message: __('Extra rounds added for {0}', [values.workstation]),
+                                        indicator: 'green'
+                                    });
+                                }
+                            }
+                        });
+                    }
+                });
+                dialog.show();
+                    }
+                });
+            }, __('Extras'));
+        }
         const urlParams = new URLSearchParams(window.location.search);
         const editName = urlParams.get('row');
         const editIdx = urlParams.get('edit_idx');

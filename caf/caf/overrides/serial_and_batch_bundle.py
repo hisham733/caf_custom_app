@@ -52,7 +52,7 @@ def is_item_in_delet_table(item_code):
     # if item_group != "Recipe":
     parent_doc = frappe.get_all(
         "start and delete items",
-        filters={"custom_is_default": 1},
+        filters={"is_default": 1},
         fields=["name"],
         order_by="creation desc",
         limit=1,

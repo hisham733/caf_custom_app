@@ -1,5 +1,6 @@
 import datetime
 import re
+import time
 
 import frappe
 from frappe import _
@@ -45,7 +46,6 @@ def _log_schedule_change(action_type, day=None, dp_name=None, child_row_name=Non
             "changes_json": frappe.as_json(changes, indent=None) if changes else None,
         })
         log_entry.insert(ignore_permissions=True)
-        frappe.db.commit()
     except Exception:
         frappe.log_error(title="Schedule change log failed", message=frappe.get_traceback())
 
@@ -193,6 +193,9 @@ def _build_round_data(row, recipe_name):
         "cook_station": row.recipe_cook_workstaion or "",
         "cook_round": str(row.recipe_cook_round or 1),
         "yield": row.custom_yield or 0,
+        "raw_materials": 0,  # populated client-side from BOM data
+        "total_input": 0,
+        "total_output": 0,
         "link_id": row.link_id or "",
         "required_date": str(row.required_date) if row.required_date else "",
         "urgent": bool(row.get("urgent_check")),
@@ -211,8 +214,8 @@ def get_week_data(year, week_number, mode):
     """Load the weekly schedule for the targeted workstations.
 
     Per-day latest DP logic:
-      - "View Schedule" → latest submitted DP (docstatus=1)
-      - "Edit Schedule" → latest draft DP     (docstatus=0)
+      - "View Schedule" → workflow_state = "Submitted"
+      - "Edit Schedule" → workflow_state != "Submitted" (or empty)
 
     Returns a pivoted structure: {workstations, days, day_labels, dp_names, schedule}
     where schedule[ws_name][day_str] = {date_label, has_dp, dp_name, rounds: {1,2,3}, note, pack}
@@ -227,23 +230,33 @@ def get_week_data(year, week_number, mode):
         days.append(str(current))
         current += datetime.timedelta(days=1)
 
-    target_docstatus = 1 if mode == "View Schedule" else 0
+    if mode == "View Schedule":
+        dp_filter = {"workflow_state": "Submitted"}
+    else:
+        dp_filter = {"workflow_state": ["!=", "Submitted"]}
 
     dp_names = {}
     day_has_dp = {}
     dp_submit_refs = {}
 
+    # Phase 1a: Batch DP lookups — single query instead of 6
+    all_dps = frappe.get_all(
+        "Daily Production",
+        filters={"required_by": ["in", [getdate(d) for d in days]], "docstatus": 0, **dp_filter},
+        fields=["name", "required_by", "custom_submit_ref"],
+        order_by="name desc",
+    )
+    # Build lookup maps
+    dp_by_day = {}
+    for dp in all_dps:
+        day_str = str(dp.required_by)
+        if day_str not in dp_by_day or dp.name > dp_by_day[day_str].name:
+            dp_by_day[day_str] = dp
     for day in days:
-        dp_info = frappe.db.get_value(
-            "Daily Production",
-            {"required_by": getdate(day), "docstatus": target_docstatus},
-            ["name", "docstatus", "custom_submit_ref"],
-            order_by="name desc",
-            as_dict=True,
-        )
-        dp_names[day] = dp_info.name if dp_info else None
-        day_has_dp[day] = dp_info is not None
-        dp_submit_refs[day] = dp_info.custom_submit_ref if dp_info else None
+        info = dp_by_day.get(day)
+        dp_names[day] = info.name if info else None
+        day_has_dp[day] = info is not None
+        dp_submit_refs[day] = info.custom_submit_ref if info else None
 
     day_labels = []
     for day in days:
@@ -268,22 +281,20 @@ def get_week_data(year, week_number, mode):
                 "date_label": getdate(day).strftime("%d %b"),
                 "has_dp": day_has_dp[day],
                 "dp_name": dp_names.get(day),
-                "rounds": {"1": None, "2": None, "3": None},
+                "rounds": {},
                 "note": "",
                 "pack": "",
             }
 
-    # Fill rows from DB
-    for day in days:
-        dp_name = dp_names.get(day)
-        if not dp_name:
-            continue
-
-        rows = frappe.get_all(
+    # Phase 1b: Batch child row fetch — single query instead of up to 6
+    _dp_names = [n for n in dp_names.values() if n]
+    all_rows = {}
+    if _dp_names:
+        raw_rows = frappe.get_all(
             CHILD_DOCTYPE,
-            filters={"parent": dp_name},
+            filters={"parent": ["in", _dp_names]},
             fields=[
-                "name", "recipe_name", "size", "recipe_cook_workstaion",
+                "name", "parent", "recipe_name", "size", "recipe_cook_workstaion",
                 "recipe_cook_round", "required_date", "produ_status",
                 "number_of_pack", "recipe_note", "production_type",
                 "recipe_cook_time", "custom_yield", "link_id", "custom_pair_id",
@@ -298,6 +309,19 @@ def get_week_data(year, week_number, mode):
             ],
             order_by="idx asc",
         )
+        for r in raw_rows:
+            parent = r.get("parent")
+            if parent not in all_rows:
+                all_rows[parent] = []
+            all_rows[parent].append(r)
+
+    # Fill rows from DB using batched results
+    for day in days:
+        dp_name = dp_names.get(day)
+        if not dp_name:
+            continue
+
+        rows = all_rows.get(dp_name, [])
 
         day_notes = {}
         day_packs = {}
@@ -323,16 +347,12 @@ def get_week_data(year, week_number, mode):
                 if val:
                     day_packs[ws_name].append(val)
 
-            # Only fill rounds 1, 2, 3
-            if round_num in ("1", "2", "3") and schedule[ws_name][day]["rounds"][round_num] is None:
-                schedule[ws_name][day]["rounds"][round_num] = _build_round_data(row, recipe_name)
+            # Dynamically add the round slot if not yet present, then fill it
+            if round_num not in schedule[ws_name][day]["rounds"]:
+                schedule[ws_name][day]["rounds"][round_num] = None
 
-            # Fill remaining rounds in order (if round 4+)
-            if round_num not in ("1", "2", "3"):
-                for rn in ("1", "2", "3"):
-                    if schedule[ws_name][day]["rounds"][rn] is None:
-                        schedule[ws_name][day]["rounds"][rn] = _build_round_data(row, recipe_name)
-                        break
+            if schedule[ws_name][day]["rounds"][round_num] is None:
+                schedule[ws_name][day]["rounds"][round_num] = _build_round_data(row, recipe_name)
 
         # Apply combined notes/packs
         for ws_name in day_notes:
@@ -342,6 +362,15 @@ def get_week_data(year, week_number, mode):
                 schedule[ws_name][day]["pack"] = " / ".join(
                     d for d in day_packs[ws_name] if d) if day_packs[ws_name] else ""
 
+    # Compute per-day round keys from actual data (union of all workstations for that day)
+    day_round_keys = {}
+    for day in days:
+        keys = set()
+        for ws in workstations:
+            for rk in schedule[ws["name"]][day]["rounds"]:
+                keys.add(rk)
+        day_round_keys[day] = sorted(keys, key=int) if keys else ["1", "2", "3"]
+
     return {
         "workstations": workstations,
         "days": days,
@@ -349,6 +378,7 @@ def get_week_data(year, week_number, mode):
         "dp_names": dp_names,
         "dp_submit_refs": dp_submit_refs,
         "schedule": schedule,
+        "day_round_keys": day_round_keys,
     }
 
 
@@ -662,88 +692,84 @@ def save_move_item(item_id, source_date, target_date, target_cooker, target_roun
 def save_update_item(item_id, field, value):
     """Update a single field on a child row of a draft DP.
 
-    Args:
-        item_id: Child table row name
-        field: Fieldname to update
-        value: New value
-
-    Returns:
-        Dict with success status
+    Phase 2a: Uses db.set_value instead of full DP load+save (~158q → ~4q).
     """
-    dp_name = frappe.db.get_value(CHILD_DOCTYPE, {"name": item_id}, "parent")
-    if not dp_name:
+    # Get row data for rq_status check and logging
+    row_data = frappe.db.get_value(
+        CHILD_DOCTYPE, {"name": item_id},
+        ["name", "parent", "rq_status", "recipe_name", "recipe_cook_workstaion",
+         "recipe_cook_round", "produ_status", "required_date"],
+        as_dict=True,
+    )
+    if not row_data:
         return {"success": False, "message": "Item not found"}
 
-    dp = frappe.get_doc("Daily Production", dp_name)
-    if dp.docstatus != 0:
-        return {"success": False, "message": "DP is not in draft state"}
+    if row_data.rq_status == "Processing":
+        return {"success": False, "message": "Work Orders are being processed. Please wait."}
 
-    for row in dp.production_table:
-        if row.name == item_id:
-            if row.rq_status == "Processing":
-                return {"success": False, "message": "Work Orders are being processed. Please wait."}
-            old_value = row.get(field)
-            if field == "produ_status" and value == "New Schedule":
-                row.mr_reference = None
-                row.wo_list = None
-                row.wo_list_with_type = None
-            row.set(field, value)
-            break
-    else:
-        return {"success": False, "message": "Row not found in DP"}
+    values = {field: value}
+    if field == "produ_status" and value == "New Schedule":
+        values["mr_reference"] = None
+        values["wo_list"] = None
+        values["wo_list_with_type"] = None
 
-    dp.save(ignore_permissions=True)
-    frappe.db.commit()
+    frappe.db.set_value(CHILD_DOCTYPE, item_id, values)
 
-    _log_schedule_change("Edit", day=dp.required_by, dp_name=dp.name,
-                         child_row_name=item_id, recipe_name=row.recipe_name,
-                         workstation=row.recipe_cook_workstaion, cook_round=row.recipe_cook_round,
-                         old_data={field: old_value},
+    # Log the change
+    _log_schedule_change("Edit", day=row_data.required_date, dp_name=row_data.parent,
+                         child_row_name=item_id, recipe_name=row_data.recipe_name,
+                         workstation=row_data.recipe_cook_workstaion,
+                         cook_round=row_data.recipe_cook_round,
+                         old_data={field: None},
                          new_data={field: value})
+
+    frappe.db.commit()
+    return {"success": True, "message": "Updated"}
     return {"success": True, "message": "Updated"}
 
 
 @frappe.whitelist()
 def save_item_fields(item_id, fields):
-    """Save multiple fields on a child row in a single transaction."""
+    """Save multiple fields on a child row in a single transaction.
+
+    Phase 2a: Uses db.set_value instead of full DP load+save (~158q → ~4q).
+    """
     import json
     if isinstance(fields, str):
         fields = json.loads(fields)
 
-    dp_name = frappe.db.get_value(CHILD_DOCTYPE, {"name": item_id}, "parent")
-    if not dp_name:
+    # Get row data for rq_status check and logging
+    row_data = frappe.db.get_value(
+        CHILD_DOCTYPE, {"name": item_id},
+        ["name", "parent", "rq_status", "recipe_name", "recipe_cook_workstaion",
+         "recipe_cook_round", "required_date"],
+        as_dict=True,
+    )
+    if not row_data:
         return {"success": False, "message": "Item not found"}
 
-    dp = frappe.get_doc("Daily Production", dp_name)
-    if dp.docstatus != 0:
-        return {"success": False, "message": "DP is not in draft state"}
+    if row_data.rq_status == "Processing":
+        return {"success": False, "message": "Work Orders are being processed. Please wait."}
 
-    for row in dp.production_table:
-        if row.name == item_id:
-            if row.rq_status == "Processing":
-                return {"success": False, "message": "Work Orders are being processed. Please wait."}
-            old_data = {}
-            for f in fields:
-                field = f.get("field")
-                value = f.get("value")
-                old_data[field] = row.get(field)
-                if field == "produ_status" and value == "New Schedule":
-                    row.mr_reference = None
-                    row.wo_list = None
-                    row.wo_list_with_type = None
-                row.set(field, value)
-            new_data = {f.get("field"): f.get("value") for f in fields}
-            break
-    else:
-        return {"success": False, "message": "Row not found in DP"}
+    values = {}
+    old_data = {}
+    for f in fields:
+        fname = f.get("field")
+        fval = f.get("value")
+        old_data[fname] = None
+        values[fname] = fval
 
-    dp.save(ignore_permissions=True)
-    frappe.db.commit()
+    frappe.db.set_value(CHILD_DOCTYPE, item_id, values)
 
-    _log_schedule_change("Edit", day=dp.required_by, dp_name=dp.name,
-                         child_row_name=item_id, recipe_name=row.recipe_name,
-                         workstation=row.recipe_cook_workstaion, cook_round=row.recipe_cook_round,
+    new_data = {f.get("field"): f.get("value") for f in fields}
+
+    _log_schedule_change("Edit", day=row_data.required_date, dp_name=row_data.parent,
+                         child_row_name=item_id, recipe_name=row_data.recipe_name,
+                         workstation=row_data.recipe_cook_workstaion,
+                         cook_round=row_data.recipe_cook_round,
                          old_data=old_data, new_data=new_data)
+
+    frappe.db.commit()
     return {"success": True, "message": "Updated"}
 
 
@@ -769,7 +795,7 @@ def process_day_dp(week_monday, day_index):
 
     dp_name = frappe.db.get_value(
         "Daily Production",
-        {"required_by": str(day), "docstatus": 1},
+        {"required_by": str(day), "docstatus": 0, "workflow_state": "Submitted"},
         "name",
         order_by="name desc",
     )
@@ -792,6 +818,14 @@ def process_day_dp(week_monday, day_index):
 
     try:
         dp.process_manual_updates()
+
+        # Clear all produ_status after successful WO creation
+        frappe.db.sql("""
+            UPDATE `tabCreate ProExl Items`
+            SET produ_status = ''
+            WHERE parent = %s AND produ_status != ''
+        """, dp.name)
+
         _log_schedule_change("Create WO", day=str(day), dp_name=dp.name,
                              old_data={}, new_data={"action": "process_manual_updates"})
         return {
@@ -805,9 +839,9 @@ def process_day_dp(week_monday, day_index):
 
 @frappe.whitelist()
 def submit_week(week_monday):
-    """Submit all draft DPs for the week Mon-Sat.
+    """Switch all draft DPs for the week Mon-Sat to View mode.
 
-    Sets skip_wo_creation flag so on_submit does NOT run process_manual_updates.
+    Sets workflow_state = "Submitted" (docstatus stays 0).
     WO creation happens later via the Create WO button in View mode.
 
     Skips past days (before today).
@@ -826,41 +860,34 @@ def submit_week(week_monday):
     skipped_no_dp = 0
     skipped_empty = 0
 
-    try:
-        frappe.flags.skip_wo_creation = True
+    for day in days:
+        if day < today:
+            skipped_past += 1
+            continue
 
-        for day in days:
-            if day < today:
-                skipped_past += 1
-                continue
+        dp_name = frappe.db.get_value(
+            "Daily Production",
+            {"required_by": day, "docstatus": 0, "workflow_state": ["!=", "Submitted"]},
+            "name",
+            order_by="name desc",
+        )
+        if not dp_name:
+            skipped_no_dp += 1
+            continue
 
-            dp_name = frappe.db.get_value(
-                "Daily Production",
-                {"required_by": day, "docstatus": 0},
-                "name",
-                order_by="name desc",
-            )
-            if not dp_name:
-                skipped_no_dp += 1
-                continue
+        dp = frappe.get_doc("Daily Production", dp_name)
 
-            dp = frappe.get_doc("Daily Production", dp_name)
+        if not any(r.recipe_name != NO_COOKING for r in dp.production_table):
+            skipped_empty += 1
+            continue
 
-            if not any(r.recipe_name != NO_COOKING for r in dp.production_table):
-                skipped_empty += 1
-                continue
+        has_processing = any(row.rq_status == "Processing" for row in dp.production_table)
+        if has_processing:
+            return {"success": False, "message": _("Work Orders are being processed for {0}. Please wait.").format(str(day))}
 
-            has_processing = any(row.rq_status == "Processing" for row in dp.production_table)
-            if has_processing:
-                return {"success": False, "message": _("Work Orders are being processed for {0}. Please wait.").format(str(day))}
-
-            try:
-                dp.submit()
-                submitted += 1
-            finally:
-                frappe.flags.pop('from_schedule_page', None)
-    finally:
-        frappe.flags.pop('skip_wo_creation', None)
+        frappe.db.set_value("Daily Production", dp.name, "workflow_state", "Submitted")
+        frappe.db.commit()
+        submitted += 1
 
     if submitted == 0:
         return {
@@ -879,20 +906,97 @@ def submit_week(week_monday):
 
 
 @frappe.whitelist()
-def add_recipe(day, recipe, size, cooker, pack_count, round_num, **kwargs):
-    """Add a new recipe row to the draft DP for the given day.
+def edit_week(week_monday):
+    """Switch all DPs for the week Mon-Sat to Edit mode.
+
+    For each day Mon-Sat:
+    - If a DP exists and is in Submitted state → flips workflow_state to ""
+    - If no DP exists → creates an empty DP with No Cooking placeholders
 
     Args:
-        day: Target date string
-        recipe: Item name (recipe)
-        size: Batch size
-        cooker: Workstation name
-        pack_count: Number of pack variants
-        round_num: Cook round
-
-    Returns:
-        Dict with success status
+        week_monday: Date string of the Monday
     """
+    from caf.caf.doctype.daily_production.daily_production import get_merged_production_items
+
+    monday = getdate(week_monday)
+    days = [monday + datetime.timedelta(days=i) for i in range(6)]
+
+    edited = 0
+    created = 0
+
+    for day in days:
+        # Check if DP already exists for this date
+        dp_name = frappe.db.get_value(
+            "Daily Production",
+            {"required_by": day, "docstatus": 0},
+            "name",
+            order_by="name desc",
+        )
+
+        if dp_name:
+            # Flip to Edit mode if currently Submitted
+            current_state = frappe.db.get_value("Daily Production", dp_name, "workflow_state")
+            if current_state == "Submitted":
+                frappe.db.set_value("Daily Production", dp_name, "workflow_state", "")
+                frappe.db.commit()
+                edited += 1
+        else:
+            # Create empty DP for this day
+            doc = frappe.new_doc("Daily Production")
+            doc.required_by = str(day)
+
+            data = get_merged_production_items(str(day), "Daily Production")
+            if data and data.get("rows"):
+                excluded = ["name", "parent", "parentfield", "parenttype", "doctype", "idx"]
+                for item in data["rows"]:
+                    child = doc.append("production_table", {})
+                    for key, value in item.items():
+                        if key not in excluded:
+                            child.set(key, value)
+
+            doc.planner_name = frappe.get_value("User", frappe.session.user, "full_name")
+            doc.insert(ignore_permissions=True)
+            frappe.db.commit()
+            created += 1
+
+    return {
+        "success": True,
+        "message": _("Switched {0} DP(s) to Edit mode, created {1} new DP(s).").format(edited, created),
+    }
+
+
+@frappe.whitelist()
+def _get_or_create_dp(day):
+    """Find the latest draft DP for a day, or create one if none exists."""
+    dp_name = frappe.db.get_value(
+        "Daily Production",
+        {"required_by": day, "docstatus": 0},
+        "name",
+        order_by="name desc",
+    )
+    if dp_name:
+        return {"dp_name": dp_name}
+
+    # Create a new DP for this day
+    from caf.caf.doctype.daily_production.daily_production import get_merged_production_items
+    doc = frappe.new_doc("Daily Production")
+    doc.required_by = day
+    data = get_merged_production_items(day, "Daily Production")
+    if data and data.get("rows"):
+        excluded = ["name", "parent", "parentfield", "parenttype", "doctype", "idx"]
+        for item in data["rows"]:
+            child = doc.append("production_table", {})
+            for key, value in item.items():
+                if key not in excluded:
+                    child.set(key, value)
+    doc.insert(ignore_permissions=True)
+    frappe.db.commit()
+    return {"dp_name": doc.name}
+
+
+@frappe.whitelist()
+def add_recipe(day, recipe, size, cooker, pack_count, round_num, **kwargs):
+    """Add a new recipe row to the draft DP for the given day."""
     dp_name = frappe.db.get_value(
         "Daily Production",
         {"required_by": day, "docstatus": 0},
@@ -903,16 +1007,22 @@ def add_recipe(day, recipe, size, cooker, pack_count, round_num, **kwargs):
 
     dp = frappe.get_doc("Daily Production", dp_name)
 
-    cooker_str = str(cooker or "")
-    round_str = str(round_num or "1")
+    cooker_str = str(cooker or "").strip()
+    round_str = str(round_num or "1").strip()
     existing_row = None
     for r in dp.production_table:
-        if (str(r.recipe_cook_workstaion or "") == cooker_str
-                and str(r.recipe_cook_round or "") == round_str):
+        if (str(r.recipe_cook_workstaion or "").strip() == cooker_str
+                and str(r.recipe_cook_round or "").strip() == round_str):
             existing_row = r
             break
 
     if existing_row is None:
+        # Debug: log what slots exist
+        slots = [(str(r.recipe_cook_workstaion or ""), str(r.recipe_cook_round or "")) for r in dp.production_table]
+        frappe.log_error(
+            title="add_recipe: slot not found",
+            message=f"Looking for: ws='{cooker_str}', round='{round_str}'\nDP: {dp_name}\nAvailable: {slots[:100]}"
+        )
         return {"success": False, "message": "No existing slot found. Please refresh the page."}
 
     if existing_row.recipe_name != NO_COOKING:
@@ -959,8 +1069,6 @@ def add_recipe(day, recipe, size, cooker, pack_count, round_num, **kwargs):
                          new_data={"recipe_name": recipe, "size": row.size,
                                    "produ_status": row.produ_status or ""})
 
-    # Create MR + WOs in background only for submitted DPs (already had WO run once)
-    # For draft DPs, New Schedule rows are processed by process_day_dp → process_manual_updates
     if row.produ_status == "New Schedule" and dp.custom_submit_ref:
         frappe.enqueue(
             "caf.caf.page.production_schedule.production_schedule._background_create_mr",
@@ -975,7 +1083,7 @@ def add_recipe(day, recipe, size, cooker, pack_count, round_num, **kwargs):
         "message": f"Added {recipe} to {day}",
         "item": {
             "id": row.name,
-            "recipe": row.recipe_name,
+            "recipe": recipe,
             "size": row.size,
             "cooker": row.recipe_cook_workstaion or "",
             "day": day,
@@ -992,32 +1100,7 @@ def add_recipe(day, recipe, size, cooker, pack_count, round_num, **kwargs):
 
 @frappe.whitelist()
 def create_week_version(week_number):
-    """Create new draft DPs for a week from the latest submitted versions.
-
-    Delegates to daily_production.create_empty_dp_week_by_number.
-    Removes draft DPs for past days (before today).
-    After creation, the new draft DPs appear in Edit Schedule mode.
-
-    Args:
-        week_number: ISO week number (e.g. 25)
-    """
-    from caf.caf.doctype.daily_production.daily_production import create_empty_dp_week_by_number
-
-    create_empty_dp_week_by_number(int(week_number))
-
-    today = datetime.date.today()
-    monday = _iso_week_to_monday(datetime.date.today().year, int(week_number))
-    for i in range(6):
-        day = monday + datetime.timedelta(days=i)
-        if day < today:
-            dp_name = frappe.db.get_value(
-                "Daily Production",
-                {"required_by": day, "docstatus": 0},
-                "name",
-            )
-            if dp_name:
-                frappe.delete_doc("Daily Production", dp_name, ignore_permissions=True)
-
+    """No-op: versioning removed. Only one DP per date."""
     frappe.response["type"] = "json"
     return {"success": True}
 
@@ -1056,9 +1139,6 @@ def swap_recipes(source_id, target_id):
         src_doc = frappe.get_doc("Daily Production", src_dp)
         tgt_doc = frappe.get_doc("Daily Production", tgt_dp)
 
-        if src_doc.docstatus != 0 or tgt_doc.docstatus != 0:
-            return {"success": False, "message": "Both DPs must be in draft state"}
-
         row_a = next((r for r in src_doc.production_table if r.name == source_id), None)
         row_b = next((r for r in tgt_doc.production_table if r.name == target_id), None)
         if not row_a or not row_b:
@@ -1096,8 +1176,6 @@ def swap_recipes(source_id, target_id):
         return {"success": True, "message": "Recipes swapped"}
 
     dp = frappe.get_doc("Daily Production", src_dp)
-    if dp.docstatus != 0:
-        return {"success": False, "message": "DP is not in draft state"}
 
     row_a = row_b = None
     for row in dp.production_table:
@@ -1379,17 +1457,21 @@ def validate_pack_weights(recipe_name, size, packs):
     raw_materials = float(bom.custom_raw_materails)
     total_output = raw_materials * float(size)
 
+    # Batch fetch all pack weights in single query
+    pack_names = [p.get("name") for p in packs if p.get("name")]
+    weight_map = _get_pack_weights_batch(pack_names)
+
     # Sum weighted qty of all packs except the last
     weighted_sum = 0
     for pack in packs[:-1]:
         if not pack.get("name") or not pack.get("qty"):
             continue
-        weight = _get_pack_weight(pack["name"])
+        weight = weight_map.get(pack["name"], 0)
         weighted_sum += float(pack["qty"]) * weight
 
     last_pack = packs[-1]
     last_qty = float(last_pack.get("qty") or 0)
-    last_weight = _get_pack_weight(last_pack.get("name") or "")
+    last_weight = weight_map.get(last_pack.get("name") or "", 0)
 
     if last_qty > 0:
         # User entered last pack qty — validate total weighted sum
@@ -1425,18 +1507,62 @@ def _get_pack_weight(item_code):
     return float(weight or 0)
 
 
+def _get_pack_weights_batch(item_codes):
+    """Fetch weights for multiple pack items in a single batch query.
+
+    Returns dict mapping item_code -> weight (float).
+    Uses Item Variant Attribute (Weight) first, falls back to Item.weight_per_unit.
+    """
+    if not item_codes:
+        return {}
+
+    unique_codes = list(set(item_codes))
+    weights = {}
+
+    # Batch fetch from Item Variant Attribute
+    iva_rows = frappe.get_all(
+        "Item Variant Attribute",
+        filters={"parent": ["in", unique_codes], "attribute": "Weight"},
+        fields=["parent", "attribute_value"],
+    )
+    for row in iva_rows:
+        weights[row.parent] = float(row.attribute_value or 0)
+
+    # Find items not yet weighted — fallback to Item.weight_per_unit
+    missing = [c for c in unique_codes if c not in weights]
+    if missing:
+        item_rows = frappe.get_all(
+            "Item",
+            filters={"name": ["in", missing]},
+            fields=["name", "weight_per_unit"],
+        )
+        for row in item_rows:
+            weights[row.name] = float(row.weight_per_unit or 0)
+
+    # Any still missing get 0
+    for c in unique_codes:
+        if c not in weights:
+            weights[c] = 0.0
+
+    return weights
+
+
 @frappe.whitelist()
 def get_row_status(item_id):
-    """Lightweight poll: return wo_status and mr_reference for a row."""
+    """Lightweight poll: return wo_status, mr_reference, and error for a row."""
     vals = frappe.db.get_value(
         CHILD_DOCTYPE,
         {"name": item_id},
-        ["rq_status", "mr_reference"],
+        ["rq_status", "mr_reference", "custom_wo_error"],
         as_dict=True,
     )
     if vals:
-        return {"wo_status": vals.rq_status or "", "mr_reference": vals.mr_reference or ""}
-    return {"wo_status": "", "mr_reference": ""}
+        return {
+            "wo_status": vals.rq_status or "",
+            "mr_reference": vals.mr_reference or "",
+            "error": vals.custom_wo_error or "",
+        }
+    return {"wo_status": "", "mr_reference": "", "error": ""}
 
 
 @frappe.whitelist()
@@ -1519,49 +1645,90 @@ def process_pack_change(item_id):
 
 
 @frappe.whitelist()
+def check_cook_wo_completed(item_id):
+    """Pre-check if Cook WO is Completed before allowing recipe change."""
+    row = frappe.db.get_value(CHILD_DOCTYPE, item_id, ["link_id", "recipe_name"], as_dict=True)
+    if not row or not row.link_id:
+        return {"completed": False, "msg": ""}
+    cook_wo = frappe.db.get_value("Work Order",
+        {"custom_link_id": row.link_id, "custom_item_type": "Cook", "docstatus": ["<", 2]},
+        "name")
+    if not cook_wo:
+        return {"completed": False, "msg": ""}
+    status = frappe.db.get_value("Work Order", cook_wo, "status")
+    if status == "Completed":
+        return {"completed": True,
+                "msg": _("🛑 Cannot change recipe for <b>{0}</b>. The Cook Work Order {1} is already <b>Completed</b>.")
+                .format(row.recipe_name, cook_wo)}
+    return {"completed": False, "msg": ""}
+
+
+@frappe.whitelist()
+def check_pack_wo_completed(item_id):
+    """Pre-check if any Pack WO is Completed before allowing pack change."""
+    row = frappe.db.get_value(CHILD_DOCTYPE, item_id, ["link_id", "recipe_name"], as_dict=True)
+    if not row or not row.link_id:
+        return {"completed": False, "msg": ""}
+    pack_wos = frappe.get_all("Work Order",
+        filters={"custom_link_id": row.link_id, "custom_item_type": "Pack", "docstatus": ["<", 2]},
+        fields=["name", "status"])
+    completed = [w for w in pack_wos if w.status == "Completed"]
+    if completed:
+        return {"completed": True,
+                "msg": _("🛑 Cannot change packs for <b>{0}</b>. Pack Work Order(s) {1} already <b>Completed</b>.")
+                .format(row.recipe_name, ", ".join(w.name for w in completed))}
+    return {"completed": False, "msg": ""}
+
+
+@frappe.whitelist()
 def cancel_item(item_id):
-    """Cancel a production item row and queue WO cancellation."""
-    dp_name = frappe.db.get_value(CHILD_DOCTYPE, {"name": item_id}, "parent")
-    if not dp_name:
+    """Cancel a production item row and queue WO cancellation.
+
+    Phase 2a: Uses db.set_value instead of full DP load+save (~104q → ~3q).
+    """
+    row_data = frappe.db.get_value(
+        CHILD_DOCTYPE, {"name": item_id},
+        ["name", "parent", "rq_status", "recipe_name", "recipe_cook_workstaion",
+         "recipe_cook_round", "required_date", "produ_status"],
+        as_dict=True,
+    )
+    if not row_data:
         return {"success": False, "message": "Item not found"}
 
-    dp = frappe.get_doc("Daily Production", dp_name)
-    if dp.docstatus != 0:
-        return {"success": False, "message": "DP is not in draft state"}
-
-    row = next((r for r in dp.production_table if r.name == item_id), None)
-    if not row:
-        return {"success": False, "message": "Row not found in DP"}
-
-    if row.rq_status == "Processing":
+    if row_data.rq_status == "Processing":
         return {"success": False, "message": "Work Orders are being processed. Please wait."}
 
-    old_status = row.produ_status
-    row.produ_status = "Cancelled"
-    if dp.custom_submit_ref:
-        row.rq_status = "Processing"
-    dp.save(ignore_permissions=True)
-    frappe.db.commit()
+    dp_ref = frappe.db.get_value("Daily Production", row_data.parent, "custom_submit_ref")
+    has_wo = bool(dp_ref)
 
-    _log_schedule_change("Cancel", day=dp.required_by, dp_name=dp.name,
-                         child_row_name=item_id, recipe_name=row.recipe_name,
-                         workstation=row.recipe_cook_workstaion, cook_round=row.recipe_cook_round,
-                         old_data={"produ_status": old_status},
+    values = {"produ_status": "Cancelled"}
+    if has_wo:
+        values["rq_status"] = "Processing"
+
+    frappe.db.set_value(CHILD_DOCTYPE, item_id, values)
+
+    _log_schedule_change("Cancel", day=row_data.required_date, dp_name=row_data.parent,
+                         child_row_name=item_id, recipe_name=row_data.recipe_name,
+                         workstation=row_data.recipe_cook_workstaion,
+                         cook_round=row_data.recipe_cook_round,
+                         old_data={"produ_status": row_data.produ_status},
                          new_data={"produ_status": "Cancelled"})
 
-    if dp.custom_submit_ref:
+    frappe.db.commit()
+
+    if has_wo:
         frappe.enqueue(
             "caf.caf.page.production_schedule.production_schedule._background_cancel_item",
-            queue="long",
-            timeout=600,
-            item_id=item_id,
-            dp_name=dp_name,
+            queue="long", timeout=600,
+            item_id=item_id, dp_name=row_data.parent,
         )
-    return {"success": True, "message": _("Item cancelled")}
+        return {"success": True, "message": _("Cancellation queued")}
+
+    return {"success": True, "message": _("Cancelled")}
 
 
 def _background_change_recipe(item_id, dp_name, new_recipe):
-    """Background worker: reprocess WOs after recipe change via DP's process_size_change."""
+    """Background worker: reprocess WOs after recipe change via DP's process_recipe_change_or_size_change."""
     try:
         current = frappe.db.get_value(
             CHILD_DOCTYPE, item_id,
@@ -1572,8 +1739,16 @@ def _background_change_recipe(item_id, dp_name, new_recipe):
             frappe.db.commit()
             return
 
-        from caf.caf.doctype.daily_production.change_size import process_size_change
-        process_size_change(doc_name=dp_name, child_doctype=CHILD_DOCTYPE)
+        from caf.caf.doctype.daily_production.change_size import process_recipe_change_or_size_change
+
+        for attempt in range(3):
+            try:
+                process_recipe_change_or_size_change(dp_name, CHILD_DOCTYPE)
+                break
+            except frappe.QueryDeadlockError:
+                if attempt == 2:
+                    raise
+                time.sleep(0.5)
 
         processing_rows = frappe.get_all(CHILD_DOCTYPE,
             filters={"parent": dp_name, "rq_status": "Processing"},
@@ -1650,7 +1825,15 @@ def _background_pack_change(item_id, dp_name):
             frappe.flags.custom_submit_ref = frappe.db.get_value("Daily Production", dp_name, "custom_submit_ref")
 
         from caf.caf.doctype.daily_production.change_pack import process_pack_change_or_add
-        process_pack_change_or_add(dp_name, CHILD_DOCTYPE)
+
+        for attempt in range(3):
+            try:
+                process_pack_change_or_add(dp_name, CHILD_DOCTYPE)
+                break
+            except frappe.QueryDeadlockError:
+                if attempt == 2:
+                    raise
+                time.sleep(0.5)
 
         # Mark ALL pack-change rows on this DP as Done (batch function processes all at once)
         processing_rows = frappe.get_all(
@@ -1713,28 +1896,39 @@ def _background_swap_recipes(row_a_name, row_b_name):
         qual_a = _get_quality_data_by_id(row_a.link_id)
         qual_b = _get_quality_data_by_id(row_b.link_id)
 
-        _swap_db_link_ids(row_a.link_id, row_b.link_id)
+        for attempt in range(3):
+            try:
+                _swap_db_link_ids(row_a.link_id, row_b.link_id)
 
-        _cancel_cook_pack_by_id(row_a.link_id)
-        _cancel_cook_pack_by_id(row_b.link_id)
+                _cancel_cook_pack_by_id(row_a.link_id)
+                _cancel_cook_pack_by_id(row_b.link_id)
 
-        start_time = now_datetime()
-        new_wos_a = dp.create_material_request_after_change_size(row_a.recipe_name, [row_a])
-        new_wos_b = dp.create_material_request_after_change_size(row_b.recipe_name, [row_b])
+                start_time = now_datetime()
+                new_wos_a = dp.recreate_mr_after_update_slot(row_a.recipe_name, [row_a])
+                new_wos_b = dp.recreate_mr_after_update_slot(row_b.recipe_name, [row_b])
 
-        _cleanup_redundant_wips(new_wos_a, row_a, CHILD_DOCTYPE, start_time)
-        _cleanup_redundant_wips(new_wos_b, row_b, CHILD_DOCTYPE, start_time)
+                _cleanup_redundant_wips(new_wos_a, row_a, CHILD_DOCTYPE, start_time)
+                _cleanup_redundant_wips(new_wos_b, row_b, CHILD_DOCTYPE, start_time)
 
-        new_cook_a = get_wo_by_type(row_a.link_id, "Cook")
-        new_cook_b = get_wo_by_type(row_b.link_id, "Cook")
+                new_cook_a = get_wo_by_type(row_a.link_id, "Cook")
+                new_cook_b = get_wo_by_type(row_b.link_id, "Cook")
 
-        if new_cook_a:
-            _relink_quality_docs(qual_b, new_cook_a)
-        if new_cook_b:
-            _relink_quality_docs(qual_a, new_cook_b)
+                if new_cook_a:
+                    _relink_quality_docs(qual_b, new_cook_a)
+                if new_cook_b:
+                    _relink_quality_docs(qual_a, new_cook_b)
+                break
+            except frappe.QueryDeadlockError:
+                if attempt == 2:
+                    raise
+                time.sleep(0.5)
 
         frappe.db.set_value(CHILD_DOCTYPE, row_a_name, "rq_status", "Done")
         frappe.db.set_value(CHILD_DOCTYPE, row_b_name, "rq_status", "Done")
+        frappe.db.set_value(CHILD_DOCTYPE, row_a_name, "produ_status", "")
+        frappe.db.set_value(CHILD_DOCTYPE, row_b_name, "produ_status", "")
+        frappe.db.set_value(CHILD_DOCTYPE, row_a_name, "custom_pair_id", "")
+        frappe.db.set_value(CHILD_DOCTYPE, row_b_name, "custom_pair_id", "")
         frappe.db.commit()
     except Exception as e:
         frappe.log_error(title="Background swap recipes failed", message=frappe.get_traceback())
@@ -1780,18 +1974,25 @@ def _background_move_wo_migration(dp_name):
 
             quality_data = _get_quality_data_by_id(pr_data.link_id)
 
-            if pr_data.mr_reference:
-                _cancel_cook_pack_by_id(row.link_id)
+            for attempt in range(3):
+                try:
+                    if pr_data.mr_reference:
+                        _cancel_cook_pack_by_id(row.link_id)
 
-            new_wos = dp.create_material_request_after_change_size(
-                row.recipe_name, [row]
-            )
-            _cleanup_redundant_wips(new_wos, row, CHILD_DOCTYPE, start_time)
+                    new_wos = dp.recreate_mr_after_update_slot(
+                        row.recipe_name, [row]
+                    )
+                    _cleanup_redundant_wips(new_wos, row, CHILD_DOCTYPE, start_time)
 
-            if pr_data.mr_reference:
-                new_cook_wo = get_wo_by_type(row.link_id, "Cook")
-                if new_cook_wo:
-                    _relink_quality_docs(quality_data, new_cook_wo)
+                    if pr_data.mr_reference:
+                        new_cook_wo = get_wo_by_type(row.link_id, "Cook")
+                        if new_cook_wo:
+                            _relink_quality_docs(quality_data, new_cook_wo)
+                    break
+                except frappe.QueryDeadlockError:
+                    if attempt == 2:
+                        raise
+                    time.sleep(0.5)
 
             frappe.db.set_value(CHILD_DOCTYPE, pr_data.name, "rq_status", "Done")
 
@@ -1856,7 +2057,15 @@ def _background_create_mr(row_name, dp_name):
             frappe.db.commit()
             return
 
-        dp._process_new_schedules()
+        for attempt in range(3):
+            try:
+                dp._process_new_schedules()
+                break
+            except frappe.QueryDeadlockError:
+                if attempt == 2:
+                    raise
+                time.sleep(0.5)
+
         frappe.db.set_value(CHILD_DOCTYPE, row_name, "rq_status", "Done")
         frappe.db.commit()
     except Exception as e:
@@ -1874,8 +2083,6 @@ def process_dp_updates(item_id):
         return {"success": False, "message": "Item not found"}
 
     dp = frappe.get_doc("Daily Production", dp_name)
-    if dp.docstatus != 0:
-        return {"success": False, "message": "DP is not in draft state"}
 
     for row in dp.production_table:
         if row.recipe_name != NO_COOKING and row.rq_status == "Processing":
@@ -1905,8 +2112,6 @@ def _background_process_dp(dp_name):
     """Background worker: runs process_manual_updates and updates row status."""
     try:
         dp = frappe.get_doc("Daily Production", dp_name)
-        if dp.docstatus != 0:
-            return
         dp.process_manual_updates()
         _set_rows_wo_status(dp, "Done")
         dp.save(ignore_permissions=True)
@@ -1916,12 +2121,11 @@ def _background_process_dp(dp_name):
         friendly = _extract_friendly_error(e)
         try:
             dp = frappe.get_doc("Daily Production", dp_name)
-            if dp.docstatus == 0:
-                for row in dp.production_table:
-                    if row.recipe_name != NO_COOKING and row.produ_status:
-                        frappe.db.set_value(CHILD_DOCTYPE, row.name, "rq_status", "Failed")
-                        frappe.db.set_value(CHILD_DOCTYPE, row.name, "custom_wo_error", friendly)
-                frappe.db.commit()
+            for row in dp.production_table:
+                if row.recipe_name != NO_COOKING and row.produ_status:
+                    frappe.db.set_value(CHILD_DOCTYPE, row.name, "rq_status", "Failed")
+                    frappe.db.set_value(CHILD_DOCTYPE, row.name, "custom_wo_error", friendly)
+            frappe.db.commit()
         except Exception:
             pass
         frappe.db.commit()
@@ -1961,8 +2165,6 @@ def retry_failed_row(item_id):
 
     dp_name = row_data.parent
     dp = frappe.get_doc("Daily Production", dp_name)
-    if dp.docstatus != 0:
-        return {"success": False, "message": "DP is not in draft state"}
 
     frappe.db.set_value(CHILD_DOCTYPE, item_id, "rq_status", "Processing")
     frappe.db.set_value(CHILD_DOCTYPE, item_id, "custom_wo_error", "")

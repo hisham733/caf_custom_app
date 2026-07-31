@@ -8,8 +8,7 @@ from frappe import _
 from frappe.utils import now_datetime
 # FIXED: Added get_active_wos_by_link_id to imports
 from .wo_helpers import get_active_link_id_from_row, get_wo_by_type, get_active_wos_by_link_id
-from .cancellation import _bulk_clean_stock_and_jobs,_cancel_work_orders_by_id
-from .rws import rws
+from .cancellation import _bulk_clean_stock_and_jobs, _cancel_stock_entries_for_wo, _cancel_job_cards_for_wo, _cancel_work_orders_by_id, cancel_wos_by_link_id, cleanup_wos_by_type
 
 STATUS_CHANGE_SLOT = "Change Slot"
 STATUS_SWITCH       = "Rearrange"
@@ -90,27 +89,8 @@ def _migrate_db_link_ids(source_id: str, target_id: str) -> None:
 
 
 def _cancel_cook_pack_by_id(link_id: str) -> None:
-    """Cancel all active Cook and Pack WOs for a given link_id.
-
-    Gets active WOs via get_active_wos_by_link_id, filters to Cook/Pack
-    types, then cancels (or deletes if draft) each one.
-    """
-    wos = get_active_wos_by_link_id(link_id)
-    cook_pack_wos = [wo for wo in wos if wo.get("custom_item_type") in ["Cook", "Pack"]]
-    if cook_pack_wos:
-       for wo in cook_pack_wos:
-        if not frappe.db.exists("Work Order", wo.name): continue
-        wo = frappe.get_doc("Work Order", wo.name)
-        
-        if wo.docstatus == 2: continue
-        
-        wo.flags.ignore_permissions = True
-        wo.flags.ignore_workflow = True
-        
-        if wo.docstatus == 0:
-            wo.delete()
-        else:
-            wo.cancel()
+    """Cancel all active Cook and Pack WOs for a given link_id."""
+    cancel_wos_by_link_id(link_id, types=["Cook", "Pack"])
 
 def _get_quality_data_by_id(link_id: str) -> list:
     """Get Quality Reviews and Weight Records for a link_id's Cook WO."""
@@ -128,25 +108,8 @@ def _relink_quality_docs(quality_docs: list, new_cook_wo: str) -> None:
         frappe.db.set_value(doc["doctype"], doc["name"], "custom_work_order", new_cook_wo)
 
 def _cleanup_redundant_wips(newly_created_wos: list, row_doc, child_doctype: str, start_time) -> None:
-    """Removes only WIP Work Orders created in the current transaction.
-    Draft WIPs: deleted directly. Submitted WIPs: cancelled."""
-    if not newly_created_wos: return
-
-    for wo_name in newly_created_wos:
-        res = frappe.db.get_value(WO_DOCTYPE, wo_name, ["custom_item_type", "docstatus", "creation"], as_dict=True)
-        if not res or res.custom_item_type != "WIP" or res.creation < start_time:
-            continue
-        if not frappe.db.exists(WO_DOCTYPE, wo_name):
-            continue
-        if res.docstatus == 0:
-            frappe.delete_doc(WO_DOCTYPE, wo_name, ignore_permissions=True, force=True)
-        elif res.docstatus == 1:
-            wo = frappe.get_doc(WO_DOCTYPE, wo_name)
-            wo.flags.ignore_permissions = True
-            wo.flags.ignore_workflow = True
-            wo.cancel()
-
-    # UI Cleanup: Regenerates the grid strings based on live database state
+    """Removes only WIP Work Orders created in the current transaction."""
+    cleanup_wos_by_type(newly_created_wos, keep_types=["Cook", "Pack"], child_doctype=child_doctype, start_time=start_time)
     _refresh_row_from_db(row_doc, child_doctype)
 
 def _refresh_row_from_db(row_doc, child_doctype: str):
@@ -193,8 +156,7 @@ def _group_rows_by_pair(rows: list, status_label: str) -> list:
         if len(group) == 2:
             valid_pairs.append(group)
         elif len(group) == 1:
-            if group[0].get("recipe_name") == NO_COOKING:
-                frappe.db.set_value(group[0].name, "produ_status", "")
+            frappe.db.set_value(group[0].name, "produ_status", "")
             frappe.db.set_value(group[0].name, "custom_pair_id", "")
 
     return valid_pairs
@@ -205,13 +167,12 @@ def _group_rows_by_pair(rows: list, status_label: str) -> list:
 # ══════════════════════════════════════════════════════════════════════════════
 
 @frappe.whitelist()
-def process_switch(doc_name: str, child_doctype: str) -> None:
-    """Entry point for Rearrange: swap link_ids between paired rows, cancel/recreate WOs, and relink quality docs.
+def process_switch(dp_doc, child_doctype: str) -> None:
+    """Entry point for Rearrange: swap link_ids between paired rows, cancel/recreate WOs.
 
-    Args:
-        doc_name: Name of the parent Daily Production document.
-        child_doctype: Child table doctype containing production rows.
+    Phase 3: Accepts DailyProduction doc object directly — no reload.
     """
+    doc_name = dp_doc.name
     start_time = now_datetime()
     rows = frappe.get_all(
         child_doctype,
@@ -222,24 +183,25 @@ def process_switch(doc_name: str, child_doctype: str) -> None:
     if not rows:
         return
 
-    parent_doc = frappe.get_doc("Daily Production", doc_name)
     pairs = _group_rows_by_pair(rows, "Rearrange")
 
     for pair in pairs:
-        _process_one_switch_pair(pair, parent_doc, child_doctype, start_time)
+        _process_one_switch_pair(pair, dp_doc, child_doctype, start_time)
 
     for row in rows:
-        if row.get("recipe_name") == NO_COOKING:
-            frappe.db.set_value(child_doctype, row.name, "produ_status", "")
+        frappe.db.set_value(child_doctype, row.name, "produ_status", "")
+        frappe.db.set_value(child_doctype, row.name, "custom_pair_id", "")
 
-    rws(doc_name, child_doctype)
+    frappe.db.commit()
     frappe.msgprint(_("✅ Rearrange Complete. {0} pair(s) processed.").format(len(pairs)))
 
 
 def _process_one_switch_pair(pair: list, parent_doc, child_doctype: str, start_time) -> None:
     """Process a single Rearrange pair (swap link_ids, cancel, recreate, relink)."""
-    row_a = frappe.get_doc(child_doctype, pair[0].name)
-    row_b = frappe.get_doc(child_doctype, pair[1].name)
+    row_a = next((d for d in parent_doc.production_table if d.name == pair[0].name), None)
+    row_b = next((d for d in parent_doc.production_table if d.name == pair[1].name), None)
+    if not row_a or not row_b:
+        return
 
     qual_a = _get_quality_data_by_id(row_a.link_id)
     qual_b = _get_quality_data_by_id(row_b.link_id)
@@ -251,7 +213,7 @@ def _process_one_switch_pair(pair: list, parent_doc, child_doctype: str, start_t
     for r in (row_a, row_b):
         r.reload()
         full_group = parent_doc.get_full_group_for_row(r)
-        new_cycle_wos = parent_doc.create_material_request_after_change_size(r.recipe_name, full_group)
+        new_cycle_wos = parent_doc.recreate_mr_after_update_slot(r.recipe_name, full_group)
         _cleanup_redundant_wips(new_cycle_wos, r, child_doctype, start_time)
 
     for r, q_data in [(row_a, qual_b), (row_b, qual_a)]:
@@ -261,13 +223,12 @@ def _process_one_switch_pair(pair: list, parent_doc, child_doctype: str, start_t
 
 
 @frappe.whitelist()
-def process_slot_swaps(doc_name: str, child_doctype: str) -> None:
+def process_slot_swaps(dp_doc, child_doctype: str) -> None:
     """Entry point for Change Slot: migrate link_id from a source row into an empty target slot.
 
-    Args:
-        doc_name: Name of the parent Daily Production document.
-        child_doctype: Child table doctype containing production rows.
+    Phase 3: Accepts DailyProduction doc object directly — no reload.
     """
+    doc_name = dp_doc.name
     start_time = now_datetime()
     rows = frappe.get_all(
         child_doctype,
@@ -279,23 +240,25 @@ def process_slot_swaps(doc_name: str, child_doctype: str) -> None:
     if not rows:
         return
 
-    parent_doc = frappe.get_doc("Daily Production", doc_name)
     pairs = _group_rows_by_pair(rows, "Change Slot")
 
     for pair in pairs:
-        _process_one_slot_swap_pair(pair, parent_doc, child_doctype, start_time)
+        _process_one_slot_swap_pair(pair, dp_doc, child_doctype, start_time)
 
     for row in rows:
-        if row.get("recipe_name") == NO_COOKING:
-            frappe.db.set_value(child_doctype, row.name, "produ_status", "")
+        frappe.db.set_value(child_doctype, row.name, "produ_status", "")
+        frappe.db.set_value(child_doctype, row.name, "custom_pair_id", "")
 
+    frappe.db.commit()
     frappe.msgprint(_("✅ Slot swap complete. {0} pair(s) processed.").format(len(pairs)))
 
 
 def _process_one_slot_swap_pair(pair: list, parent_doc, child_doctype: str, start_time) -> None:
     """Process a single Change Slot pair (migrate link_id, cancel, recreate, relink)."""
-    row_1 = frappe.get_doc(child_doctype, pair[0].name)
-    row_2 = frappe.get_doc(child_doctype, pair[1].name)
+    row_1 = next((d for d in parent_doc.production_table if d.name == pair[0].name), None)
+    row_2 = next((d for d in parent_doc.production_table if d.name == pair[1].name), None)
+    if not row_1 or not row_2:
+        return
 
     if row_1.recipe_name != NO_COOKING:
         target, source = row_1, row_2
@@ -308,7 +271,7 @@ def _process_one_slot_swap_pair(pair: list, parent_doc, child_doctype: str, star
     _cancel_cook_pack_by_id(target.link_id)
 
     target.reload()
-    new_cycle_wos = parent_doc.create_material_request_after_change_size(target.recipe_name, [target])
+    new_cycle_wos = parent_doc.recreate_mr_after_update_slot(target.recipe_name, [target])
     _cleanup_redundant_wips(new_cycle_wos, target, child_doctype, start_time)
 
     new_cook = get_wo_by_type(target.link_id, "Cook")

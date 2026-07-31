@@ -67,7 +67,7 @@ Board
 | Existing Component | Board Interaction |
 |--------------------|-------------------|
 | `rearrange_and_change_slot.py` | Background workers call `_migrate_db_link_ids`, `_cancel_cook_pack_by_id`, `_relink_quality_docs` during drag-drop WO migration |
-| `change_size.py` | Not used directly; `create_material_request_after_change_size` handles WO recreation after recipe change |
+| `change_size.py` | Not used directly; `recreate_mr_after_update_slot` handles WO recreation after recipe change |
 | `cancellation.py` | `_background_cancel_item` calls `process_cancellations()` to cancel WOs, then resets the row to No Cooking |
 | `submit_dp_week_by_number()` | Board's Submit Week delegates to `submit_dp_week()` |
 | Metabase | Sets `trigger_metabase_refresh` cookie after save |

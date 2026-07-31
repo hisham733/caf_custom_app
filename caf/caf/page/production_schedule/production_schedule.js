@@ -25,6 +25,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			dp_names: {},
 			dp_submit_refs: {},
 			schedule: {},
+			day_round_keys: {},
 			past_days: [],
 			ws_problems: [],
 			last_action: null,
@@ -119,6 +120,10 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			'  </div>' +
 			'  <div class="schedule-actions">' +
 			'    <span class="schedule-week-info" id="schedule-week-range" aria-live="polite"></span>' +
+			'    <button class="btn btn-default btn-sm" id="schedule-rounds-btn"' +
+			'      title="' + __("Add extra rounds to a DP") + '">' +
+			'      + ' + __("Add Extra Rounds") +
+			'    </button>' +
 			'    <button class="btn btn-success btn-sm" id="schedule-submit-btn"' +
 			'      title="' + __("Submit all draft DPs") + '">' +
 			'      <svg class="icon icon-sm"><use href="#icon-check"></use></svg> ' + __("Submit Week") +
@@ -173,6 +178,10 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			me._submit_week();
 		});
 
+		m.find("#schedule-rounds-btn").on("click", function () {
+			me._show_add_rounds_dialog();
+		});
+
 		m.find("#schedule-year").on("change", function () {
 			me.state.mode = "View Schedule";
 			me.page.main.find("#schedule-mode").val("View Schedule");
@@ -193,11 +202,12 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			me.state.mode = this.value;
 			me._update_action_btns();
 			if (me.state.mode === "Edit Schedule") {
+				frappe.dom.freeze(__("Creating draft production plans for this week..."));
 				frappe.call({
-					method: "caf.caf.page.production_schedule.production_schedule.create_week_version",
-					args: { week_number: me.state.week },
-					callback: function () { me._load_week(); },
-					error: function () { me._load_week(); },
+					method: "caf.caf.page.production_schedule.production_schedule.edit_week",
+					args: { week_monday: me._fmt(me.state.week_monday) },
+					callback: function () { frappe.dom.unfreeze(); me._load_week(); },
+					error: function () { frappe.dom.unfreeze(); me._load_week(); },
 				});
 			} else {
 				me._load_week();
@@ -279,6 +289,13 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 
 	_update_action_btns() {
 		this._update_submit_btn();
+		this._update_rounds_btn();
+	}
+
+	_update_rounds_btn() {
+		var btn = this.page.main.find("#schedule-rounds-btn");
+		var all_past = this.state.past_days && this.state.past_days.length === this.state.days.length;
+		btn.toggle(this.state.mode === "Edit Schedule" && !all_past);
 	}
 
 	_update_mode_selector() {
@@ -364,6 +381,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 						me.state.dp_names = r.message.dp_names || {};
 						me.state.dp_submit_refs = r.message.dp_submit_refs || {};
 						me.state.schedule = r.message.schedule || {};
+						me.state.day_round_keys = r.message.day_round_keys || {};
 
 						var today_str = me._fmt(new Date());
 						me.state.past_days = [];
@@ -450,8 +468,10 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 				label_html += '<br><button class="btn btn-xs btn-primary schedule-wo-btn" data-day="' + day + '">Create WO</button>';
 			}
 
+			var day_rk_h = me.state.day_round_keys[day] || ["1"];
+			var cols = day_rk_h.length + 2;
 			html +=
-				'<th colspan="5" class="schedule-day-header' +
+				'<th colspan="' + cols + '" class="schedule-day-header' +
 				cls +
 				past_cls +
 				'" scope="colgroup">' +
@@ -463,10 +483,11 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 		// Row 2 — sub-columns
 		html += "<tr>";
 		for (var di = 0; di < this.state.days.length; di++) {
+			var day_rk2 = me.state.day_round_keys[this.state.days[di]] || ["1"];
+			for (var ri = 0; ri < day_rk2.length; ri++) {
+				html += '<th class="schedule-sub-col schedule-col-round" scope="col">R' + day_rk2[ri] + '</th>';
+			}
 			html +=
-				'<th class="schedule-sub-col schedule-col-round" scope="col">R1</th>' +
-				'<th class="schedule-sub-col schedule-col-round" scope="col">R2</th>' +
-				'<th class="schedule-sub-col schedule-col-round" scope="col">R3</th>' +
 				'<th class="schedule-sub-col schedule-col-note" scope="col">' + __("Note") + "</th>" +
 				'<th class="schedule-sub-col schedule-col-pack" scope="col">' + __("Pack") + "</th>";
 		}
@@ -492,16 +513,22 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 				var day = this.state.days[di];
 				var is_past_cell = me.state.past_days.indexOf(day) !== -1;
 				var past_cell_cls = is_past_cell ? " schedule-past-day" : "";
-				var info = ws_schedule[day] || {
-					date_label: "",
-					has_dp: false,
-					dp_name: null,
-					rounds: { 1: null, 2: null, 3: null },
-					note: "",
-					pack: "",
-				};
+				var day_rk = me.state.day_round_keys[day] || ["1"];
+				var info = ws_schedule[day] || (function() {
+					var r_init = {};
+					day_rk.forEach(function(k) { r_init[k] = null; });
+					return {
+						date_label: "",
+						has_dp: false,
+						dp_name: null,
+						rounds: r_init,
+						note: "",
+						pack: "",
+					};
+				})();
 
-				for (var rn = 1; rn <= 3; rn++) {
+				for (var ri = 0; ri < day_rk.length; ri++) {
+					var rn = day_rk[ri];
 					var r = info.rounds[rn];
 					var no_dp_cls = !info.has_dp ? " schedule-no-dp" : "";
 					var ws_problem_cls = is_ws_problem ? " ws-problem" : "";
@@ -517,12 +544,15 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 						day +
 						'" data-round="' +
 						rn +
+						'" data-day-index="' +
+						di +
 						'" data-has-dp="' +
 						info.has_dp +
 						'"' +
 						td_link_id +
 						'>';
-					html += r ? me._render_round_item(r, info.dp_name) : me._render_empty_slot(info.has_dp, is_past_cell, is_ws_problem);
+					var has_slot = r !== undefined;
+					html += r ? me._render_round_item(r, info.dp_name) : (has_slot ? me._render_empty_slot(info.has_dp, is_past_cell, is_ws_problem) : '<div class="round-slot-empty" aria-hidden="true">—</div>');
 					html += "</td>";
 				}
 
@@ -557,6 +587,16 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 
 		html += "</tbody></table>";
 		board.html(html);
+
+		// Apply per-day column colors dynamically (replaces hardcoded CSS nth-child)
+		var day_colors = [
+			'rgba(59,130,246,0.07)', 'rgba(34,197,94,0.07)', 'rgba(168,85,247,0.07)',
+			'rgba(234,179,8,0.07)', 'rgba(249,115,22,0.07)', 'rgba(239,68,68,0.07)',
+		];
+		board.find('.schedule-col-round').each(function () {
+			var di = parseInt($(this).data('day-index')) || 0;
+			if (di < day_colors.length) $(this).css('background-color', day_colors[di]);
+		});
 
 		if (this.state.mode === "Edit Schedule") {
 			this._try_init_sortable();
@@ -770,7 +810,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 	}
 
 	_apply_dialog_restrictions(d, status_val, is_no_cook_val) {
-		var ALWAYS_READ_ONLY = ['cook_station', 'cook_round', 'yield', 'total_output', 'mr_reference', 'production_plane','link_id', 'wo_status'];
+		var ALWAYS_READ_ONLY = ['cook_station', 'cook_round', 'yield', 'total_input', 'total_output', 'mr_reference', 'production_plane','link_id', 'wo_status'];
 		var config = {};
 		var dlg = d;
 
@@ -1244,12 +1284,14 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 						me._poll_row_status(item_id, function () { me._load_week(); });
 					}
 				} else {
-					frappe.show_alert({ message: __("Save failed — reloading."), indicator: "red" });
+					var err_msg = (r.message && r.message.message) ? r.message.message : __("Save failed — reloading.");
+					frappe.show_alert({ message: err_msg, indicator: "red" });
 					me._load_week();
 				}
 			},
 			error: function () {
-				frappe.show_alert({ message: __("Save failed — reloading."), indicator: "red" });
+				var err_msg = (r.message && r.message.message) ? r.message.message : __("Save failed — reloading.");
+				frappe.show_alert({ message: err_msg, indicator: "red" });
 				me._load_week();
 			},
 		});
@@ -1318,9 +1360,9 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 		if (is_no_cook) {
 			_status_options = "\nNew Schedule";
 		} else if (!mr_reference) {
-			_status_options = "\nNew Schedule\nRecipe Change\nCancelled";
+			_status_options = "\nNew Schedule\nRecipe Change";
 		} else {
-			_status_options = "\nRecipe Change\nCancelled\nOnly Remark\nPack Change\nSingle WO";
+			_status_options = "\nRecipe Change\nOnly Remark\nPack Change";
 		}
 
 		var fields = [
@@ -1361,6 +1403,11 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 				label: __("Urgent Order"), fieldname: "urgent_check", fieldtype: "Check",
 				default: urgent ? 1 : 0,
 			},
+			{ fieldtype: "Section Break" },
+			{
+				label: __("Recipe Note"), fieldname: "recipe_note", fieldtype: "Data",
+				default: recipe_note,
+			},
 			{ fieldname: "sec_info", fieldtype: "Section Break", label: __("Production Info") },
 			{
 				label: __("Yield (KG)"), fieldname: "yield", fieldtype: "Float",
@@ -1368,20 +1415,20 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			},
 			{ fieldtype: "Column Break" },
 			{
+				label: __("Total Input (KG)"), fieldname: "total_input", fieldtype: "Float",
+				read_only: 1, default: 0,
+			},
+			{ fieldtype: "Column Break" },
+			{
 				label: __("Total Output (KG)"), fieldname: "total_output", fieldtype: "Float",
 				read_only: 1, default: 0,
 			},
-			{ fieldname: "sec_recipe_note", fieldtype: "Section Break", label: __("Recipe Note") },
-			{
-				label: __("Recipe Note"), fieldname: "recipe_note", fieldtype: "Data",
-				default: recipe_note,
-			},
-			{ fieldtype: "Column Break" },
+			{ fieldname: "sec_pack", fieldtype: "Section Break", label: __("Pack Details") },
 			{
 				label: __("Number of Packs"), fieldname: "number_of_pack", fieldtype: "Select",
 				options: "1\n2\n3\n4\n5\n6\n7", default: String(pack_count || 1),
 			},
-			{ fieldname: "sec_pack", fieldtype: "Section Break", label: __("Pack Details") },
+			{ fieldtype: "Section Break" },
 		];
 
 		for (var i = 1; i <= 7; i++) {
@@ -1620,6 +1667,40 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 						if (!valid) return;
 					}
 				}
+				// Pre-check: if Recipe Change selected, verify Cook WO not Completed before saving
+				if (status_val === "Recipe Change" && link_id) {
+					frappe.call({
+						method: "caf.caf.page.production_schedule.production_schedule.check_cook_wo_completed",
+						args: { item_id: item_id },
+						callback: function (chk) {
+							if (chk.message && chk.message.completed) {
+								frappe.msgprint(chk.message.msg);
+							} else {
+								_do_save();
+							}
+						}
+					});
+					return;
+				}
+				// Pre-check: if Pack Change selected, verify Pack WO not Completed before saving
+				if (status_val === "Pack Change" && link_id) {
+					frappe.call({
+						method: "caf.caf.page.production_schedule.production_schedule.check_pack_wo_completed",
+						args: { item_id: item_id },
+						callback: function (chk) {
+							if (chk.message && chk.message.completed) {
+								frappe.msgprint(chk.message.msg);
+							} else {
+								_do_save();
+							}
+						}
+					});
+					return;
+				}
+				_do_save();
+				return;
+
+				function _do_save() {
 				var to_save = [];
 				// Cancelled without WOs — clear the slot directly
 				if (status_val === "Cancelled" && !mr_reference) {
@@ -1680,9 +1761,11 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 				}
 			});
 				d.hide();
+				}  // end _do_save
 			};
 		}
 		var d = new frappe.ui.Dialog(dialog_opts);
+		d._orig_recipe = orig_recipe;
 		d.show();
 
 		$(d.wrapper).find("form").on("submit", function (e) {
@@ -1695,6 +1778,23 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 				var recipe_val = d.get_value("recipe");
 				var no_cook = !recipe_val || recipe_val === "No Cooking";
 				me._apply_dialog_restrictions(d, new_status, no_cook);
+				// If Recipe Change or Pack Change selected, pre-check WO status
+				if ((new_status === "Recipe Change" || new_status === "Pack Change") && link_id && !d._wo_checked) {
+					d._wo_checked = true;
+					setTimeout(function () { d._wo_checked = false; }, 500);
+					var chk_method = new_status === "Recipe Change"
+						? "caf.caf.page.production_schedule.production_schedule.check_cook_wo_completed"
+						: "caf.caf.page.production_schedule.production_schedule.check_pack_wo_completed";
+					frappe.call({
+						method: chk_method,
+						args: { item_id: item_id },
+						callback: function (chk) {
+							if (chk.message && chk.message.completed) {
+								frappe.msgprint(chk.message.msg);
+							}
+						}
+					});
+				}
 			});
 			var recipe_f = d.get_field("recipe");
 			var _on_recipe_change = function () {
@@ -1702,14 +1802,13 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 				var no_cook = !recipe_val || recipe_val === "No Cooking";
 				var status_field = d.get_field("status");
 				if (status_field) {
-					if (no_cook) {
-						status_field.df.options = "\nNew Schedule";
-					} else if (!mr_reference) {
-						status_field.df.options = "\nNew Schedule\nRecipe Change\nCancelled";
-					} else {
-						var opts = "\nRecipe Change\nCancelled\nOnly Remark\nPack Change\nSingle WO";
-						status_field.df.options = opts;
-					}
+				if (no_cook) {
+					status_field.df.options = "\nNew Schedule";
+				} else if (!mr_reference) {
+					status_field.df.options = "\nNew Schedule\nRecipe Change";
+				} else {
+					status_field.df.options = "\nRecipe Change\nOnly Remark\nPack Change";
+				}
 					status_field.set_options();
 				}
 			var cur_status = d.get_value("status") || "";
@@ -1774,7 +1873,10 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 				me._apply_dialog_restrictions(d, new_status, no_cook);
 				var total_input_from_page = parseFloat(d.$wrapper.data("raw_materials")) || 0;
 				var size_val = parseFloat(d.get_value("size")) || 0;
-				d.set_value("total_output", total_input_from_page * size_val);
+				var ti = total_input_from_page * size_val;
+				d.set_value("total_input", ti);
+				var yv = parseFloat(d.get_value("yield")) || 0;
+				d.set_value("total_output", ti * yv);
 				setTimeout(_validate_edit_pack_weights, 100);
 			});
 			var nop_field = d.get_field("number_of_pack");
@@ -1840,11 +1942,34 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 								d.set_value("yield", r.message.yield || 0);
 								d.$wrapper.data("raw_materials", r.message.raw_materials || 0);
 								var sz = parseFloat(d.get_value("size")) || 0;
-								d.set_value("total_output", (r.message.raw_materials || 0) * sz);
+								var ti = (r.message.raw_materials || 0) * sz;
+								d.set_value("total_input", ti);
+								d.set_value("total_output", ti * (r.message.yield || 0));
 							}
 						},
 					});
 				}
+			}
+		}
+
+		// Lazy-load BOM data for view dialog (outside is_past guard)
+		if (recipe && recipe !== "No Cooking") {
+			var ti = parseFloat(d.get_value("total_input")) || 0;
+			if (ti === 0) {
+				frappe.call({
+					method: "caf.caf.page.production_schedule.production_schedule.get_recipe_bom_data",
+					args: { recipe_name: recipe },
+					callback: function (r) {
+			if (r.message) {
+								d.set_value("yield", r.message.yield || 0);
+								d.$wrapper.data("raw_materials", r.message.raw_materials || 0);
+								var sz = parseFloat(d.get_value("size")) || 0;
+								var ti = (r.message.raw_materials || 0) * sz;
+								d.set_value("total_input", ti);
+								d.set_value("total_output", ti * (r.message.yield || 0));
+							}
+					},
+				});
 			}
 		}
 	}
@@ -1896,32 +2021,31 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 				label: __("Urgent Order"), fieldname: "urgent_check", fieldtype: "Check",
 				default: 0,
 			},
+			{ fieldtype: "Section Break" },
+			{
+				label: __("Recipe Note"), fieldname: "recipe_note", fieldtype: "Data",
+			},
 			{ fieldname: "sec_info", fieldtype: "Section Break", label: __("Production Info") },
 			{
-				label: __("Yield"), fieldname: "yield", fieldtype: "Float",
+				label: __("Yield (KG)"), fieldname: "yield", fieldtype: "Float",
 				read_only: 1, default: 0,
 			},
 			{ fieldtype: "Column Break" },
 			{
-				label: __("Total Input"), fieldname: "total_input", fieldtype: "Float",
+				label: __("Total Input (KG)"), fieldname: "total_input", fieldtype: "Float",
 				read_only: 1, default: 0,
 			},
 			{ fieldtype: "Column Break" },
 			{
-				label: __("Output"), fieldname: "output", fieldtype: "Float",
+				label: __("Total Output (KG)"), fieldname: "output", fieldtype: "Float",
 				read_only: 1, default: 0,
 			},
-			{ fieldname: "sec_recipe_note", fieldtype: "Section Break", label: __("Recipe Note") },
+			{ fieldname: "sec_pack", fieldtype: "Section Break", label: __("Pack Details") },
 			{
 				label: __("Number of Packs"), fieldname: "pack_count", fieldtype: "Select",
 				options: "1\n2\n3\n4\n5\n6\n7", default: "1",
 			},
-			{ fieldtype: "Column Break" },
-			{
-				label: __("Recipe Note"), fieldname: "recipe_note", fieldtype: "Data",
-			},
-			
-			{ fieldname: "sec_pack", fieldtype: "Section Break", label: __("Pack Details") },
+			{ fieldtype: "Section Break" },
 		];
 
 		for (var i = 1; i <= 7; i++) {
@@ -2324,7 +2448,9 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 	_find_item_id_for_ws_day(ws, day) {
 		var info = this.state.schedule[ws] && this.state.schedule[ws][day];
 		if (info) {
-			for (var rn = 1; rn <= 3; rn++) {
+			var day_rk = this.state.day_round_keys[day] || ["1"];
+			for (var ri = 0; ri < day_rk.length; ri++) {
+				var rn = day_rk[ri];
 				if (info.rounds[rn] && info.rounds[rn].id) {
 					return info.rounds[rn].id;
 				}
@@ -2359,6 +2485,85 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 	// ══════════════════════════════════════════════════════════════
 	//  VIEW MODE  — open ERPNext
 	// ══════════════════════════════════════════════════════════════
+
+	// ══════════════════════════════════════════════════════════════
+	//  ADD EXTRA ROUNDS
+	// ══════════════════════════════════════════════════════════════
+
+	_show_add_rounds_dialog() {
+		var me = this;
+		var days = me.state.days || [];
+		var day_map = {};
+		var day_opts = days.map(function (d) {
+			var parts = d.split("-");
+			var day_num = parseInt(parts[2]);
+			var dt = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, day_num);
+			var day_names = [__("Mon"), __("Tue"), __("Wed"), __("Thu"), __("Fri"), __("Sat")];
+			var day_name = day_names[dt.getDay() === 0 ? 6 : dt.getDay() - 1] || "";
+			var label = day_name + " " + day_num;
+			day_map[label] = d;
+			return label;
+		}).join("\n");
+
+		frappe.call({
+			method: "caf.caf.doctype.daily_production.daily_production.get_template_round_config",
+			callback: function (rc) {
+				if (!rc.message) return;
+				var dr = rc.message.default_rounds || 3;
+				var mr = rc.message.max_rounds || 99;
+
+		var dlg = new frappe.ui.Dialog({
+			title: __("Add Extra Rounds"),
+			fields: [
+				{ fieldname: "day", fieldtype: "Select", label: __("Day"), options: day_opts, reqd: 1 },
+				{ fieldname: "workstation", fieldtype: "Link", label: __("Workstation"), options: "Workstation", reqd: 1,
+				  get_query: function () { return { query: "caf.caf.doctype.daily_production.daily_production.get_machine_table_workstations" }; } },
+				{ fieldname: "total_rounds", fieldtype: "Int", label: __("Total Rounds"), reqd: 1 },
+			],
+			primary_action: function (values) {
+				if (parseInt(values.total_rounds) <= dr) {
+					frappe.show_alert({ message: __('Total rounds must be greater than default ({0})', [dr]), indicator: 'red' }, 3);
+					return;
+				}
+				if (parseInt(values.total_rounds) > mr) {
+					frappe.show_alert({ message: __('Total rounds cannot exceed max ({0})', [mr]), indicator: 'red' }, 3);
+					return;
+				}
+				dlg.hide();
+				var selected_day = day_map[values.day];
+				frappe.call({
+					method: "frappe.client.get_value",
+					args: { doctype: "Daily Production", filters: { required_by: selected_day, docstatus: 0 }, fieldname: "name" },
+					callback: function (r) {
+						var dp_name = r.message ? r.message.name : null;
+						if (!dp_name) {
+							frappe.dom.freeze(__("Creating DP for this day..."));
+							frappe.call({
+								method: "caf.caf.page.production_schedule.production_schedule.edit_week",
+								args: { week_monday: me._fmt(me.state.week_monday) },
+								callback: function () { frappe.dom.unfreeze(); me._load_week(); frappe.show_alert({ message: __("DP created. Please try again."), indicator: "blue" }, 5); },
+								error: function () { frappe.dom.unfreeze(); },
+							});
+							return;
+						}
+						frappe.call({
+							method: "caf.caf.doctype.daily_production.daily_production.add_extra_round",
+							args: { docname: dp_name, workstation: values.workstation, total_rounds: values.total_rounds },
+							callback: function (r2) {
+								if (r2.message) {
+									frappe.show_alert({ message: __("Extra rounds added for {0}", [values.workstation]), indicator: "green" });
+									me._load_week();
+								}
+							},
+						});
+					}
+				});
+			},
+		});
+		dlg.show();
+			}
+		});
+	}
 
 	// ══════════════════════════════════════════════════════════════
 	//  SUBMIT

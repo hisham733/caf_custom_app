@@ -1,11 +1,95 @@
 # Copyright (c) 2025, hisham and contributors
 # work_order_cancellation.py — Hierarchical Cancellation Engine
 
-import pdb
-
 import frappe
 from frappe import _
 from .wo_helpers import get_active_wos_by_link_id
+# ══════════════════════════════════════════════════════════════════════════════
+#  SHARED WO CANCELLATION UTILITY
+# ══════════════════════════════════════════════════════════════════════════════
+
+def cancel_wos_by_link_id(link_id, types=None):
+    """Cancel active WOs for a given link_id, filtered by type.
+
+    Args:
+        link_id: The link_id to find WOs for.
+        types: List of custom_item_type values to cancel.
+               Defaults to ["Cook", "Pack"] (cancels both).
+               Pass ["Pack"] to cancel only Pack WOs.
+    """
+    if types is None:
+        types = ["Cook", "Pack"]
+
+    wos = get_active_wos_by_link_id(link_id)
+    target_wos = [wo for wo in wos if wo.get("custom_item_type") in types]
+    if not target_wos:
+        return
+
+    if not target_wos:
+        return
+
+    wo_names = [w.name for w in target_wos]
+    wo_data = frappe.get_all("Work Order",
+        filters={"name": ["in", wo_names]},
+        fields=["name", "docstatus"],
+        order_by="creation desc")
+
+    draft_wos = [w for w in wo_data if w.docstatus == 0]
+    submitted_wos = [w for w in wo_data if w.docstatus == 1]
+
+    # Delete drafts directly (no full load needed)
+    for w in draft_wos:
+        _cancel_stock_entries_for_wo(w.name)
+        _cancel_job_cards_for_wo(w.name)
+        frappe.delete_doc("Work Order", w.name, ignore_permissions=True)
+
+    # Cancel submitted
+    for w in submitted_wos:
+        _cancel_stock_entries_for_wo(w.name)
+        _cancel_job_cards_for_wo(w.name)
+        wo = frappe.get_doc("Work Order", w.name)
+        wo.flags.ignore_permissions = True
+        wo.flags.ignore_workflow = True
+        wo.flags.ignore_version = True
+        wo.cancel()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  SHARED WO CLEANUP UTILITY
+# ══════════════════════════════════════════════════════════════════════════════
+
+def cleanup_wos_by_type(newly_created_wos, keep_types, child_doctype, start_time):
+    """Remove freshly created WOs that are NOT in keep_types.
+
+    Draft WOs: deleted directly. Submitted WOs: cancelled.
+
+    Args:
+        newly_created_wos: List of WO names created in the current transaction.
+        keep_types: List of custom_item_type values to KEEP (e.g. ["Pack"]).
+        child_doctype: The child doctype name for row refresh.
+        start_time: Only process WOs created after this time.
+    """
+    if not newly_created_wos:
+        return
+
+    # Phase 4: Batch fetch all WOs in one query
+    wo_data = frappe.get_all("Work Order",
+        filters={"name": ["in", newly_created_wos]},
+        fields=["name", "custom_item_type", "docstatus", "creation"])
+
+    for info in wo_data:
+        if not info.creation or info.creation < start_time:
+            continue
+        if info.custom_item_type in keep_types:
+            continue
+
+        if info.docstatus == 0:
+            frappe.delete_doc("Work Order", info.name, ignore_permissions=True, force=True)
+        elif info.docstatus == 1:
+            wo = frappe.get_doc("Work Order", info.name)
+            wo.flags.ignore_permissions = True
+            wo.flags.ignore_workflow = True
+            wo.cancel()
 # ══════════════════════════════════════════════════════════════════════════════
 #  PHASE 1: BULK CLEANUP (The "Glue")
 # ══════════════════════════════════════════════════════════════════════════════
@@ -34,7 +118,6 @@ def _bulk_clean_stock_and_jobs(wos: list) -> None:
             prod_items.add(item)
     
     # BATCH QUERY: Get all parent BOMs in ONE query
-    print("🔗 Building BOM cache...")
     all_bom_items = frappe.get_all(
         "BOM Item",
         filters={"item_code": ["in", list(prod_items)]},
@@ -97,18 +180,15 @@ def _bulk_clean_stock_and_jobs(wos: list) -> None:
         return max_parent_depth
     
     wo_depths = {}
-    print("\n🔍 Calculating BOM depths...")
     for wo in wo_list:
         wo_depths[wo.name] = get_bom_hierarchy_depth(wo.name)
     
-    print("   Done!")
     
     sorted_wos = sorted(wo_list, key=lambda x: (
         wo_depths[x.name],
         x.get("custom_item_type") != "Pack" if hasattr(x, 'get') else getattr(x, 'custom_item_type', '') != "Pack",
         x.get("idx", 0) if hasattr(x, 'get') else getattr(x, 'idx', 0)
     ))
-    print(f"\n📋 Cancellation order {sorted_wos}:")
     for wo in sorted_wos:
         _cancel_stock_entries_for_wo(wo.name)
         _cancel_job_cards_for_wo(wo.name)
@@ -117,7 +197,6 @@ def _cancel_stock_entries_for_wo(wo_name) -> None:
     # ✅ normalize
     wo_name = wo_name.name if hasattr(wo_name, "name") else wo_name
 
-    print(f"\n🧹 Cleaning Stock Entries for WO {wo_name}...")
 
     entries = frappe.get_all(
         "Stock Entry",
@@ -125,7 +204,6 @@ def _cancel_stock_entries_for_wo(wo_name) -> None:
         fields=["name", "stock_entry_type", "docstatus"]
     )
 
-    print("FOUND ENTRIES:", entries)
 
     # ✅ Manufacture first
     sorted_entries = sorted(
@@ -134,7 +212,6 @@ def _cancel_stock_entries_for_wo(wo_name) -> None:
     )
 
     for se in sorted_entries:
-        print(f"Processing {se['name']} ({se['stock_entry_type']})")
         _process_single_se(se)
 
 def _process_single_se(se_row):
@@ -145,10 +222,8 @@ def _process_single_se(se_row):
         se_doc.flags.ignore_permissions = True
 
         if se_doc.docstatus == 0:
-            print(f"Deleting Draft SE: {se_name}")
             se_doc.delete()
         elif se_doc.docstatus == 1:
-            print(f"Cancelling Submitted SE: {se_name}")
             se_doc.cancel()
 
     except Exception:
@@ -165,7 +240,6 @@ def _cancel_job_cards_for_wo(wo_name) -> None:
     # ✅ normalize
     wo_name = wo_name.name if hasattr(wo_name, "name") else wo_name
 
-    print(f"\n🧹 Cleaning Job Cards for WO {wo_name}...")
 
     jcs = frappe.get_all(
         "Job Card",
@@ -173,7 +247,6 @@ def _cancel_job_cards_for_wo(wo_name) -> None:
         fields=["name", "docstatus"]
     )
 
-    print("FOUND JOB CARDS:", jcs)
 
     for jc in jcs:
         jc_name = jc["name"]
@@ -182,10 +255,8 @@ def _cancel_job_cards_for_wo(wo_name) -> None:
         jc_doc.flags.ignore_permissions = True
 
         if jc_doc.docstatus == 1:
-            print(f"Cancelling JC: {jc_name}")
             jc_doc.cancel()
         else:
-            print(f"Deleting JC: {jc_name}")
             jc_doc.delete()
 # ══════════════════════════════════════════════════════════════════════════════
 #  PHASE 2: WORK ORDER CANCELLATION (The "Kill")
@@ -193,7 +264,6 @@ def _cancel_job_cards_for_wo(wo_name) -> None:
 
 def _cancel_work_orders_by_id(link_id: str) -> None:
     if not link_id: return
-    # pdb.set_trace()
     wos = get_active_wos_by_link_id(link_id)
 
     # 1. Validation (Check if any part of the chain is already finished)
@@ -211,23 +281,25 @@ def _cancel_work_orders_by_id(link_id: str) -> None:
     # Build BOM to parent item mapping
     bom_to_parent_item_phase3 = {}
     prod_items_phase3 = [w.production_item if hasattr(w, 'production_item') else w.get('production_item') for w in wos]
-    
+
+    # Phase 4: Batch BOM Items query
+    all_bom_items = frappe.get_all(
+        "BOM Item",
+        filters={"item_code": ["in", list(set(prod_items_phase3))]},
+        fields=["item_code", "parent"],
+        limit_page_length=None,
+    )
     all_parent_boms_phase3 = {}
-    for item in prod_items_phase3:
-        bom_items = frappe.get_all(
-            "BOM Item",
-            filters={"item_code": item},
-            fields=["parent"],
-            limit_page_length=None
-        )
-        all_parent_boms_phase3[item] = [b['parent'] for b in bom_items]
-        for bom_name in [b['parent'] for b in bom_items]:
-            if bom_name not in bom_to_parent_item_phase3:
-                try:
-                    bom_doc = frappe.get_doc("BOM", bom_name)
-                    bom_to_parent_item_phase3[bom_name] = bom_doc.item
-                except:
-                    pass
+    for bi in all_bom_items:
+        all_parent_boms_phase3.setdefault(bi.item_code, []).append(bi.parent)
+
+    # Phase 4: Batch BOM query — only need .item field, use get_all not get_doc
+    bom_names = list(set(bi.parent for bi in all_bom_items))
+    if bom_names:
+        bom_data = frappe.get_all("BOM",
+            filters={"name": ["in", bom_names]},
+            fields=["name", "item"])
+        bom_to_parent_item_phase3 = {b.name: b.item for b in bom_data}
     
     def get_bom_depth_cancel(wo_name, visited=None):
         """Calculate depth based on BOM structure"""
@@ -273,7 +345,6 @@ def _cancel_work_orders_by_id(link_id: str) -> None:
     
     # Calculate and sort by BOM depth
     wos_with_depth = []
-    print("\n📋 Calculating cancellation order...")
     for w in wos:
         depth = get_bom_depth_cancel(w.name)
         wos_with_depth.append((w, depth))
@@ -284,10 +355,8 @@ def _cancel_work_orders_by_id(link_id: str) -> None:
         x[0].get("idx", 0) if hasattr(x[0], 'get') else getattr(x[0], 'idx', 0)
     ))
     
-    # print(f"✓ Cancel Order (by BOM depth):")
     for idx, (w, d) in enumerate(wos_with_depth, 1):
         prod_item = w.production_item if hasattr(w, 'production_item') else w.get('production_item')
-        # print(f"   {idx}. {w.name} ({prod_item}) - depth {d}")
     
     for wo_row, depth in wos_with_depth:
         if not frappe.db.exists("Work Order", wo_row.name): continue

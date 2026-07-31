@@ -1,5 +1,4 @@
 import json
-import pdb
 from erpnext.manufacturing.doctype import production_plan
 from erpnext.manufacturing.doctype.production_plan.production_plan import ProductionPlan
 from erpnext.setup.doctype.item_group import item_group
@@ -132,12 +131,9 @@ class CustomProductionPlan(ProductionPlan):
 
             material_request.save()
             material_request.submit()
-            # ✅ Create Pick List only for Material Transfer
             if material_request.material_request_type == "Material Transfer":
                 doc = make_stock_entry(material_request.name)
                 doc.insert(ignore_permissions=True)
-            if self.get("submit_material_request"):
-                material_request.submit()
 
         frappe.flags.mute_messages = False
 
@@ -154,38 +150,17 @@ class CustomProductionPlan(ProductionPlan):
     def set_custom_link_id(self):
         """Fetch and set custom_link_id from the linked Material Requestl."""
         mr_doc = self._get_cached_first_mr()
-        # print(":id_link", id_link)
-        if mr_doc:  # Check if id_link is not None
-            if mr_doc.get("custom_link_id") or mr_doc.get("custom_operation_type"):
-
-                if not self.custom_link_id:
-                    try:
-                        self.custom_link_id = mr_doc.get("custom_link_id")
-
-                    except frappe.DoesNotExistError:
-                        print(f"Material Request not found!")
-                    except Exception as e:
-                        print(
-                            f"Error fetching custom_link_id from Material Request: {str(e)}"
-                        )
-                else:
-                    print("custom_link_id already set on Production Plan")
-                if not self.custom_operation_type:
-                    try:
-                        self.custom_operation_type = mr_doc.get(
-                            "custom_operation_type"
-                        )
-
-                    except frappe.DoesNotExistError:
-                        print(f"Material Request not found!")
-                    except Exception as e:
-                        print(
-                            f"Error fetching custom_operation_type from Material Request: {str(e)}"
-                        )
-            else:
-                print("No custom_link_id found in the Material Request")
-        else:
-            print("No Material Request linked to this Production Plan")
+        if mr_doc and (mr_doc.get("custom_link_id") or mr_doc.get("custom_operation_type")):
+            if not self.custom_link_id:
+                try:
+                    self.custom_link_id = mr_doc.get("custom_link_id")
+                except Exception:
+                    pass
+            if not self.custom_operation_type:
+                try:
+                    self.custom_operation_type = mr_doc.get("custom_operation_type")
+                except Exception:
+                    pass
 
     def get_items_to_skip(self):
 
@@ -250,8 +225,6 @@ class CustomProductionPlan(ProductionPlan):
             work_order = self.create_work_order(work_order_data)
             if work_order:
                 wo_list.append(work_order)
-                print(f"Work Order (wo_list)", wo_list)
-                # pdb.set_trace()
             
 
 
@@ -261,12 +234,10 @@ class CustomProductionPlan(ProductionPlan):
         custom_start_item_table = []
 
         start_entries = getattr(self.flags, "start_entries_data", [])
-        # print(f"start_entries: ")
 
         for row in start_entries:
             item_name = row.get("item_name")
             days_no = row.get("days_no")
-            # print(f"Item Name: {item_name}, Days: {days_no}")
             custom_start_item_table.append({"item_name": item_name, "days_no": days_no})
 
         return custom_start_item_table
@@ -300,8 +271,7 @@ class CustomProductionPlan(ProductionPlan):
         schedule_date = self.custom_required_by
 
         if not schedule_date:
-            print("No Schedule Date found in Production Plan")
-            return None
+            frappe.throw("No Schedule Date found in Production Plan")
 
         # ✅ Get current time directly
         current_time = datetime.datetime.now().time()
@@ -486,8 +456,8 @@ class CustomProductionPlan(ProductionPlan):
             wo.set_int_qty()    
             wo.save()
             wo.reload()
-        except Exception as e:
-            print(f"Error fetching item group for {wo.get('production_item')}: {str(e)}")
+        except Exception:
+            pass
 
 
 # _________________________________________________________________________________________________________________
@@ -513,7 +483,6 @@ class CustomProductionPlan(ProductionPlan):
             wo.flags.ignore_mandatory = True
             wo.flags.ignore_validate = True
             wo.insert()
-            print(wo.production_item, wo.name, "created successfully.")
             return wo.name
         except OverProductionError:
             pass
@@ -530,7 +499,6 @@ class CustomProductionPlan(ProductionPlan):
             order_by="idx ASC",
         )
         if not first_mr_entry:
-            print(f"⚠️ No Material Request found for Production Plan: {self.name}")
             return None  # ✅ Ensure we return None instead of referencing a missing variable
 
         try:
@@ -539,19 +507,14 @@ class CustomProductionPlan(ProductionPlan):
             )  # ✅ Ensure this line always executes
             
         except frappe.DoesNotExistError:
-            print(f"❌ Error: Material Request {first_mr_entry} does not exist!")
             return None
         except Exception as e:
-            print(
-                f"❌ Unexpected Error while fetching Material Request {first_mr_entry}: {e}"
-            )
             return None
 
         # Extract child table (items)
 
         mr_items = []
         # mr_items_list = frappe.get_all("Material Request Item",filters={"parent":first_mr_entry},fields=["item_code","qty","warehouse","round"])
-        # print(f"mr_items_list{mr_items_list}")
         if hasattr(mr_doc, "custom_recipe_table"):
             for item in mr_doc.get("custom_recipe_table", []):
                 mr_items.append(
@@ -578,7 +541,6 @@ class CustomProductionPlan(ProductionPlan):
                     }
                 )
 
-        # print("mr_pack_items", [mr_pack_items])
         return {
             "name": mr_doc.name,
             "company": mr_doc.company,
@@ -606,7 +568,6 @@ class CustomProductionPlan(ProductionPlan):
         
 
         record_name, record_docstatus = latest_record
-        # print(f"✅ Latest Record Found: {record_name}")
 
         # Step 2: Ensure the record is submitted
         if record_docstatus != 1:
@@ -640,8 +601,6 @@ class CustomProductionPlan(ProductionPlan):
                 }
             )
 
-        # print(f"🗑️ Delete Entries: {delete_entries}")
-        # print(f"🔍 Start Entries: {start_entries}")
 
         # Step 5: Save values inside the document for later use
         self.latest_record_name = record_name
@@ -839,12 +798,10 @@ class CustomProductionPlan(ProductionPlan):
                 existing_row.bom_level = max(existing_row.bom_level or 0, row.bom_level or 0)
 
             # Return merged list
-            # print(f"Combined Sub Assembly Items: {list(key_wise_data.values())}")
             return list(key_wise_data.values())
         
     @frappe.whitelist()
     def make_work_order(self ,wip = False):
-        # pdb.set_trace()
         from erpnext.manufacturing.doctype.work_order.work_order import get_default_warehouse
         wip = wip 
         wo_list, po_list = [], []
@@ -858,7 +815,6 @@ class CustomProductionPlan(ProductionPlan):
         self.show_list_created_message("Purchase Order", po_list)
 
         for wo in wo_list:
-            print(f"wo: {wo}")
             wor = frappe.get_doc("Work Order", wo)
             self.update_work_order_list(wor)
 
@@ -904,7 +860,6 @@ def get_material_request_items(
 
     if not row["purchase_uom"]:
         row["purchase_uom"] = row["stock_uom"]    #
-    # print(f"--------- required_qty  A", required_qty)
     custom_quantity = 0
     if row["purchase_uom"] != row["stock_uom"]:
         if not (
@@ -916,14 +871,11 @@ def get_material_request_items(
                     row["purchase_uom"], row["stock_uom"], row.item_code
                 )
             )
-        # print("----------------if statment required_qty ", required_qty)
         required_qty = required_qty / row["conversion_factor"]
-        # print("----------------if statment ")
 
     if frappe.db.get_value("UOM", row["purchase_uom"], "must_be_whole_number"):
         custom_quantity = required_qty
         required_qty = ceil(required_qty)
-    # print(f"--------- required_qty  B", required_qty)
 
     if include_safety_stock:
         required_qty += flt(row["safety_stock"])
@@ -938,14 +890,12 @@ def get_material_request_items(
         and item_details.purchase_uom
         and item_details.purchase_uom != item_details.stock_uom
     ):
-        # print("inside conversion factor purchase uom")
         conversion_factor = (
             get_conversion_factor(row.item_code, item_details.purchase_uom).get(
                 "conversion_factor"
             )
             or 1.0
         )
-    # print(f"--------- required_qty  C", required_qty)
 
     if required_qty > 0:
         # custom_quantity = required_qty / conversion_factor
@@ -1112,7 +1062,6 @@ def get_items_for_material_requests(
         elif data.get("item_code"):
             item_master = frappe.get_doc("Item", data["item_code"]).as_dict()
             purchase_uom = item_master.purchase_uom or item_master.stock_uom
-            # print("purchase_uom", purchase_uom)
             conversion_factor = (
                 get_uom_conversion_factor(item_master.name, purchase_uom)
                 if item_master.purchase_uom
@@ -1152,7 +1101,6 @@ def get_items_for_material_requests(
     for sales_order in so_item_details:
         item_dict = so_item_details[sales_order]
         for details in item_dict.values():
-            # print("details", details)
             bin_dict = get_bin_details(details, doc.company, warehouse)
             bin_dict = bin_dict[0] if bin_dict else {}
         

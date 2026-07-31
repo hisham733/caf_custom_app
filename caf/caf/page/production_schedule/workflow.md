@@ -128,8 +128,8 @@ Step 3: Cancel Cook+Pack at both link_ids
         (WIP WOs are NOT cancelled — they survive and stay in place)
 
 Step 4: Recreate WOs for both rows
-        new_wos_a = dp.create_material_request_after_change_size(row_a.recipe_name, [row_a])
-        new_wos_b = dp.create_material_request_after_change_size(row_b.recipe_name, [row_b])
+        new_wos_a = dp.recreate_mr_after_update_slot(row_a.recipe_name, [row_a])
+        new_wos_b = dp.recreate_mr_after_update_slot(row_b.recipe_name, [row_b])
         → Creates fresh WIP + Cook + Pack WOs at each link_id
 
 Step 5: Clean up redundant WIPs
@@ -207,7 +207,7 @@ After `_swap_db_link_ids`: WOs at X now belong to Beta's old slot, WOs at Y now 
 - Loads row, checks `mr_reference`:
   - If present: cancels Cook/Pack WOs via `_cancel_cook_pack_by_id`
   - If absent: skips cancel (fresh creation)
-- Calls `dp.create_material_request_after_change_size()` to create new WOs
+- Calls `dp.recreate_mr_after_update_slot()` to create new WOs
 - Cleans up redundant WIP WOs via `_cleanup_redundant_wips`
 - If MR existed: finds new Cook WO and relinks captured quality data
 - Sets `custom_wo_status = "Done"` on success, `"Failed"` on error
@@ -220,7 +220,7 @@ After `_swap_db_link_ids`: WOs at X now belong to Beta's old slot, WOs at Y now 
 - Captures quality data from both link_ids (before swap/cancel)
 - `_swap_db_link_ids`: SQL-level swap of WO `custom_link_id` between slots
 - `_cancel_cook_pack_by_id` on both link_ids (Cook+Pack only, WIP untouched)
-- `create_material_request_after_change_size` on both rows (creates MR + fresh WOs)
+- `recreate_mr_after_update_slot` on both rows (creates MR + fresh WOs)
 - `_cleanup_redundant_wips` on both rows (deletes newly created WIP WOs, old WIP survives)
 - Relinks quality docs cross-wise: old-A quality → new-B Cook WO, old-B quality → new-A Cook WO
 - Sets both rows `custom_wo_status = "Done"` on success, `"Failed"` on error with commit
@@ -228,7 +228,7 @@ After `_swap_db_link_ids`: WOs at X now belong to Beta's old slot, WOs at Y now 
 ### `_background_change_recipe`
 
 - Loads DP, cancels existing Cook/Pack via `_cancel_cook_pack_by_id`
-- Creates new WOs via `dp.create_material_request_after_change_size()`
+- Creates new WOs via `dp.recreate_mr_after_update_slot()`
 - Cleans up redundant WIPs
 - Sets `custom_wo_status = "Done"` or `"Failed"`
 

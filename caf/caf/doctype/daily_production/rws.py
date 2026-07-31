@@ -61,11 +61,14 @@ def _sync_row_notes_to_wos(row, child_doctype: str) -> None:
 # ══════════════════════════════════════════════════════════════════════════════
 
 @frappe.whitelist()
-def rws(doc_name: str, child_doctype: str) -> None:
+def rws(doc_or_name, child_doctype: str) -> None:
     """
     Iterates through all production rows and ensures the linked 
     Work Orders (found via Link ID) have updated notes.
+
+    Phase 3: Accepts doc object OR doc_name string.
     """
+    doc_name = doc_or_name.name if hasattr(doc_or_name, 'name') else doc_or_name
     
     # Fetch only rows that have a pack_name (avoids loading 64 empty rows)
     rows = frappe.get_all(

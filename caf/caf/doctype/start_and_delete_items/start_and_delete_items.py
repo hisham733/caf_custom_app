@@ -23,21 +23,28 @@ class startanddeleteitems(Document):
 	# end: auto-generated types
 	pass
 	def validate(self):
-		if not self.custom_is_default:
-			frappe.throw("Custom Is Default must be active when creating a new record.")
+		if (self.max_rounds or 0) < (self.default_rounds or 3):
+			frappe.throw(
+				"Max Rounds ({}) must be greater than or equal to Default Rounds ({}).".format(
+					self.max_rounds, self.default_rounds
+				)
+			)
+
+		if not self.is_default:
+			frappe.throw("Is Default must be active when creating a new record.")
 		
 		# Then check uniqueness
 		existing = frappe.get_all(
 			self.doctype,
 			filters={
-					"custom_is_default": 1,
+					"is_default": 1,
 				"name": ["!=", self.name]
 			},
 			limit=1
 		)
 		if existing:
 			frappe.throw(
-				"There is already a record marked as Default. Only one record can have Custom Is Default active."
+				"There is already a record marked as Default. Only one record can be the default."
 			)
 
 @frappe.whitelist()
@@ -48,9 +55,8 @@ def create_new_version(docname):
     # Get old doc
     old_doc = frappe.get_doc("start and delete items", docname)
 
-    # Uncheck old default
-    old_doc.custom_is_default = 0
-    old_doc.save(ignore_permissions=True)
+    # Uncheck old default (use db_set to bypass validate)
+    frappe.db.set_value("start and delete items", docname, "is_default", 0)
 
     # Create new document
     new_doc = frappe.new_doc("start and delete items")
@@ -67,12 +73,19 @@ def create_new_version(docname):
             child_rows = []
             for row in old_doc.get(fieldname):
                 child_rows.append(row.as_dict())
+            # Fallback: query child table directly for old custom_ fields
+            if not child_rows:
+                child_rows = frappe.get_all(
+                    field.options,
+                    filters={"parent": docname, "parenttype": old_doc.doctype},
+                    order_by="idx asc",
+                )
             new_doc.set(fieldname, child_rows)
         else:
             new_doc.set(fieldname, old_doc.get(fieldname))
 
     # Set new default
-    new_doc.custom_is_default = 1
+    new_doc.is_default = 1
 
     # Insert new record
     new_doc.insert(ignore_permissions=True)

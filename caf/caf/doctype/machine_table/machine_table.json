@@ -6,24 +6,17 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "workstation",
-  "round"
- ],
- "fields": [
-  {
-   "fieldname": "workstation",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Workstation",
-   "options": "Workstation"
-  },
-  {
-   "fieldname": "round",
-   "fieldtype": "Int",
-   "in_list_view": 1,
-   "label": "Round"
-  }
- ],
+   "workstation"
+  ],
+  "fields": [
+   {
+    "fieldname": "workstation",
+    "fieldtype": "Link",
+    "in_list_view": 1,
+    "label": "Workstation",
+    "options": "Workstation"
+   }
+  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,

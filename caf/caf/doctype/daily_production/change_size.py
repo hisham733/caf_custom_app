@@ -76,7 +76,7 @@ def _cleanup_redundant_wips_targeted(newly_born_list: list, row_doc, child_docty
 # ══════════════════════════════════════════════════════════════════════════════
 
 @frappe.whitelist()
-def process_size_change(doc_name: str, child_doctype: str) -> None:
+def process_recipe_change_or_size_change(doc_or_name, child_doctype: str) -> None:
     """
     Triggered for rows with status "Recipe Change".
     1. Validation: Uses link_id to check if Cook WO is 'Completed'.
@@ -85,9 +85,11 @@ def process_size_change(doc_name: str, child_doctype: str) -> None:
     4. Re-creation: Triggers fresh production with new quantity.
     5. Cleanup: Purges fresh duplicate WIPs.
     6. Relink: Points old Quality docs to the new Cook WO.
+
+    Phase 3: Accepts doc object OR doc_name string (backward compatible).
     """
-    # 0. Capture process start time for WIP protection
-    process_start_time = now_datetime()
+    parent_doc = doc_or_name if not isinstance(doc_or_name, str) else frappe.get_doc("Daily Production", doc_or_name)
+    doc_name = parent_doc.name
 
     # 1. Fetch rows marked for size change
     rows = frappe.get_all(
@@ -103,11 +105,10 @@ def process_size_change(doc_name: str, child_doctype: str) -> None:
     if not rows:
         return
 
-    # Load parent doc explicitly
-    parent_doc = frappe.get_doc("Daily Production", doc_name)
-
     for r in rows:
-        row_doc = frappe.get_doc(child_doctype, r.name)
+        row_doc = next((d for d in parent_doc.production_table if d.name == r.name), None)
+        if not row_doc:
+            continue
         link_id = r.link_id
         reheat = r.production_type
         # ── STEP 1: IDENTITY & VALIDATION ──────────────────────────────────
@@ -134,8 +135,6 @@ def process_size_change(doc_name: str, child_doctype: str) -> None:
 
         # Cancel the Production Plan to reset demand for this slot
         if r.production_plane:
-            pp = r.production_plane
-            row_doc.db_set("production_plane", "")
             # _cancel_production_plan(pp)
 
             # Clear specific row pointers but KEEP link_id and mr_reference
@@ -146,7 +145,7 @@ def process_size_change(doc_name: str, child_doctype: str) -> None:
             # ── STEP 4: RE-CREATION PHASE ──────────────────────────────────────
             # Returns the list of ONLY the WOs created in this transaction
             full_group = parent_doc.get_full_group_for_row(row_doc)
-            newly_born_wos = parent_doc.create_material_request_after_change_size(row_doc.recipe_name, full_group)
+            newly_born_wos = parent_doc.recreate_mr_after_update_slot(row_doc.recipe_name, full_group)
 
             # ── STEP 5: PRECISION WIP CLEANUP ──────────────────────────────────
             # Deletes redundant WIP drafts created in Step 4

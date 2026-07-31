@@ -16,10 +16,12 @@
   "c2",
   "production_type",
   "urgent_check",
-  "custom_yield",
-  "recipe_note",
-  "s2",
-  "number_of_pack",
+   "custom_yield",
+   "total_input",
+   "total_output",
+   "number_of_pack",
+   "recipe_note",
+   "s2",
   "pack_name",
   "pack_name_2",
   "pack_name_3",
@@ -462,7 +464,22 @@
    "bold": 1,
    "fieldname": "custom_yield",
    "fieldtype": "Float",
-   "label": "Yeild",
+   "label": "Yield (KG)",
+   "precision": 6,
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_input",
+   "fieldtype": "Float",
+   "label": "Total Input (KG)",
+   "precision": 6,
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_output",
+   "fieldtype": "Float",
+   "label": "Total Output (KG)",
+   "precision": 6,
    "read_only": 1
   }
  ],

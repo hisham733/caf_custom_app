@@ -16,7 +16,7 @@ class CustomPurchaseReceipt(PurchaseReceipt):
             # 1️⃣ Get default settings
             settings_name = frappe.db.get_value(
                   "start and delete items",
-                  {"custom_is_default": 1},
+                  {"is_default": 1},
                   "name",
                   order_by="creation desc"
             )

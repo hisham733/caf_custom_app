@@ -834,10 +834,10 @@ def _update_delta_and_create_se(pd_name, pp, child_table, new_items):
     return se_id
 
 
-def get_delete_table_items(child_table='custom_requisition_items'):
+def get_delete_table_items(child_table='requisition_items'):
     result = frappe.db.get_value(
         "start and delete items",
-        filters={"custom_is_default": 1},
+        filters={"is_default": 1},
         fieldname=["name", "docstatus"],
         order_by="creation desc"
     )
@@ -859,7 +859,7 @@ def get_delete_table_items(child_table='custom_requisition_items'):
 def get_delete_table_items_delet(child_table='delet'):
     result = frappe.db.get_value(
         "start and delete items",
-        filters={"custom_is_default": 1},
+        filters={"is_default": 1},
         fieldname=["name", "docstatus"],
         order_by="creation desc"
     )
