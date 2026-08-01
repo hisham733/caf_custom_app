@@ -47,7 +47,7 @@ class DailyProduction(Document):
         4. On submit, at least one row must have a produ_status
         """
         if not self.workflow_state:
-            self.workflow_state = ""
+            self.workflow_state = "Draft"
         for item in self.production_table:
             # It CANNOT be set to "New Schedule" (preventing duplicate creation)
             if item.produ_status == NEW_SCHEDULE and item.wo_list and item.mr_reference:
@@ -66,6 +66,11 @@ class DailyProduction(Document):
                     .format(item.idx, item.recipe_name)
                 )
         self.validate_table_fields()
+
+    def onload(self):
+        """Ensure workflow_state is never falsy when form loads."""
+        if not self.workflow_state:
+            self.workflow_state = "Draft"
 
     def validate_table_fields(self):
         """Validate pack fields for each non-cooking row.

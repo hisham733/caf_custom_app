@@ -268,7 +268,7 @@ function filter_produ_status(frm, cdn) {
 frappe.ui.form.on("Daily Production", {
     onload: function(frm) {
         if (frm.is_new()) { frm.set_value("planner_name", frappe.session.user_fullname); }
-        if (!frm.doc.workflow_state) { frm.doc.workflow_state = ""; }
+        if (!frm.doc.workflow_state) { frm.doc.workflow_state = "Draft"; }
     },
 
   refresh: function(frm) {

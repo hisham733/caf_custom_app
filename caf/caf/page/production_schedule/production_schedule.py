@@ -937,7 +937,7 @@ def edit_week(week_monday):
             # Flip to Edit mode if currently Submitted
             current_state = frappe.db.get_value("Daily Production", dp_name, "workflow_state")
             if current_state == "Submitted":
-                frappe.db.set_value("Daily Production", dp_name, "workflow_state", "")
+                frappe.db.set_value("Daily Production", dp_name, "workflow_state", "Draft")
                 frappe.db.commit()
                 edited += 1
         else:
