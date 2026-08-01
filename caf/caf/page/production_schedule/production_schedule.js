@@ -1245,7 +1245,6 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			callback: function (r) {
 				if (r.message && r.message.success) {
 					frappe.show_alert({ message: r.message.message, indicator: "green" });
-					me._set_metabase_cookie();
 					me._load_week();
 					me._poll_row_status(src_id, function () { me._load_week(); });
 				} else {
@@ -1278,7 +1277,6 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			callback: function (r) {
 				if (r.message && r.message.success) {
 					frappe.show_alert({ message: r.message.message, indicator: "green" });
-					me._set_metabase_cookie();
 					me._load_week();
 					if (r.message.has_wos) {
 						me._poll_row_status(item_id, function () { me._load_week(); });
@@ -1320,9 +1318,6 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 		}
 	}
 
-	_set_metabase_cookie() {
-		document.cookie = "trigger_metabase_refresh=1; path=/; max-age=30";
-	}
 
 	// ══════════════════════════════════════════════════════════════
 	//  DIALOGS  (Edit mode)
@@ -2243,7 +2238,6 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 					callback: function (r) {
 						if (r.message && r.message.success) {
 							frappe.show_alert({ message: __("Recipe added"), indicator: "green" });
-							me._set_metabase_cookie();
 							me._load_week();
 							var row_id = r.message.item ? r.message.item.id : null;
 							if (row_id) {
@@ -2588,7 +2582,6 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 					callback: function (r) {
 						if (r.message && r.message.success) {
 							frappe.show_alert({ message: r.message.message, indicator: "green" });
-							me._set_metabase_cookie();
 							me.page.main.find("#schedule-mode").val("View Schedule");
 							me.state.mode = "View Schedule";
 							me._update_submit_btn();
@@ -2624,7 +2617,6 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 					callback: function (r) {
 						if (r.message && r.message.success) {
 							frappe.show_alert({ message: r.message.message, indicator: "green" });
-							me._set_metabase_cookie();
 							me._load_week();
 						} else {
 							frappe.show_alert({ message: r.message ? r.message.message : __("Failed"), indicator: "orange" });

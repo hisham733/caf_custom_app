@@ -1443,8 +1443,6 @@ frappe.ui.form.on('Create ProExl Items', {
 
                     grid_row.hide_form();
 
-                    document.cookie = "trigger_metabase_refresh=true; path=/; domain=192.168.0.251; max-age=10";
-
                     setTimeout(() => {
                         window.close();
                     }, 500);
