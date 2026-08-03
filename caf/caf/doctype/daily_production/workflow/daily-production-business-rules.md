@@ -292,6 +292,81 @@ When adding or editing a recipe, you can set the **Production Type** in the drop
 - Red-tinted background, all fields read-only
 - You cannot add, edit, move, or drag recipes on problem workstations
 
+### WO Created — What It Really Means
+
+When you click **"Create WO"** (in View mode) or the DP form auto-processes a save:
+
+**What actually gets created per recipe slot:**
+| Document | What | How many |
+|----------|------|----------|
+| Material Request (MR) | Purchase/transfer request for all raw materials | 1 |
+| Production Plan (PP) | Manufacturing plan with BOM explosion | 1 |
+| Cook Work Order | The main cooking work order — produces the recipe item | 1 |
+| Pack Work Orders | Packing work orders for each pack variant | 1 per pack (e.g., 2 packs = 2 PWs) |
+| WIP Work Orders | Sub-assembly work orders for intermediate items (BOM sub-items like CUT ONION, TIM IB, etc.) | 1 per sub-BOM item |
+| Stock Entry (Material Transfer) | Moves raw materials from warehouse to production floor | Per MR item |
+| Stock Entry (Manufacture) | Receives finished goods back into warehouse | 1 per WO |
+
+**What happens to the DP after Create WO:**
+- All `produ_status` values cleared (rows back to clean state)
+- `rq_status` shows "Done" on processed rows
+- WO name badge appears on the day header (e.g., "Created WO (001)")
+- Production Plan buttons appear (Recipe Requisition, TIM Form, WIP Form)
+- WhatsApp notification sent (if WAHA is configured)
+
+**In reality:** The planner clicks one button and the system creates 20-30 documents (WOs, MRs, PPs, SEs) behind the scenes. Each WO appears on the operator's work order list for that day.
+
+### Add Extra Rounds
+
+**When to use:** You need more than the default 3 rounds for a workstation.
+
+**How it works:**
+1. Click **"Add Extra Rounds"** button (visible only in Edit mode)
+2. Select: Day (Mon-Sat), Workstation, Total Rounds (e.g., 5)
+3. System adds empty "No Cooking" slots for rounds 4 and 5
+4. New slots appear only for that workstation — other workstations show "—"
+
+**Rules:**
+| Rule | Detail |
+|------|--------|
+| Minimum | Must be greater than default rounds (usually 3) |
+| Maximum | Cannot exceed template max (usually 99) |
+| Duplicate | If a round already exists, it's skipped |
+| Visibility | New columns show "+" only on the workstation you added them to — others show "—" |
+| Day colors | Dynamic — column tints adapt automatically to new rounds |
+| Template | Rounds config comes from the `start and delete items` template (`default_rounds`, `max_rounds`) |
+
+**Where to add:** Both in WPD page ("Add Extra Rounds" button in Edit mode) and in the DP form (Extras dropdown → Add Extra Round).
+
+### Schedule Change Log
+
+Every action you take on the production schedule is logged for auditing.
+
+**What gets logged:**
+| Action | Example Log Entry |
+|--------|-------------------|
+| Edit | "Size changed from 30 to 50" |
+| Add Recipe | "Recipe IB added to Cooker 3 / Round 1" |
+| Cancel | "Cancelled Recipe SS" |
+| Swap | "Swapped Recipe IB with Recipe CFN" |
+| Move | "Moved Recipe RB to Cooker 2 / Round 3" |
+| Create WO | "Work Orders created for 2027-01-18" |
+| Submit Week | "Week 2027-01-13 submitted — 5 DP(s)" |
+| Add Rounds | "Added rounds 4, 5 for Cooker 1" |
+
+**How to access:**
+- WPD page → open the **Change Log** panel (bottom of the page)
+- Or go to `/production-schedule-change-log` page — select a date, click Load Changes
+- Filter by action type (Edit, Swap, Add Recipe, Cancel, Add Rounds, etc.)
+- Filter by workstation
+
+**What's tracked per entry:**
+- Who made the change
+- When (date + time)
+- What changed (old value → new value)
+- Which workstation and round
+- Which DP was affected
+
 ### No Cooking
 - An empty slot placeholder. Every workstation×round combination always has a row.
 - Choose "New Schedule" from the status dropdown to add a recipe to a No Cooking slot
