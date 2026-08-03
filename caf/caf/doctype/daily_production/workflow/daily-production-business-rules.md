@@ -259,6 +259,28 @@ Cooker 3, R1 → R-2026-00004  (even "No Cooking" slots have one)
 - WO name (`MFG-WO-2026-30250`) — changes with every recreate, tells you which document this is
 - link_id (`R-2026-07261`) — stays constant, tells you which SLOT this belongs to
 
+### Production Types
+
+When adding or editing a recipe, you can set the **Production Type** in the dropdown. Each type tells the system and the operator how to handle the production.
+
+| Type | When to use | What happens |
+|------|-------------|-------------|
+| **New** | Normal production — making from raw materials | Full MR → PP → WO chain. All WIP sub-assembly WOs created. Operator uses all raw items from BOM. |
+| **Recook** | Recipe was rejected or is a balance — needs recooking | Operator clicks **Recook** button on the Cook WO to add the rejected recipe as an extra input line (via a Material Transfer Stock Entry from scrap/balance warehouse → WIP). Original BOM items stay. |
+| **Reheat** | Entire cooker/kettle/fryer output rejected → sent to chiller/reject warehouse | **System auto-deletes all WIP WOs** after creation — sub-assembly items not needed. Operator uses the rejected recipe itself as input, deletes raw BOM items, adds only 1-2 extras (water, color). |
+| **Repack** | Repackaging existing product without recooking | Same as New — label only. No special behavior. |
+
+**How it propagates:** Production Type flows from the DP row → Material Request (`custom_operation_type`) → Production Plan → Work Order. Each WO knows its original type.
+
+**Key difference — Recook vs Reheat:**
+
+| | Recook | Reheat |
+|---|--------|--------|
+| Who triggers | Operator on the WO | Planner on the DP row |
+| Original BOM items | Stay — recook adds extra on top | Operator deletes them |
+| WIP WOs | Not deleted | System auto-deletes (`remove_all_wip_wo()`) |
+| Main input | All BOM items + rejected recipe as extra | Rejected recipe becomes the main input |
+
 ### Work Order Guards
 - You CANNOT change recipe if the Cook WO is already completed — the system blocks the save
 - You CANNOT change packs if any Pack WO is already completed — the system blocks the save
