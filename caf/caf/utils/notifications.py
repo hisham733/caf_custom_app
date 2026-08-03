@@ -23,6 +23,7 @@ def _get_config():
         "enabled": bool(cfg.get("enabled")),
         "base_url": cfg.get("base_url", "http://localhost:3000"),
         "chat_ids": cfg.get("chat_ids") or [],
+        "api_key": cfg.get("api_key", ""),
     }
 
 
@@ -140,8 +141,11 @@ def _send_waha(chat_id, text, config):
         "text": text,
         "session": "default",
     }
+    headers = {}
+    if config.get("api_key"):
+        headers["X-Api-Key"] = config["api_key"]
     try:
-        resp = requests.post(url, json=payload, timeout=15)
+        resp = requests.post(url, json=payload, headers=headers, timeout=15)
         if resp.status_code != 200:
             frappe.log_error(
                 title="WAHA send failed",
