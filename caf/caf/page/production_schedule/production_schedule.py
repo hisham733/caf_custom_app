@@ -826,6 +826,10 @@ def process_day_dp(week_monday, day_index):
             WHERE parent = %s AND produ_status != ''
         """, dp.name)
 
+        # WhatsApp notification
+        from caf.caf.utils.notifications import notify_dp_schedule
+        frappe.enqueue(notify_dp_schedule, dp_name=dp.name, queue="short")
+
         _log_schedule_change("Create WO", day=str(day), dp_name=dp.name,
                              old_data={}, new_data={"action": "process_manual_updates"})
         return {
@@ -898,6 +902,13 @@ def submit_week(week_monday):
     _log_schedule_change("Submit Week", day=str(monday), old_data={},
                          new_data={"submitted": submitted, "skipped_past": skipped_past,
                                    "skipped_empty": skipped_empty})
+
+    # WhatsApp notification
+    from caf.caf.utils.notifications import notify_simple
+    try:
+        notify_simple(f"📋 Week {monday} submitted — {submitted} DP(s) ready.")
+    except Exception:
+        pass
 
     return {
         "success": True,
