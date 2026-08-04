@@ -60,6 +60,7 @@ def _build_log_summary(action_type, recipe_name, workstation, cook_round, day, c
     action_verbs = {
         "Move": "Moved", "Swap": "Swapped", "Edit": "Edited",
         "Add Recipe": "Added", "Cancel": "Cancelled",
+        "Clear": "Cleared",
         "Create WO": "Created WOs", "Submit Week": "Submitted week",
     }
     verb = action_verbs.get(action_type, action_type)
@@ -774,6 +775,55 @@ def save_item_fields(item_id, fields):
 
 
 @frappe.whitelist()
+def send_day_schedule(week_monday, day_index):
+    """Send a selected day's DP schedule image to WhatsApp.
+
+    Validates that Work Orders were already created for that day before
+    sending. Returns a JSON response.
+
+    Args:
+        week_monday: Date string of the Monday
+        day_index: 0=Mon, 1=Tue, ..., 5=Sat
+    """
+    from datetime import timedelta
+
+    monday = getdate(week_monday)
+    day = monday + timedelta(days=int(day_index))
+
+    dp_name = frappe.db.get_value(
+        "Daily Production",
+        {"required_by": str(day), "docstatus": 0},
+        "name",
+        order_by="name desc",
+    )
+    if not dp_name:
+        return {"success": False, "message": _("No Daily Production for {0}.").format(str(day))}
+
+    dp = frappe.get_doc("Daily Production", dp_name)
+    if dp.workflow_state != "Submitted":
+        return {
+            "success": False,
+            "message": _("Daily Production for {0} is not Submitted yet. Please Submit it first.").format(str(day)),
+        }
+
+    has_mr = any(row.mr_reference for row in dp.production_table)
+    if not dp.custom_submit_ref or not has_mr:
+        return {
+            "success": False,
+            "message": _("Work Orders are not created for {0} yet. Please Create WO first.").format(str(day)),
+        }
+
+    try:
+        from caf.caf.utils.notifications import notify_dp_schedule
+        frappe.enqueue(notify_dp_schedule, dp_name=dp.name, queue="short")
+    except Exception:
+        frappe.log_error(title="Send day schedule failed", message=frappe.get_traceback())
+        return {"success": False, "message": _("Failed to queue the WhatsApp message.")}
+
+    return {"success": True, "message": _("Schedule for {0} sent to WhatsApp.").format(str(day))}
+
+
+@frappe.whitelist()
 def process_day_dp(week_monday, day_index):
     """Synchronously run process_manual_updates for one day's DP.
 
@@ -825,10 +875,6 @@ def process_day_dp(week_monday, day_index):
             SET produ_status = ''
             WHERE parent = %s AND produ_status != ''
         """, dp.name)
-
-        # WhatsApp notification
-        from caf.caf.utils.notifications import notify_dp_schedule
-        frappe.enqueue(notify_dp_schedule, dp_name=dp.name, queue="short")
 
         _log_schedule_change("Create WO", day=str(day), dp_name=dp.name,
                              old_data={}, new_data={"action": "process_manual_updates"})
@@ -902,13 +948,6 @@ def submit_week(week_monday):
     _log_schedule_change("Submit Week", day=str(monday), old_data={},
                          new_data={"submitted": submitted, "skipped_past": skipped_past,
                                    "skipped_empty": skipped_empty})
-
-    # WhatsApp notification
-    from caf.caf.utils.notifications import notify_simple
-    try:
-        notify_simple(f"📋 Week {monday} submitted — {submitted} DP(s) ready.")
-    except Exception:
-        pass
 
     return {
         "success": True,
@@ -1736,6 +1775,66 @@ def cancel_item(item_id):
         return {"success": True, "message": _("Cancellation queued")}
 
     return {"success": True, "message": _("Cancelled")}
+
+
+@frappe.whitelist()
+def clear_item(item_id):
+    """Reset a production item row to a clean 'No Cooking' slot.
+
+    Intended for rows that have no Work Orders (no mr_reference or no
+    production_plane). Resets recipe, size, packs, status, notes and
+    reference fields so the slot becomes an empty addable slot again.
+    No WOs are cancelled here — the callers only show the button when
+    no WOs exist.
+    """
+    row_data = frappe.db.get_value(
+        CHILD_DOCTYPE, {"name": item_id},
+        ["name", "parent", "rq_status", "recipe_name", "recipe_cook_workstaion",
+         "recipe_cook_round", "required_date", "produ_status"],
+        as_dict=True,
+    )
+    if not row_data:
+        return {"success": False, "message": "Item not found"}
+
+    if row_data.rq_status == "Processing":
+        return {"success": False, "message": "Work Orders are being processed. Please wait."}
+
+    values = {
+        "recipe_name": NO_COOKING,
+        "size": 0,
+        "produ_status": "",
+        "number_of_pack": 0,
+        "production_type": "",
+        "urgent_check": 0,
+        "recipe_note": "",
+        "custom_yield": 0,
+        "recipe_cook_time": None,
+        "mr_reference": "",
+        "wo_list": "",
+        "wo_list_with_type": "",
+        "production_plane": "",
+        "custom_pair_id": "",
+        "rq_status": "",
+        "custom_wo_error": "",
+    }
+    for i in range(1, 8):
+        suffix = "" if i == 1 else f"_{i}"
+        values[f"pack_name{suffix}"] = None
+        values[f"pack_qty{suffix}"] = 0
+        values[f"pack_remark{suffix}"] = None
+
+    frappe.db.set_value(CHILD_DOCTYPE, item_id, values)
+
+    _log_schedule_change("Clear", day=row_data.required_date, dp_name=row_data.parent,
+                         child_row_name=item_id, recipe_name=row_data.recipe_name,
+                         workstation=row_data.recipe_cook_workstaion,
+                         cook_round=row_data.recipe_cook_round,
+                         old_data={"recipe_name": row_data.recipe_name,
+                                   "produ_status": row_data.produ_status},
+                         new_data={"recipe_name": NO_COOKING, "produ_status": ""})
+
+    frappe.db.commit()
+    return {"success": True, "message": _("Slot cleared")}
 
 
 def _background_change_recipe(item_id, dp_name, new_recipe):

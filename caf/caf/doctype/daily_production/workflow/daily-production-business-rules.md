@@ -9,6 +9,7 @@ A non-technical reference for production planners. Explains what each status mea
 ## What is Daily Production?
 
 Daily Production (DP) is your daily cooking schedule. It tells each workstation:
+
 - **What recipe** to cook
 - **How much** (batch size)
 - **How many packs** to produce
@@ -18,23 +19,32 @@ One DP covers one day (Monday through Saturday). The system creates one DP per d
 
 ---
 
+
+
 ## Draft vs Submitted
 
 Unlike traditional Frappe documents, a DP never gets "submitted" in the database sense. It uses a **Workflow State** instead:
 
-| State | Meaning | What you can do |
-|-------|---------|-----------------|
-| **Draft** | Editable — you can add, move, change recipes | Full editing |
-| **Submitted** | Locked — ready for Work Order creation | View only, Create WO per day |
-| **Obsolete** | Old version, superseded | View only |
+
+| State         | Meaning                                      | What you can do              |
+| ------------- | -------------------------------------------- | ---------------------------- |
+| **Draft**     | Editable — you can add, move, change recipes | Full editing                 |
+| **Submitted** | Locked — ready for Work Order creation       | View only, Create WO per day |
+| **Obsolete**  | Old version, superseded                      | View only                    |
+
 
 Switching mode changes the state automatically:
+
 - **Edit Schedule** → sets state to **Draft**
 - **Submit Week** → sets state to **Submitted**
 
 ---
 
+
+
 ## The 6 Statuses — When to Use Each
+
+
 
 ### 1. New Schedule
 
@@ -49,6 +59,8 @@ Switching mode changes the state automatically:
 **After completion:** Status stays visible so you can see it was a new schedule.
 
 ---
+
+
 
 ### 2. Recipe Change
 
@@ -70,6 +82,8 @@ Switching mode changes the state automatically:
 
 ---
 
+
+
 ### 3. Pack Change
 
 **When to use:** The recipe and size are correct, but you need to change which packs are produced or how many.
@@ -83,6 +97,8 @@ Switching mode changes the state automatically:
 **After completion:** Status stays visible.
 
 ---
+
+
 
 ### 4. Change Slot
 
@@ -101,6 +117,8 @@ Switching mode changes the state automatically:
 **After completion:** Both slots' statuses are automatically cleared.
 
 ---
+
+
 
 ### 5. Rearrange
 
@@ -122,6 +140,8 @@ Switching mode changes the state automatically:
 
 ---
 
+
+
 ### 6. Cancelled
 
 **When to use:** You need to remove a recipe entirely. The order is no longer needed.
@@ -133,6 +153,8 @@ Switching mode changes the state automatically:
 **Rule:** You cannot cancel if the Cook Work Order is already completed.
 
 ---
+
+
 
 ### 7. Only Remark
 
@@ -146,23 +168,31 @@ Switching mode changes the state automatically:
 
 ---
 
+
+
 ## Status Summary Table
 
-| Status | When to Use | What System Does | WOs Affected? | Auto-Cleared? |
-|--------|-------------|------------------|---------------|---------------|
-| New Schedule | Adding recipe first time | Creates MR → PP → WOs | Created | ❌ Kept |
-| Recipe Change | Changing recipe or size | Cancels old, creates new | Replaced | ❌ Kept |
-| Pack Change | Changing packs only | Cancels Pack WOs, creates new | Pack only | ❌ Kept |
-| Change Slot | Moving recipe to empty slot | Migrates WOs to new slot | Migrated | ✅ Cleared |
-| Rearrange | Swapping two recipes | Swaps WOs between slots | Swapped | ✅ Cleared |
-| Cancelled | Removing recipe entirely | Cancels all WOs, frees slot | Cancelled | ✅ Slot reset |
-| Only Remark | Adding a note | No WO action | None | ❌ Kept |
+
+| Status        | When to Use                 | What System Does              | WOs Affected? | Auto-Cleared? |
+| ------------- | --------------------------- | ----------------------------- | ------------- | ------------- |
+| New Schedule  | Adding recipe first time    | Creates MR → PP → WOs         | Created       | ❌ Kept        |
+| Recipe Change | Changing recipe or size     | Cancels old, creates new      | Replaced      | ❌ Kept        |
+| Pack Change   | Changing packs only         | Cancels Pack WOs, creates new | Pack only     | ❌ Kept        |
+| Change Slot   | Moving recipe to empty slot | Migrates WOs to new slot      | Migrated      | ✅ Cleared     |
+| Rearrange     | Swapping two recipes        | Swaps WOs between slots       | Swapped       | ✅ Cleared     |
+| Cancelled     | Removing recipe entirely    | Cancels all WOs, frees slot   | Cancelled     | ✅ Slot reset  |
+| Only Remark   | Adding a note               | No WO action                  | None          | ❌ Kept        |
+
 
 **"Create WO" button**: Clears ALL statuses after successful processing.
 
 ---
 
+
+
 ## The Weekly Workflow — Step by Step
+
+
 
 ### Step 1: Open Edit Schedule Mode
 
@@ -171,9 +201,12 @@ Switching mode changes the state automatically:
 3. Switch to **Edit Schedule** mode
 4. The system shows "Creating draft production plans..." and creates DPs for Mon-Sat (if they don't exist)
 
+
+
 ### Step 2: Arrange Your Recipes
 
 For each day, you can:
+
 - **Add recipes** — Click "+" on empty slots, select recipe, set size and packs
 - **Edit recipes** — Click a recipe card to change size, packs, or status
 - **Move recipes** — Drag a recipe to a different slot (Change Slot)
@@ -181,9 +214,12 @@ For each day, you can:
 - **Add extra rounds** — Click "Add Extra Rounds" to increase round count for a workstation
 - **Cancel recipes** — Click "Cancel Recipe" button to remove a recipe
 
+
+
 ### Step 3: Submit Week
 
 When all days are arranged:
+
 1. Click **Submit Week**
 2. Confirm the submission
 3. All DPs move to **Submitted** state
@@ -194,44 +230,62 @@ When all days are arranged:
 ### Step 4: Create Work Orders (Per Day)
 
 In View Schedule mode:
+
 1. Click **Create WO** on each day column
 2. The system processes all statuses for that day (New Schedule, Recipe Change, Pack Change, Change Slot, Rearrange, Cancelled, Only Remark)
 3. After completion, the button shows "Created WO (001)"
 
+
+
 ### Step 5: Production Plan Buttons (Optional)
 
 After Work Orders are created, you can generate:
+
 - **Recipe (Requisition)** — raw material requirements
 - **TIM Form** — Work-in-Progress transfer
 - **WIP Form** — WIP material transfer
 
 ---
 
+
+
 ## Production Info — Yield, Total Input, Total Output
 
 When you select a recipe, the system calculates:
 
-| Field | Formula | Example |
-|-------|---------|---------|
-| **Yield (KG)** | From BOM | 1.22 |
-| **Total Input (KG)** | raw_materials × size | 101.99 × 50 = 5,099.6 |
-| **Total Output (KG)** | Total Input × Yield | 5,099.6 × 1.22 = 6,221.5 |
+
+| Field                 | Formula              | Example                  |
+| --------------------- | -------------------- | ------------------------ |
+| **Yield (KG)**        | From BOM             | 1.22                     |
+| **Total Input (KG)**  | raw_materials × size | 101.99 × 50 = 5,099.6    |
+| **Total Output (KG)** | Total Input × Yield  | 5,099.6 × 1.22 = 6,221.5 |
+
 
 These are read-only — computed automatically from the recipe's BOM data.
 
 ---
 
+
+
 ## Important Rules
 
+
+
 ### Pack Requirements
+
 - Every recipe MUST have at least 1 pack assigned before creating Work Orders
 - If you have 2+ packs, each pack needs a quantity
 - Max packs is 7, or the BOM's actual pack count (whichever is less)
 
+
+
 ### Weight Validation
+
 - Total pack weight (qty × pack weight) must NOT exceed Total Output
 - If it does, you'll see an error telling you to increase the size
 - Validation runs when you change size, number of packs, or pack qtys
+
+
 
 ### Link IDs
 
@@ -246,68 +300,89 @@ Cooker 3, R1 → R-2026-00004  (even "No Cooking" slots have one)
 
 **Why link_id exists:**
 
-| Purpose | How it helps |
-|---------|-------------|
-| Find all WOs for a slot | `WHERE custom_link_id = 'R-2026-07261'` — one query, no matter how many times the recipe changed |
-| Track across recipe changes | Old WOs cancelled, new WOs created — same link_id keeps continuity |
-| Move recipe to another slot | link_id migrates with the recipe |
-| Swap two recipes | Swap link_ids = swap all WOs instantly |
-| Cancel all WOs for a slot | Cancel everything by link_id |
-| Audit trail | traceable from creation through all changes |
+
+| Purpose                     | How it helps                                                                                     |
+| --------------------------- | ------------------------------------------------------------------------------------------------ |
+| Find all WOs for a slot     | `WHERE custom_link_id = 'R-2026-07261'` — one query, no matter how many times the recipe changed |
+| Track across recipe changes | Old WOs cancelled, new WOs created — same link_id keeps continuity                               |
+| Move recipe to another slot | link_id migrates with the recipe                                                                 |
+| Swap two recipes            | Swap link_ids = swap all WOs instantly                                                           |
+| Cancel all WOs for a slot   | Cancel everything by link_id                                                                     |
+| Audit trail                 | traceable from creation through all changes                                                      |
+
 
 **link_id vs WO name:**
+
 - WO name (`MFG-WO-2026-30250`) — changes with every recreate, tells you which document this is
 - link_id (`R-2026-07261`) — stays constant, tells you which SLOT this belongs to
+
+
 
 ### Production Types
 
 When adding or editing a recipe, you can set the **Production Type** in the dropdown. Each type tells the system and the operator how to handle the production.
 
-| Type | When to use | What happens |
-|------|-------------|-------------|
-| **New** | Normal production — making from raw materials | Full MR → PP → WO chain. All WIP sub-assembly WOs created. Operator uses all raw items from BOM. |
-| **Recook** | Recipe was rejected or is a balance — needs recooking | Operator clicks **Recook** button on the Cook WO to add the rejected recipe as an extra input line (via a Material Transfer Stock Entry from scrap/balance warehouse → WIP). Original BOM items stay. |
-| **Reheat** | Entire cooker/kettle/fryer output rejected → sent to chiller/reject warehouse | **System auto-deletes all WIP WOs** after creation — sub-assembly items not needed. Operator uses the rejected recipe itself as input, deletes raw BOM items, adds only 1-2 extras (water, color). |
-| **Repack** | Repackaging existing product without recooking | Same as New — label only. No special behavior. |
+
+| Type       | When to use                                                                   | What happens                                                                                                                                                                                          |
+| ---------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **New**    | Normal production — making from raw materials                                 | Full MR → PP → WO chain. All WIP sub-assembly WOs created. Operator uses all raw items from BOM.                                                                                                      |
+| **Recook** | Recipe was rejected or is a balance — needs recooking                         | Operator clicks **Recook** button on the Cook WO to add the rejected recipe as an extra input line (via a Material Transfer Stock Entry from scrap/balance warehouse → WIP). Original BOM items stay. |
+| **Reheat** | Entire cooker/kettle/fryer output rejected → sent to chiller/reject warehouse | **System auto-deletes all WIP WOs** after creation — sub-assembly items not needed. Operator uses the rejected recipe itself as input, deletes raw BOM items, adds only 1-2 extras (water, color).    |
+| **Repack** | Repackaging existing product without recooking                                | Same as New — label only. No special behavior.                                                                                                                                                        |
+
 
 **How it propagates:** Production Type flows from the DP row → Material Request (`custom_operation_type`) → Production Plan → Work Order. Each WO knows its original type.
 
 **Key difference — Recook vs Reheat:**
 
-| | Recook | Reheat |
-|---|--------|--------|
-| Who triggers | Operator on the WO | Planner on the DP row |
-| Original BOM items | Stay — recook adds extra on top | Operator deletes them |
-| WIP WOs | Not deleted | System auto-deletes (`remove_all_wip_wo()`) |
-| Main input | All BOM items + rejected recipe as extra | Rejected recipe becomes the main input |
+
+|                    | Recook                                   | Reheat                                      |
+| ------------------ | ---------------------------------------- | ------------------------------------------- |
+| Who triggers       | Operator on the WO                       | Planner on the DP row                       |
+| Original BOM items | Stay — recook adds extra on top          | Operator deletes them                       |
+| WIP WOs            | Not deleted                              | System auto-deletes (`remove_all_wip_wo()`) |
+| Main input         | All BOM items + rejected recipe as extra | Rejected recipe becomes the main input      |
+
+
+
 
 ### Work Order Guards
+
 - You CANNOT change recipe if the Cook WO is already completed — the system blocks the save
 - You CANNOT change packs if any Pack WO is already completed — the system blocks the save
 - You CANNOT move or swap a recipe if a background job is still processing
 - You CANNOT submit a week if any row has "Processing" status
 
+
+
 ### Problem Workstations
+
 - If a workstation's status is set to "Problem" in ERPNext, its entire row is locked
 - Red-tinted background, all fields read-only
 - You cannot add, edit, move, or drag recipes on problem workstations
+
+
 
 ### WO Created — What It Really Means
 
 When you click **"Create WO"** (in View mode) or the DP form auto-processes a save:
 
 **What actually gets created per recipe slot:**
-| Document | What | How many |
-|----------|------|----------|
-| Material Request (MR) | Purchase/transfer request for all raw materials | 1 |
-| Production Plan (PP) | Manufacturing plan with BOM explosion | 1 |
-| Cook Work Order | The main cooking work order — produces the recipe item | 1 |
-| Pack Work Orders | Packing work orders for each pack variant | 1 per pack (e.g., 2 packs = 2 PWs) |
-| WIP Work Orders | Sub-assembly work orders for intermediate items (BOM sub-items like CUT ONION, TIM IB, etc.) | 1 per sub-BOM item |
-| Stock Entry (Material Transfer) | Moves raw materials from warehouse to production floor | Per MR item |
-| Stock Entry (Manufacture) | Receives finished goods back into warehouse | 1 per WO |
+
+
+| Document                        | What                                                                                         | How many                           |
+| ------------------------------- | -------------------------------------------------------------------------------------------- | ---------------------------------- |
+| Material Request (MR)           | Purchase/transfer request for all raw materials                                              | 1                                  |
+| Production Plan (PP)            | Manufacturing plan with BOM explosion                                                        | 1                                  |
+| Cook Work Order                 | The main cooking work order — produces the recipe item                                       | 1                                  |
+| Pack Work Orders                | Packing work orders for each pack variant                                                    | 1 per pack (e.g., 2 packs = 2 PWs) |
+| WIP Work Orders                 | Sub-assembly work orders for intermediate items (BOM sub-items like CUT ONION, TIM IB, etc.) | 1 per sub-BOM item                 |
+| Stock Entry (Material Transfer) | Moves raw materials from warehouse to production floor                                       | Per MR item                        |
+| Stock Entry (Manufacture)       | Receives finished goods back into warehouse                                                  | 1 per WO                           |
+
 
 **What happens to the DP after Create WO:**
+
 - All `produ_status` values cleared (rows back to clean state)
 - `rq_status` shows "Done" on processed rows
 - WO name badge appears on the day header (e.g., "Created WO (001)")
@@ -321,20 +396,24 @@ When you click **"Create WO"** (in View mode) or the DP form auto-processes a sa
 **When to use:** You need more than the default 3 rounds for a workstation.
 
 **How it works:**
+
 1. Click **"Add Extra Rounds"** button (visible only in Edit mode)
 2. Select: Day (Mon-Sat), Workstation, Total Rounds (e.g., 5)
 3. System adds empty "No Cooking" slots for rounds 4 and 5
 4. New slots appear only for that workstation — other workstations show "—"
 
 **Rules:**
-| Rule | Detail |
-|------|--------|
-| Minimum | Must be greater than default rounds (usually 3) |
-| Maximum | Cannot exceed template max (usually 99) |
-| Duplicate | If a round already exists, it's skipped |
-| Visibility | New columns show "+" only on the workstation you added them to — others show "—" |
-| Day colors | Dynamic — column tints adapt automatically to new rounds |
-| Template | Rounds config comes from the `start and delete items` template (`default_rounds`, `max_rounds`) |
+
+
+| Rule       | Detail                                                                                          |
+| ---------- | ----------------------------------------------------------------------------------------------- |
+| Minimum    | Must be greater than default rounds (usually 3)                                                 |
+| Maximum    | Cannot exceed template max (usually 99)                                                         |
+| Duplicate  | If a round already exists, it's skipped                                                         |
+| Visibility | New columns show "+" only on the workstation you added them to — others show "—"                |
+| Day colors | Dynamic — column tints adapt automatically to new rounds                                        |
+| Template   | Rounds config comes from the `start and delete items` template (`default_rounds`, `max_rounds`) |
+
 
 **Where to add:** Both in WPD page ("Add Extra Rounds" button in Edit mode) and in the DP form (Extras dropdown → Add Extra Round).
 
@@ -343,40 +422,53 @@ When you click **"Create WO"** (in View mode) or the DP form auto-processes a sa
 Every action you take on the production schedule is logged for auditing.
 
 **What gets logged:**
-| Action | Example Log Entry |
-|--------|-------------------|
-| Edit | "Size changed from 30 to 50" |
-| Add Recipe | "Recipe IB added to Cooker 3 / Round 1" |
-| Cancel | "Cancelled Recipe SS" |
-| Swap | "Swapped Recipe IB with Recipe CFN" |
-| Move | "Moved Recipe RB to Cooker 2 / Round 3" |
-| Create WO | "Work Orders created for 2027-01-18" |
-| Submit Week | "Week 2027-01-13 submitted — 5 DP(s)" |
-| Add Rounds | "Added rounds 4, 5 for Cooker 1" |
+
+
+| Action      | Example Log Entry                       |
+| ----------- | --------------------------------------- |
+| Edit        | "Size changed from 30 to 50"            |
+| Add Recipe  | "Recipe IB added to Cooker 3 / Round 1" |
+| Cancel      | "Cancelled Recipe SS"                   |
+| Swap        | "Swapped Recipe IB with Recipe CFN"     |
+| Move        | "Moved Recipe RB to Cooker 2 / Round 3" |
+| Create WO   | "Work Orders created for 2027-01-18"    |
+| Submit Week | "Week 2027-01-13 submitted — 5 DP(s)"   |
+| Add Rounds  | "Added rounds 4, 5 for Cooker 1"        |
+
 
 **How to access:**
+
 - WPD page → open the **Change Log** panel (bottom of the page)
 - Or go to `/production-schedule-change-log` page — select a date, click Load Changes
 - Filter by action type (Edit, Swap, Add Recipe, Cancel, Add Rounds, etc.)
 - Filter by workstation
 
 **What's tracked per entry:**
+
 - Who made the change
 - When (date + time)
 - What changed (old value → new value)
 - Which workstation and round
 - Which DP was affected
 
+
+
 ### No Cooking
+
 - An empty slot placeholder. Every workstation×round combination always has a row.
 - Choose "New Schedule" from the status dropdown to add a recipe to a No Cooking slot
 
+
+
 ### View Mode
+
 - In View mode, clicking a recipe opens a **read-only** dialog
 - Yield, Total Input, and Total Output values are loaded from BOM data
 - No editing is possible
 
 ---
+
+
 
 ## Frequently Asked Questions
 
@@ -409,14 +501,19 @@ A: That workstation doesn't have that round in its DP. Use "Add Extra Rounds" to
 
 ---
 
+
+
 ## Color Coding
 
-| Badge | Meaning |
-|-------|---------|
-| No badge | Normal — no background activity |
-| Processing (orange) | Background job running |
-| Done (green) | Background job completed |
-| Failed (red) | Background job failed — click for error |
-| Red-tinted row | Problem workstation — all editing locked |
-| "+" on empty slot | Clickable — add a recipe |
-| "—" on empty slot | Not available — round doesn't exist for this workstation |
+
+| Badge               | Meaning                                                  |
+| ------------------- | -------------------------------------------------------- |
+| No badge            | Normal — no background activity                          |
+| Processing (orange) | Background job running                                   |
+| Done (green)        | Background job completed                                 |
+| Failed (red)        | Background job failed — click for error                  |
+| Red-tinted row      | Problem workstation — all editing locked                 |
+| "+" on empty slot   | Clickable — add a recipe                                 |
+| "—" on empty slot   | Not available — round doesn't exist for this workstation |
+
+

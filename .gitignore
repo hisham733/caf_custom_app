@@ -6,4 +6,24 @@
 tags
 node_modules
 __pycache__
-# caf/caf/page/
+
+# AI assistant (not committed)
+caf/caf/ai_assistant/
+caf/caf/doctype/ai_assistant_audit_log/
+caf/caf/doctype/ai_chat_conversation/
+caf/caf/doctype/ai_chat_message/
+caf/caf/page/ai_assistant/
+caf/public/js/ai_assistant.js
+caf/public/js/ai_assistant_widget.js
+
+# Workflow / design docs (not committed)
+caf/caf/doctype/daily_production/workflow/*.md
+caf/caf/doctype/daily_production/workflow/*.mmd
+caf/caf/page/production_schedule/workflow/
+caf/caf/page/production_schedule/CHANGE_SLOT_FLOW.md
+caf/caf/page/production_schedule/UI_TEST_PLAN.md
+
+# Test scripts & local assets (not committed)
+caf/caf/utils/test_waha.py
+Git-Workflow-Guide.pdf
+caf/caf/utils/WhatsApp*.jpeg

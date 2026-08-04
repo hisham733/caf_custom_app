@@ -1,0 +1,87 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-08-04 12:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "waha_section",
+  "waha_enabled",
+  "waha_base_url",
+  "waha_chat_ids",
+  "waha_api_key",
+  "dp_whatsapp_section",
+  "dp_whatsapp_template"
+ ],
+ "fields": [
+  {
+   "fieldname": "waha_section",
+   "fieldtype": "Section Break",
+   "label": "WhatsApp (WAHA)"
+  },
+  {
+   "default": "0",
+   "fieldname": "waha_enabled",
+   "fieldtype": "Check",
+   "label": "WhatsApp Enabled"
+  },
+  {
+   "default": "http://localhost:3000",
+   "fieldname": "waha_base_url",
+   "fieldtype": "Data",
+   "label": "WhatsApp Base URL"
+  },
+  {
+   "description": "One WhatsApp chat ID per line.",
+   "fieldname": "waha_chat_ids",
+   "fieldtype": "Small Text",
+   "label": "WhatsApp Chat IDs"
+  },
+  {
+   "fieldname": "waha_api_key",
+   "fieldtype": "Password",
+   "label": "WhatsApp API Key"
+  },
+  {
+   "fieldname": "dp_whatsapp_section",
+   "fieldtype": "Section Break",
+   "label": "Daily Production WhatsApp"
+  },
+  {
+   "default": "New",
+   "description": "Layout used for the DP schedule image sent via WhatsApp. New = no Recipe column (Product then Size); Old = Recipe / Size / Product.",
+   "fieldname": "dp_whatsapp_template",
+   "fieldtype": "Select",
+   "label": "DP WhatsApp Template",
+   "options": "New\nOld"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-08-04 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Caf",
+ "name": "Caf Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

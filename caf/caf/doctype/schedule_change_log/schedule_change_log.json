@@ -49,7 +49,7 @@
    "fieldname": "action_type",
    "fieldtype": "Select",
    "label": "Action",
-   "options": "Move\nSwap\nEdit\nAdd Recipe\nCancel\nCreate WO\nSubmit Week",
+   "options": "Move\nSwap\nEdit\nAdd Recipe\nCancel\nClear\nCreate WO\nSubmit Week",
    "reqd": 1
   },
   {

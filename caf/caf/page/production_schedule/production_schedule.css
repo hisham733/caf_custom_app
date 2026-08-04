@@ -784,3 +784,34 @@
 	text-transform: uppercase;
 	letter-spacing: 0.3px;
 }
+
+/* ── paste mode (copy → click empty slot) ────────────────────── */
+.schedule-board.paste-mode .round-slot-empty.addable {
+	border-color: #4caf50;
+	border-style: dashed;
+	background: rgba(76, 175, 80, 0.08);
+	color: #4caf50;
+	box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.15);
+	cursor: copy;
+}
+
+.schedule-board.paste-mode .round-slot-empty.addable:hover {
+	background: rgba(76, 175, 80, 0.18);
+	color: #15803d;
+}
+
+.schedule-board.paste-mode .round-slot-empty:not(.addable) {
+	opacity: 0.35;
+}
+
+.schedule-board.paste-mode .schedule-item {
+	opacity: 0.75;
+}
+
+/* ── dialog slot action buttons (Copy / Clear side by side) ──── */
+.slot-action-btns {
+	display: flex;
+	gap: 6px;
+	margin-bottom: 4px;
+}
+
