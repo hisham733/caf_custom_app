@@ -1,0 +1,29 @@
+[
+ {
+  "docstatus": 0,
+  "doctype": "Workflow State",
+  "icon": "",
+  "modified": "2026-08-05 08:48:11.933500",
+  "name": "Draft",
+  "style": "",
+  "workflow_state_name": "Draft"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow State",
+  "icon": "",
+  "modified": "2026-08-05 08:48:12.057489",
+  "name": "Pending HR Review",
+  "style": "Warning",
+  "workflow_state_name": "Pending HR Review"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Workflow State",
+  "icon": "",
+  "modified": "2026-08-05 08:48:12.062666",
+  "name": "Completed",
+  "style": "Success",
+  "workflow_state_name": "Completed"
+ }
+]

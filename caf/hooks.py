@@ -587,4 +587,28 @@ fixtures = [
             ]
         ],
     },
+    # The Workflow and its supporting records (D58/D72, section 9.2). These are
+    # DATABASE records, not code - `bench migrate` does not carry them, and a
+    # missing Workflow raises NO error: Frappe simply applies none, so
+    # appraisals submit straight through with no HR review and nobody is told.
+    # Shipping them as fixtures means a fresh site gets the workflow
+    # automatically; the deploy script still asserts it afterwards.
+    #
+    # ⚠️ DRIFT WARNING for the admin guide: editing the workflow live is
+    # legitimate and is the whole point of the engine (e.g. adding an
+    # accounts-review step). But whoever does it must re-export this fixture, or
+    # git and reality diverge - which is exactly how CAF's existing Leave
+    # Application workflow came to live only in the site database (D71).
+    {
+        "dt": "Workflow",
+        "filters": [["name", "in", ["CAF Appraisal Workflow"]]],
+    },
+    {
+        "dt": "Workflow State",
+        "filters": [["name", "in", ["Draft", "Pending HR Review", "Completed"]]],
+    },
+    {
+        "dt": "Workflow Action Master",
+        "filters": [["name", "in", ["Submit for Review", "Approve", "Reject"]]],
+    },
 ]
