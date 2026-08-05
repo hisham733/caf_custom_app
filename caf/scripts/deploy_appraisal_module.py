@@ -7,9 +7,9 @@ Purpose : Applies everything this product needs that does NOT live in git.
           master rows, the Appraisal Template, the HR Settings values, or any
           Employee data. Build it all on a laptop and none of that reaches
           production by itself.
-Doctype : KRA, Appraisal Template, HR Settings, Workflow, Workflow State,
-          Workflow Action Master (creates); Employee (reports only)
-Plan ref: CAF_appraisal_implementation_plan.md section 9, D58/D72/D83/D86/D87
+Doctype : KRA, Appraisal Template, HR Settings, Global Defaults, Workflow,
+          Workflow State, Workflow Action Master (creates); Employee (reports only)
+Plan ref: CAF_appraisal_implementation_plan.md section 9, D58/D72/D83/D86/D87/D92
 
 Run:
     # look first, change nothing
@@ -274,6 +274,48 @@ def deploy_hr_settings(d):
         d.record(ALREADY_OK, "%d HR Settings value(s) already correct" % len(same), same)
 
 
+def deploy_global_default_company(d):
+    """D92 - make `company` an actual default, not just a Global Defaults field.
+
+    Global Defaults.default_company was already "CAF" on dev, but the
+    tabDefaultValue row it is supposed to write was missing, so
+    frappe.defaults.get_default("company") returned None. Two visible symptoms:
+    the Appraisal form opened with Company blank and made the supervisor pick a
+    value from a list of one, and the hrms organisational chart - whose company
+    filter defaults to exactly that key - refused to draw until you chose CAF.
+
+    Re-saving the Single is what populates it: GlobalDefaults.on_update() loops
+    its keydict into frappe.db.set_default(). Nothing here sets the value, so
+    this is safe on a multi-company site: it only publishes whatever
+    default_company already says.
+    """
+    default_company = frappe.db.get_single_value("Global Defaults", "default_company")
+    if not default_company:
+        d.record(
+            NEEDS_HUMAN,
+            "Global Defaults has no default_company - set it before go-live",
+            ["Appraisal Company and the org chart will both keep asking without it"],
+        )
+        return
+
+    # frappe.defaults has no get_default() - that name only exists on the JS
+    # side. The Python equivalent is frappe.db.get_default (or
+    # frappe.defaults.get_global_default, which is the same __default row).
+    if frappe.db.get_default("company") == default_company:
+        d.record(ALREADY_OK, "default company published as %r" % default_company)
+        return
+
+    d.record(APPLIED, "published default company %r" % default_company)
+    if d.dry_run:
+        return
+
+    # on_update() does the work; saving unchanged is enough to trigger it.
+    frappe.get_doc("Global Defaults").save(ignore_permissions=True)
+    got = frappe.db.get_default("company")
+    if got != default_company:
+        frappe.throw("default company is %r, expected %r" % (got, default_company))
+
+
 def deploy_workflow(d):
     """D72 - the one item whose absence produces no error at all."""
     for name, style in WORKFLOW_STATES:
@@ -463,6 +505,7 @@ def run(dry_run=False):
     deploy_kras(d)
     deploy_template(d)
     deploy_hr_settings(d)
+    deploy_global_default_company(d)
     deploy_workflow(d)
     collect_human_work(d)
 
