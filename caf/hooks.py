@@ -15,6 +15,9 @@ override_doctype_class = {
     "Quality Review": "caf.caf.overrides.quality_review.CustomQualityReview",
     "BOM": "caf.caf.overrides.bom.CustomBOM",
     "Purchase Receipt": "caf.caf.overrides.purchase_receipt.CustomPurchaseReceipt",
+    # CAF appraisal (2026-08-05)
+    "Appraisal": "caf.caf.overrides.appraisal.CustomAppraisal",
+    "Employee Performance Feedback": "caf.caf.overrides.employee_performance_feedback.CustomEmployeePerformanceFeedback",
 }
 doctype_js = {
     "Job Card": "public/js/job_card.js",
@@ -26,7 +29,9 @@ doctype_js = {
     "BOM":"public/js/bom.js",
     "Purchase Receipt":"public/js/purchase_receipt.js",
     "Material Request":"public/js/material_request.js",
-    "Task":"public/js/task.js"
+    "Task":"public/js/task.js",
+    # CAF appraisal (2026-08-05)
+    "Appraisal": "public/js/appraisal.js",
 }
 override_whitelisted_methods = {
     "erpnext.manufacturing.doctype.production_plan.production_plan.combine_subassembly_items": "caf.caf.overrides.production_plan.combine_subassembly_items",
@@ -67,7 +72,13 @@ app_include_js = ["/assets/caf/js/ai_assistant_widget.js"]
 
 # include js in doctype views
 # doctype_js = {"doctype" : "public/js/doctype.js"}
-doctype_list_js = {"Material Request" : "public/js/material_request_list.js"}
+doctype_list_js = {
+    "Material Request" : "public/js/material_request_list.js",
+    # Hosts the "Create Monthly Cycles for Year" button (D39). Creating 12
+    # documents is an action, not a setting, and the list view is where HR
+    # already goes to look at cycles.
+    "Appraisal Cycle": "public/js/appraisal_cycle_list.js",
+}
 page_js = {"ai-assistant" : "public/js/ai_assistant.js"}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
@@ -472,7 +483,30 @@ override_doctype_dashboards = {
 doc_events = {
     "Stock Entry": {
         "before_submit": "caf.caf.overrides.stock_entry.sync_bundle_with_qty"
-    }
+    },
+    # CAF appraisal (2026-08-05)
+    "Employee": {
+        # D15/D51 - reports_to is what decides who may appraise whom, so it is
+        # mandatory except for the org roots
+        "validate": "caf.caf.overrides.employee.ensure_reports_to"
+    },
+    "HR Settings": {
+        # D69 - reject leave codes that do not exist in live Finger Log data
+        "validate": "caf.caf.overrides.hr_settings.validate_leave_codes"
+    },
+}
+
+# CAF appraisal permission layer (D18/D55/D56). Both are module-level functions,
+# NOT methods on the controller class: frappe/model/db_query.py:867 and
+# frappe/permissions.py:450 call them by dotted path.
+#   permission_query_conditions -> read layer / list filtering (the subtree)
+#   has_permission              -> write layer / per-document check
+permission_query_conditions = {
+    "Appraisal": "caf.caf.overrides.appraisal.get_permission_query_conditions",
+}
+
+has_permission = {
+    "Appraisal": "caf.caf.overrides.appraisal.has_permission",
 }
 # User Data Protection
 # --------------------
