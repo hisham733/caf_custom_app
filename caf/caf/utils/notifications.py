@@ -55,6 +55,56 @@ def _get_config():
     }
 
 
+@frappe.whitelist()
+def send_test_whatsapp(base_url=None, chat_ids=None, api_key=""):
+    """Send a test WhatsApp text message using the given config values.
+
+    Used by the Caf Settings "Test WhatsApp" button — tests exactly the
+    values typed in the form (before saving). Bypasses the 'enabled'
+    flag so the connection can be verified first. Uses a quick single
+    attempt so the button does not hang on retries.
+    """
+    if not base_url:
+        return {"success": False, "message": "WhatsApp Base URL is required."}
+
+    ids = [c.strip() for c in (chat_ids or "").splitlines() if c.strip()]
+    if not ids:
+        return {"success": False, "message": "At least one WhatsApp Chat ID is required."}
+
+    # Frappe masks Password fields on a loaded doc (e.g. "***"), so a
+    # masked/empty key from the client means "use the saved one".
+    api_key = (api_key or "").strip()
+    if not api_key or api_key.strip("*") == "":
+        try:
+            api_key = frappe.get_single("Caf Settings").get_password("waha_api_key") or ""
+        except Exception:
+            api_key = ""
+
+    config = {
+        "enabled": True,
+        "base_url": base_url,
+        "chat_ids": ids,
+        "api_key": api_key or "",
+    }
+
+    text = "Test from CAF Settings"
+    ok = 0
+    errors = []
+    for chat_id in ids:
+        res = _send_waha(chat_id, text, config, quick=True)
+        if res is True:
+            ok += 1
+        else:
+            errors.append(f"{chat_id}: {res}")
+
+    if errors:
+        msg = (f"Sent to {ok} chat(s), but failed for:\n" if ok else "Failed to send the test message:\n")
+        msg += "\n".join(errors)
+        return {"success": False, "message": msg}
+
+    return {"success": True, "message": f"Test sent to {ok} chat(s)."}
+
+
 def _get_dp_whatsapp_template():
     """Return the DP WhatsApp image template from Caf Settings.
 
@@ -602,8 +652,13 @@ def _text_size(draw, text, font):
 
 # ── WAHA senders ───────────────────────────────────────────────────────────────
 
-def _send_waha(chat_id, text, config):
-    """Send a text message via WAHA REST API. Max 5 attempts, then stop."""
+def _send_waha(chat_id, text, config, quick=False):
+    """Send a text message via WAHA REST API. Max 5 attempts, then stop.
+
+    With quick=True, uses a single attempt (no retries) and returns the
+    error string on failure instead of logging — used by the Caf Settings
+    test button so the real error can be shown to the user.
+    """
     import requests
     from time import sleep
 
@@ -617,22 +672,27 @@ def _send_waha(chat_id, text, config):
     if config.get("api_key"):
         headers["X-Api-Key"] = config["api_key"]
 
+    attempts = 1 if quick else MAX_SEND_ATTEMPTS
     last_error = None
-    for attempt in range(1, MAX_SEND_ATTEMPTS + 1):
+    for attempt in range(1, attempts + 1):
         try:
             resp = requests.post(url, json=payload, headers=headers, timeout=SEND_TIMEOUT)
             if resp.ok:
-                return
+                return True
             last_error = f"HTTP {resp.status_code}: {resp.text[:200]}"
         except requests.RequestException as e:
             last_error = repr(e)
-        if attempt < MAX_SEND_ATTEMPTS:
+        if attempt < attempts:
             sleep(2)
+
+    if quick:
+        return last_error or "Unknown error"
 
     frappe.log_error(
         title="WAHA connection failed",
         message=f"{last_error or 'unknown error'}\n\n{frappe.get_traceback()}",
     )
+    return False
 
 
 def _send_waha_image(chat_id, b64_image, caption, config):

@@ -11,6 +11,7 @@
   "waha_base_url",
   "waha_chat_ids",
   "waha_api_key",
+  "test_waha",
   "dp_whatsapp_section",
   "dp_whatsapp_template"
  ],
@@ -42,6 +43,11 @@
    "fieldname": "waha_api_key",
    "fieldtype": "Password",
    "label": "WhatsApp API Key"
+  },
+  {
+   "fieldname": "test_waha",
+   "fieldtype": "Button",
+   "label": "Test WhatsApp"
   },
   {
    "fieldname": "dp_whatsapp_section",
