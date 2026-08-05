@@ -515,7 +515,33 @@ doc_events = {
 after_migrate = ["caf.setup.add_manufacturing_fields"]
 
 # Fixtures
+# Custom DocPerm added 2026-08-05 for the CAF appraisal project (plan D33/D41/D40/D43/D66).
+# Permission changes live in Custom DocPerm records, not code, so without this
+# they exist on the dev site only and never reach production. The filter is
+# deliberately narrow - only the doctypes this project touches. Note that
+# touching one permission converts a doctype's WHOLE grid to Custom DocPerm,
+# so the export captures the stock rows too, which is what makes the site's
+# permission state reproducible.
+# No Role fixture: D55 dropped the Appraisal Supervisor role, so this project
+# creates no role at all.
 fixtures = [
     {"dt": "Property Setter"},
     {"dt": "Custom Field"},
+    {
+        "dt": "Custom DocPerm",
+        "filters": [
+            [
+                "parent",
+                "in",
+                [
+                    "Appraisal",
+                    "Appraisal Cycle",
+                    "Employee Performance Feedback",
+                    "Finger Log",
+                    "HR Settings",
+                    "KRA",
+                ],
+            ]
+        ],
+    },
 ]
