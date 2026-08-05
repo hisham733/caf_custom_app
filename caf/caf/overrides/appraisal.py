@@ -326,6 +326,54 @@ def is_hr_manager(user=None):
 
 
 @frappe.whitelist()
+def preview_auto_fill(employee, appraisal_cycle):
+    """Compute the three cells WITHOUT saving anything (D3, convenience trigger).
+
+    The authoritative recomputation lives in CustomAppraisal.validate(), so the
+    stored document always matches the data at save time. This exists so the
+    supervisor can SEE the figures before committing to them - which matters
+    more than it sounds, because D40 removed their direct read on Finger Log, so
+    this form is the only place they ever see the numbers.
+
+    Returns cell strings keyed by KRA name, ready to drop into the grid.
+    """
+    if not employee or not appraisal_cycle:
+        return {}
+
+    if not is_hr_manager() and not may_appraise(employee):
+        frappe.throw(
+            _("You may only view appraisal data for your own direct reports."),
+            frappe.PermissionError,
+        )
+
+    cycle = frappe.db.get_value(
+        "Appraisal Cycle", appraisal_cycle, ["start_date", "end_date"], as_dict=True
+    )
+    if not cycle:
+        return {}
+
+    # BR6/T-F3 - refuse to compute a month that has not finished. A partial month
+    # shown as if it were final is worse than showing nothing.
+    if getdate(nowdate()) <= getdate(cycle.end_date):
+        return {
+            "month_ended": False,
+            "end_date": str(cycle.end_date),
+            "cells": {},
+        }
+
+    return {
+        "month_ended": True,
+        "end_date": str(cycle.end_date),
+        "cells": {
+            KRA_ATTENDANCE: get_upl_dates(employee, cycle.start_date, cycle.end_date),
+            KRA_PUNCTUALITY: get_late_dates(employee, cycle.start_date, cycle.end_date),
+            KRA_OT_HOURS: format_ot_cell(get_ot_hours(employee, cycle.start_date, cycle.end_date)),
+        },
+        "working_days": get_working_days(employee, cycle.start_date, cycle.end_date),
+    }
+
+
+@frappe.whitelist()
 def get_direct_reports(employee=None):
     """Employees reporting directly to `employee`. Backs the JS gate (D57) and
     the Q1 employee-field filter."""

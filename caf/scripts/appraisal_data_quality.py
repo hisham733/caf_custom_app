@@ -293,6 +293,58 @@ def check_final_ot(r):
 # ---------------------------------------------------------------------------
 
 
+def check_impossible_times(r):
+    """Finger Log rows whose Time fields exceed 24:00:00 cannot be saved AT ALL.
+
+    ⚠️ THE DATA IS CORRECT. BR13: a CAF working period may legitimately exceed
+    24 hours - a shift running past midnight is recorded as elapsed time from
+    the start of the work date, not wrapped to a clock face. This check does NOT
+    ask anyone to "fix" those values. The limitation is in the framework.
+
+    MariaDB's TIME type legally holds up to 838:59:59, so a value like
+    28:40:00 stores without complaint. But Frappe reads it back as a Python
+    timedelta - `1 day, 4:40:00.800000` - and writing that string back is
+    rejected:
+
+        pymysql.err.OperationalError (1292): Incorrect time value:
+        '1 day, 4:40:00.800000' for column tabFinger Log.time_in
+
+    So the row is permanently unsaveable and unsubmittable, by anyone, with an
+    HTTP 500 rather than a helpful message. Found 2026-08-05 when a test probe
+    happened to pick one.
+
+    Consequence for appraisals: these logs stay at docstatus 0 forever, and all
+    three auto-filled cells count only SUBMITTED logs - so the attendance,
+    lateness and overtime they represent are silently missing.
+    """
+    rows = frappe.db.sql(
+        """
+        SELECT name, employee, work_date, time_in, `out`
+        FROM `tabFinger Log`
+        WHERE time_in >= '24:00:00' OR `out` >= '24:00:00'
+           OR `break` >= '24:00:00' OR resume >= '24:00:00'
+        ORDER BY work_date
+        """,
+        as_dict=True,
+    )
+    if rows:
+        r.add(
+            ERROR,
+            "impossible-clock-times",
+            "%d Finger Log row(s) record a period of 24:00:00 or more. The DATA IS VALID "
+            "(BR13 - a shift past midnight is elapsed time, not clock time), but Frappe "
+            "cannot write a Time beyond 24h back to MariaDB, so these rows CANNOT be saved "
+            "or submitted by anyone - any attempt returns HTTP 500. They therefore never "
+            "reach docstatus 1, and the attendance/lateness/overtime they represent is "
+            "silently absent from every appraisal. Needs a schema decision, not a data fix "
+            "(D88)" % len(rows),
+            ["%s %s %s in=%s out=%s" % (x.name, x.employee, x.work_date, x.time_in, x.out)
+             for x in rows],
+        )
+    else:
+        r.ok("impossible-clock-times", "no Finger Log row has a time beyond 24:00:00")
+
+
 def check_appraisals_for_org_roots(r):
     """D86 - org roots are not appraised. Until 2026-08-05 this was only a
     filter on the cycle appraisee list, so anything created by hand slipped
@@ -404,6 +456,7 @@ CHECKS = [
     check_holiday_lists,
     check_leave_codes,
     check_final_ot,
+    check_impossible_times,
     check_appraisals_for_org_roots,
     check_workflow,
     check_templates,

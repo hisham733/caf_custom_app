@@ -157,12 +157,56 @@ function caf_focus_first_empty_row(frm) {
 }
 
 // --- convenience preview (D3) ----------------------------------------------
-// The authoritative recomputation is server-side in validate(). This only lets
-// the supervisor SEE the values before saving.
+// The AUTHORITATIVE recomputation is server-side in validate(), so the stored
+// document always matches the data at save time. This only lets the supervisor
+// SEE the figures before committing to them - which matters more than it
+// sounds: D40 removed their direct read on Finger Log, so this form is the only
+// place they ever see these numbers.
 function caf_preview_auto_fill(frm) {
-	if (frm.is_new() || !frm.doc.employee || !frm.doc.appraisal_cycle) return;
+	if (!frm.doc.employee || !frm.doc.appraisal_cycle) return;
 	if (frm.doc.docstatus !== 0) return;
-	frm.dirty();
+
+	const rows = frm.doc.appraisal_kra || [];
+	if (!rows.length) return; // grid is built server-side on first save
+
+	frappe.call({
+		method: "caf.caf.overrides.appraisal.preview_auto_fill",
+		args: { employee: frm.doc.employee, appraisal_cycle: frm.doc.appraisal_cycle },
+	}).then((r) => {
+		const res = (r && r.message) || {};
+
+		if (res.month_ended === false) {
+			frappe.show_alert({
+				message: __("{0} has not ended yet — attendance and overtime will be filled in once it has.", [
+					frm.doc.appraisal_cycle,
+				]),
+				indicator: "blue",
+			});
+			return;
+		}
+
+		const cells = res.cells || {};
+		let touched = false;
+		(frm.doc.appraisal_kra || []).forEach((row) => {
+			if (!(row.kra in cells)) return;
+			// never overwrite something the supervisor typed
+			if ((row.caf_date_cell || "").trim()) return;
+			frappe.model.set_value(row.doctype, row.name, "caf_date_cell", cells[row.kra]);
+			touched = true;
+			if (row.kra === "Attendance" && !(row.caf_remarks || "").trim() && res.working_days) {
+				frappe.model.set_value(row.doctype, row.name, "caf_remarks",
+					__("{0} working days", [res.working_days]));
+			}
+		});
+
+		if (touched) {
+			frm.refresh_field("appraisal_kra");
+			frappe.show_alert({
+				message: __("Attendance, punctuality and overtime filled in from Finger Log — not saved yet."),
+				indicator: "green",
+			});
+		}
+	});
 }
 
 // --- D60/D61/D62: the CAF feedback widget -----------------------------------

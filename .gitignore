@@ -7,3 +7,7 @@ tags
 node_modules
 __pycache__
 # caf/caf/page/
+
+# Appraisal test-suite credentials - per-role API tokens, never committed.
+# Copy credentials.example.ps1 to credentials.ps1 and fill it in locally.
+caf/tests/appraisal/credentials.ps1
