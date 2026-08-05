@@ -48,16 +48,28 @@ from frappe.custom.doctype.property_setter.property_setter import make_property_
 SCORE_COLUMNS = ("per_weightage", "goal_completion", "goal_score")
 
 # The CAF text columns, in the order they should read across the grid, with the
-# grid width (out of 10) each one gets. `kra` keeps its stock 2 columns, leaving
-# 8 to share.
+# grid width each one gets.
+#
+# THE BUDGET IS 10 UNITS IN TOTAL, AND IT IS A HARD LIMIT. Frappe's
+# Grid.setup_visible_columns() (apps/frappe/.../form/grid.js:974) starts
+# total_colsize at 1 and does `if (total_colsize > 11) return false;` - it does
+# not shrink the columns to fit, it ABANDONS the whole column layout. Go one unit
+# over and the grid renders wrong, not merely cramped.
+#
+# `kra` keeps its stock 2, leaving 8 to share, and the four below use all 8.
 CAF_COLUMNS = (
     ("caf_date_cell", 1),
     ("caf_description", 3),
     ("caf_root_cause", 2),
     ("caf_corrective_action", 2),
-    # Remarks is populated by the auto-fill (e.g. "23 working days") and is
-    # readable in the row form; leaving it out of the list view keeps the
-    # editable columns wide enough to type in.
+    # Remarks is left OUT of the list view because of that budget, not because it
+    # does not matter - there is no eleventh unit to give it. It is auto-filled
+    # (e.g. "23 working days") rather than typed, and it is fully visible in the
+    # row form, so it is the cheapest of the five to move off the grid.
+    #
+    # To show it instead, narrow Description to 2 and give Remarks 1 - the total
+    # stays at 8. That is the whole change; nothing in appraisal.js depends on
+    # which of these are columns.
     ("caf_remarks", 0),
 )
 
