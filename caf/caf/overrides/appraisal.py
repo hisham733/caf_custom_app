@@ -497,6 +497,7 @@ class CustomAppraisal(Appraisal):
         self.validate_duplicate()
 
         # --- CAF ---
+        self.validate_not_org_root()
         self.validate_state_edit_permission()
         self.validate_supervisor()
         self.set_reported_by()
@@ -552,6 +553,37 @@ class CustomAppraisal(Appraisal):
                 frappe.bold(self.employee_name or self.employee)
             ),
             frappe.PermissionError,
+        )
+
+    def validate_not_org_root(self):
+        """D52 - org roots are not appraised. Enforce it on the DOCUMENT.
+
+        Found by the user, 2026-08-05: logged in as Administrator they created
+        an Appraisal for HR-EMP-00001 (Director A) against cycle 2026-12 and it
+        saved cleanly.
+
+        D52 was only ever implemented as a FILTER - set_cycle_employees drops
+        org roots from a cycle's appraisee list. Nothing stopped anyone creating
+        one directly, so the exclusion held for the bulk path and quietly failed
+        for the manual one. Administrator also bypasses has_permission, and
+        may_appraise() returns True for any HR Manager, so neither existing gate
+        applied.
+
+        This runs in validate(), which nothing bypasses - not
+        ignore_permissions, not Administrator (D56's reasoning, applied here).
+        """
+        if not self.employee:
+            return
+        if not frappe.db.get_value("Employee", self.employee, "caf_reports_to_nobody"):
+            return
+
+        frappe.throw(
+            _(
+                "{0} is an organisation root and is not appraised. Nobody supervises them, "
+                "so there is no one to complete this appraisal - and counting them would keep "
+                "the cycle's completion figure permanently short."
+            ).format(frappe.bold(self.employee_name or self.employee)),
+            title=_("Organisation root"),
         )
 
     def validate_state_edit_permission(self):

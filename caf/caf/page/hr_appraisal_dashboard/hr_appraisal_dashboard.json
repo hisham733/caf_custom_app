@@ -17,6 +17,9 @@
   },
   {
    "role": "Employee"
+  },
+  {
+   "role": "System Manager"
   }
  ],
  "script": null,
