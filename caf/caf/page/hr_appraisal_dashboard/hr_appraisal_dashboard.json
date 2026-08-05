@@ -1,0 +1,27 @@
+{
+ "content": null,
+ "creation": "2026-08-05 00:00:00",
+ "docstatus": 0,
+ "doctype": "Page",
+ "icon": "fa fa-check-square-o",
+ "idx": 0,
+ "modified": "2026-08-05 00:00:00",
+ "modified_by": "Administrator",
+ "module": "Caf",
+ "name": "hr-appraisal-dashboard",
+ "owner": "Administrator",
+ "page_name": "hr-appraisal-dashboard",
+ "roles": [
+  {
+   "role": "HR Manager"
+  },
+  {
+   "role": "Employee"
+  }
+ ],
+ "script": null,
+ "standard": "Yes",
+ "style": null,
+ "system_page": 0,
+ "title": "Appraisal Dashboard"
+}

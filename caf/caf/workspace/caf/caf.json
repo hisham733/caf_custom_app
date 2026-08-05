@@ -1,6 +1,6 @@
 {
  "charts": [],
- "content": "[{\"id\":\"a-ye929j6T\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">CAF</span>\",\"col\":12}},{\"id\":\"gxIM-tFDrP\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Dashboard \",\"col\":12}},{\"id\":\"fW9_q_voLX\",\"type\":\"card\",\"data\":{\"card_name\":\"OT Finger Log\",\"col\":3}},{\"id\":\"9e6YTjVdro\",\"type\":\"card\",\"data\":{\"card_name\":\"Planner\",\"col\":3}},{\"id\":\"DQpknSTbzE\",\"type\":\"card\",\"data\":{\"card_name\":\"Operator\",\"col\":3}},{\"id\":\"V68z7nlH5p\",\"type\":\"card\",\"data\":{\"card_name\":\"Quality Control \",\"col\":3}},{\"id\":\"ai-tools-card\",\"type\":\"card\",\"data\":{\"card_name\":\"Tools\",\"col\":3}}]",
+ "content": "[{\"id\":\"a-ye929j6T\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">CAF</span>\",\"col\":12}},{\"id\":\"gxIM-tFDrP\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Dashboard \",\"col\":12}},{\"id\":\"fW9_q_voLX\",\"type\":\"card\",\"data\":{\"card_name\":\"OT Finger Log\",\"col\":3}},{\"id\":\"9e6YTjVdro\",\"type\":\"card\",\"data\":{\"card_name\":\"Planner\",\"col\":3}},{\"id\":\"DQpknSTbzE\",\"type\":\"card\",\"data\":{\"card_name\":\"Operator\",\"col\":3}},{\"id\":\"V68z7nlH5p\",\"type\":\"card\",\"data\":{\"card_name\":\"Quality Control \",\"col\":3}}]",
  "creation": "2025-02-25 11:27:34.409631",
  "custom_blocks": [],
  "docstatus": 0,
@@ -259,37 +259,18 @@
    "onboard": 0,
    "type": "Link"
   },
-   {
-    "hidden": 0,
-    "is_query_report": 0,
-    "label": "Weekly PD",
-    "link_count": 0,
-    "link_to": "production-schedule",
-    "link_type": "Page",
-    "onboard": 0,
-    "type": "Link"
-   },
-   {
-    "hidden": 0,
-    "is_query_report": 0,
-    "label": "Tools",
-    "link_count": 1,
-    "link_type": "DocType",
-    "onboard": 0,
-    "type": "Card Break"
-   },
-   {
-    "hidden": 0,
-    "is_query_report": 0,
-    "label": "AI Assistant",
-    "link_count": 0,
-    "link_to": "ai-assistant",
-    "link_type": "Page",
-    "onboard": 0,
-    "type": "Link"
-   }
-  ],
- "modified": "2026-07-02 08:35:41.311140",
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Weekly PD",
+   "link_count": 0,
+   "link_to": "production-schedule",
+   "link_type": "Page",
+   "onboard": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-08-05 11:04:29.334147",
  "modified_by": "Administrator",
  "module": "Caf",
  "name": "CAF",
@@ -307,6 +288,13 @@
    "label": "Dashboard ",
    "type": "URL",
    "url": "http://192.168.0.251:1111/public/dashboard/d09e6c34-c5be-49b5-962b-6e85f40a3ed1"
+  },
+  {
+   "color": "Green",
+   "doc_view": "",
+   "label": "Appraisal Dashboard",
+   "link_to": "hr-appraisal-dashboard",
+   "type": "Page"
   }
  ],
  "title": "CAF"

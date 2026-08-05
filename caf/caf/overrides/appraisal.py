@@ -806,18 +806,27 @@ DEFAULT_TEMPLATE = "CAF Monthly Appraisal"
 
 
 def resolve_template(employee):
-    """Which Appraisal Template applies to this employee.
+    """Which Appraisal Template applies to this employee (BR4, D82).
 
-    Chunk 2 implements only the fallback. The full resolution order
-    (Employee -> Appraisee row -> Designation -> Department default, D10/Phase 4)
-    is Chunk 3 work - this exists so the stock cycle-level "Create Appraisals"
-    button works at all: it throws "Appraisal Template not found for some
-    designations" when nothing resolves, because stock reads
-    Designation.appraisal_template, which CAF has never populated.
+        Appraisee row (stock, per cycle)  ->  Department.caf_appraisal_template
+                                         ->  DEFAULT_TEMPLATE
+
+    The Appraisee row is the per-employee override and is handled by the caller
+    (set_cycle_employees only fills rows that are still empty), so this function
+    covers the department default and the fallback.
+
+    Deliberately NOT consulted - `Designation.appraisal_template`. HRMS ships
+    that field via patch v14_0/create_custom_field_for_appraisal_template.py and
+    stock get_appraisal_template_map() reads it (appraisal_cycle.py:98), but CAF
+    resolves by DEPARTMENT (D82). What satisfies stock's "every appraisee needs a
+    template" check (appraisal_cycle.py:114) is set_cycle_employees filling the
+    Appraisee rows, not that field.
+
+    Also deliberately absent - any per-employee template field. T8 stays closed.
     """
-    designation = frappe.db.get_value("Employee", employee, "designation")
-    if designation:
-        template = frappe.db.get_value("Designation", designation, "appraisal_template")
+    department = frappe.db.get_value("Employee", employee, "department")
+    if department:
+        template = frappe.db.get_value("Department", department, "caf_appraisal_template")
         if template:
             return template
 

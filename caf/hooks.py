@@ -78,6 +78,10 @@ doctype_list_js = {
     # documents is an action, not a setting, and the list view is where HR
     # already goes to look at cycles.
     "Appraisal Cycle": "public/js/appraisal_cycle_list.js",
+    # Q5 - workflow_state indicators + per-state sidebar counts. Under D54 both
+    # Draft and Pending HR Review are docstatus 0, so the stock indicator cannot
+    # distinguish them.
+    "Appraisal": "public/js/appraisal_list.js",
 }
 page_js = {"ai-assistant" : "public/js/ai_assistant.js"}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
@@ -493,6 +497,11 @@ doc_events = {
     "HR Settings": {
         # D69 - reject leave codes that do not exist in live Finger Log data
         "validate": "caf.caf.overrides.hr_settings.validate_leave_codes"
+    },
+    "Appraisal Template": {
+        # D83 - a template omitting Attendance / Punctuality / OT Hours drops
+        # that measurement silently, because auto-fill matches rows by KRA name
+        "validate": "caf.caf.overrides.appraisal_template.warn_on_missing_auto_fill_kras"
     },
 }
 

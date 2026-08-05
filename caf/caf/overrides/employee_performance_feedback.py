@@ -63,8 +63,50 @@ class CustomEmployeePerformanceFeedback(EmployeePerformanceFeedback):
         return super().validate_appraisal()
 
     def validate(self):
+        self.validate_reviewer_is_an_employee()
         super().validate()
         self.validate_appraisal_not_completed()
+
+    def validate_reviewer_is_an_employee(self):
+        """Frappe does NOT validate this Link. CAF must.
+
+        `reviewer` is a Link to Employee, but frappe silently accepts any string
+        in it - verified live: inserting reviewer="NOT-AN-EMPLOYEE-AT-ALL"
+        succeeds.
+
+        Cause, in base_document.py get_invalid_links (line 845): when a Link
+        field has `fetch_from` companions - and `reviewer` has two,
+        reviewer_name and reviewer_designation - the code fetches them with
+            frappe.db.get_value(doctype, docname, values_to_fetch, as_dict=True)
+        which returns **None** when no row matches. The very next line is
+        `if values:`, so for a missing target the entire validation block is
+        skipped and nothing is ever appended to invalid_links. A Link WITHOUT
+        fetch_from companions takes the branch above it, which builds a truthy
+        _dict(name=None) and IS caught. (Same session, opposite result:
+        OT Approval.ot_department, which has no fetch_from, correctly threw
+        "Could not find OT Department: Packing - CAF".)
+
+        Why CAF cares rather than shrugging:
+          * D62 displays the author on every appraisal form. Attribution that
+            the framework never checked is not attribution.
+          * stock validate_employee() blocks self-feedback by comparing
+            `employee` to `reviewer`. With a junk reviewer that comparison can
+            never match, so the self-feedback guard silently stops working.
+          * reviewer_name/reviewer_designation come back empty, so the widget
+            falls back to printing the raw value.
+        """
+        if not self.reviewer:
+            return
+        if frappe.db.exists("Employee", self.reviewer):
+            return
+
+        frappe.throw(
+            _(
+                "Reviewer {0} is not an Employee. Feedback must be attributed to an employee "
+                "record, not a user or an email address."
+            ).format(frappe.bold(self.reviewer)),
+            title=_("Invalid reviewer"),
+        )
 
     def validate_appraisal_not_completed(self):
         """D64 - Completed means final."""

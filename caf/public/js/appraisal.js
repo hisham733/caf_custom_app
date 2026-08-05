@@ -54,6 +54,8 @@ frappe.ui.form.on("Appraisal", {
 			caf_gate_new_form(frm);
 		} else {
 			caf_focus_first_empty_row(frm);
+			caf_render_feedback(frm);
+			caf_intercept_submit_action(frm);
 		}
 	},
 
@@ -161,6 +163,124 @@ function caf_preview_auto_fill(frm) {
 	if (frm.is_new() || !frm.doc.employee || !frm.doc.appraisal_cycle) return;
 	if (frm.doc.docstatus !== 0) return;
 	frm.dirty();
+}
+
+// --- D60/D61/D62: the CAF feedback widget -----------------------------------
+// Replaces the stock widget, which queries by APPRAISAL. Under D60 an EPF is a
+// standing note about a person, so the stock widget cannot see any of the
+// unlinked ones - which is all of them, in CAF's usage.
+function caf_render_feedback(frm) {
+	// Deliberately NOT feedback_html. Stock appraisal.js renders into that
+	// wrapper from inside a frappe.require("performance.bundle.js") callback
+	// which resolves after us, so it overwrites whatever we paint - observed
+	// live, the widget showed stock's "No feedback has been received yet" with a
+	// submitted standing EPF sitting right there. Winning that race with a
+	// timeout would break as soon as bundle caching changed the timing, so CAF
+	// gets its own field and the stock one is hidden.
+	frm.toggle_display("feedback_html", false);
+
+	const wrapper = frm.fields_dict.caf_feedback_html && frm.fields_dict.caf_feedback_html.wrapper;
+	if (!wrapper || !frm.doc.employee) return;
+
+	// D61 - the window ends at the CYCLE's end date, not today, so reopening an
+	// old appraisal shows what was visible when it was written.
+	const finish = () => {
+		frappe.call({
+			method: "caf.caf.overrides.performance_feedback.get_caf_feedback_history",
+			args: {
+				employee: frm.doc.employee,
+				appraisal: frm.doc.name,
+				end_date: frm._caf_cycle_end || null,
+			},
+		}).then((r) => {
+			const data = (r && r.message) || {};
+			$(wrapper).empty().append(caf_feedback_html(data));
+		});
+	};
+
+	if (frm.doc.appraisal_cycle && !frm._caf_cycle_end) {
+		frappe.db.get_value("Appraisal Cycle", frm.doc.appraisal_cycle, "end_date").then((res) => {
+			frm._caf_cycle_end = (res && res.message && res.message.end_date) || null;
+			finish();
+		});
+	} else {
+		finish();
+	}
+}
+
+function caf_feedback_html(data) {
+	const rows = data.feedback || [];
+	const w = data.window;
+	const header = w
+		? __("Feedback from {0} to {1} ({2} months)", [w.from, w.to, w.months])
+		: __("Feedback");
+
+	if (!rows.length) {
+		return `<div class="text-muted">${header} — ${__("none recorded.")}</div>`;
+	}
+
+	const items = rows.map((f) => {
+		const author = data.show_author
+			? `<b>${frappe.utils.escape_html(f.reviewer_name || f.reviewer || "")}</b>` +
+			  (f.reviewer_designation ? ` <span class="text-muted">${frappe.utils.escape_html(f.reviewer_designation)}</span>` : "")
+			: `<span class="text-muted">${__("Author hidden")}</span>`;
+
+		// D65 - a standing (unlinked) EPF carries no rating criteria and scores
+		// 0 by stock design, so showing a score would be misleading.
+		const score = f.is_standing
+			? `<span class="indicator blue">${__("Standing feedback")}</span>`
+			: `<span class="indicator green">${__("Score {0}", [f.total_score])}</span>`;
+
+		return `
+			<div class="caf-feedback-item" style="border-bottom:1px solid var(--border-color); padding:8px 0;">
+				<div class="d-flex justify-content-between">
+					<div>${author}</div>
+					<div class="text-muted small">${frappe.datetime.str_to_user(f.added_on)} ${score}</div>
+				</div>
+				<div class="mt-1">${f.feedback || ""}</div>
+			</div>`;
+	}).join("");
+
+	return `<div class="caf-feedback">
+			<div class="text-muted mb-2">${header} — ${__("{0} entries", [rows.length])}</div>
+			${items}
+		</div>`;
+}
+
+// --- Q6: submit confirmation ------------------------------------------------
+// Shows the auto-filled values before the appraisal leaves the supervisor's
+// hands. They are computed from Finger Log and the supervisor never sees that
+// data directly (D40), so this is their only chance to sanity-check it.
+function caf_intercept_submit_action(frm) {
+	if (frm._caf_submit_hooked) return;
+	frm._caf_submit_hooked = true;
+
+	$(document).on("click", ".actions-btn-group .dropdown-item", function () {
+		const label = ($(this).text() || "").trim();
+		if (label !== __("Submit for Review")) return;
+		caf_show_submit_summary(frm);
+	});
+}
+
+function caf_show_submit_summary(frm) {
+	const rows = frm.doc.appraisal_kra || [];
+	const cell = (name) => {
+		const row = rows.find((r) => r.kra === name);
+		return (row && row.caf_date_cell) || __("(none)");
+	};
+
+	frappe.msgprint({
+		title: __("Submitting for HR review"),
+		indicator: "blue",
+		message: `
+			<p>${__("These values were computed from Finger Log for this cycle:")}</p>
+			<table class="table table-sm">
+				<tr><td>${__("Attendance")}</td><td><b>${frappe.utils.escape_html(cell("Attendance"))}</b></td></tr>
+				<tr><td>${__("Punctuality")}</td><td><b>${frappe.utils.escape_html(cell("Punctuality"))}</b></td></tr>
+				<tr><td>${__("OT Hours")}</td><td><b>${frappe.utils.escape_html(cell("OT Hours"))}</b></td></tr>
+			</table>
+			<p class="text-muted small">${__("Once submitted you cannot edit this appraisal until HR sends it back.")}</p>`,
+	});
 }
 
 // --- D59 --------------------------------------------------------------------
