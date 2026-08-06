@@ -1,0 +1,24 @@
+{
+ "content": null,
+ "creation": "2026-08-06 00:00:00",
+ "docstatus": 0,
+ "doctype": "Page",
+ "icon": "fa fa-check-square",
+ "idx": 0,
+ "modified": "2026-08-06 14:17:06.465632",
+ "modified_by": "Administrator",
+ "module": "Caf",
+ "name": "supervisor-appraisal",
+ "owner": "Administrator",
+ "page_name": "supervisor-appraisal",
+ "roles": [
+  {
+   "role": "Employee"
+  }
+ ],
+ "script": null,
+ "standard": "Yes",
+ "style": null,
+ "system_page": 0,
+ "title": "Supervisor Appraisal Page"
+}

@@ -202,8 +202,10 @@ function caf_suppress_score_chart(frm) {
 
 // --- Q4 ---------------------------------------------------------------------
 function caf_add_refresh_button(frm) {
+	// D95 - visible to both supervisors and HR Managers. The supervisor
+	// needs to see live Finger Log values to guide their feedback; HR uses
+	// it after correcting Finger Log data.
 	if (frm.is_new() || frm.doc.docstatus !== 0) return;
-	if (!frappe.user.has_role("HR Manager")) return;
 
 	frm.add_custom_button(__("Refresh Data"), () => {
 		frm.call({
@@ -215,7 +217,7 @@ function caf_add_refresh_button(frm) {
 			if (!r || !r.message) return;
 			frm.reload_doc();
 			frappe.show_alert({
-				message: __("Auto-filled cells recomputed"),
+				message: __("Refreshed"),
 				indicator: "green",
 			});
 		});

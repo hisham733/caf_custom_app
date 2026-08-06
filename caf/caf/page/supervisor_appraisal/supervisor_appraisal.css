@@ -1,0 +1,216 @@
+/*
+CAF Supervisor Bulk Appraisal Page - styles
+============================================
+Plan ref: supervisor_page_plan.md 5 Step 4
+
+Changelog
+---------
+1.1  2026-08-06  Redesign: compact horizontal header, inline stats,
+                 no stacked label-value pairs.
+1.0  2026-08-06  Initial styles
+*/
+
+.sa-container {
+    padding: 12px 16px;
+    max-width: 1400px;
+}
+
+/* ---- Header ---- */
+
+.sa-header {
+    background: var(--card-bg, #fff);
+    border: 1px solid var(--border-color, #d1d8dd);
+    border-radius: 4px;
+    margin-bottom: 16px;
+    overflow: hidden;
+}
+
+.sa-header-top {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border-color, #d1d8dd);
+}
+
+.sa-header-bottom {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 14px;
+    min-height: 34px;
+}
+
+/* Actions block - buttons come first */
+.sa-actions-block {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+.sa-divider {
+    font-size: 18px;
+    color: var(--border-color, #d1d8dd);
+    margin: 0 4px;
+}
+
+/* Colored Prev/Next buttons */
+.btn-prev {
+    background: #e8f0fe;
+    color: #1a73e8;
+    border-color: #c4d7f2;
+}
+.btn-prev:hover {
+    background: #d2e3fc;
+}
+.btn-next {
+    background: #e8f0fe;
+    color: #1a73e8;
+    border-color: #c4d7f2;
+}
+.btn-next:hover {
+    background: #d2e3fc;
+}
+
+/* Cycle picker wrapper - keeps it compact */
+.sa-cycle-wrap {
+    display: inline-flex;
+    min-width: 200px;
+}
+.sa-cycle-wrap .frappe-control {
+    margin-bottom: 0 !important;
+}
+.sa-cycle-wrap input {
+    height: 30px;
+    font-size: 13px;
+}
+
+.sa-start-btn {
+    height: 32px;
+    padding: 0 16px;
+}
+
+.sa-sep {
+    color: var(--border-color, #ccc);
+    font-size: 16px;
+    user-select: none;
+}
+
+.sa-inline-stat {
+    font-size: 13px;
+    color: var(--text-muted, #8d99a6);
+    white-space: nowrap;
+}
+.sa-inline-stat b {
+    color: var(--text-color, #333);
+    font-weight: 600;
+}
+
+.sa-status-badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 20px;
+}
+
+.sa-status-badge.draft {
+    background: #f0f0f0;
+    color: #666;
+}
+.sa-status-badge.pending-hr-review {
+    background: #fff3cd;
+    color: #856404;
+}
+.sa-status-badge.completed {
+    background: #d4edda;
+    color: #155724;
+}
+
+/* ---- KRA Grid ---- */
+
+.sa-body {
+    overflow-x: auto;
+}
+
+.sa-kra-grid {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--card-bg, #fff);
+    border: 1px solid var(--border-color, #d1d8dd);
+    border-radius: 4px;
+}
+
+.sa-kra-grid th,
+.sa-kra-grid td {
+    padding: 6px 10px;
+    border: 1px solid var(--border-color, #d1d8dd);
+    text-align: left;
+    vertical-align: top;
+    font-size: 13px;
+}
+
+.sa-kra-grid th {
+    background: var(--control-bg, #f5f7fa);
+    font-weight: 600;
+    color: var(--text-muted, #8d99a6);
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+.sa-kra-grid td {
+    min-width: 90px;
+}
+
+.sa-kra-grid td:first-child {
+    min-width: 110px;
+    max-width: 160px;
+    font-weight: 500;
+}
+
+/* Auto-fill cells: pink */
+.cell-auto-fill {
+    background-color: #ffe4e1 !important;
+    color: var(--text-muted, #666);
+    cursor: default;
+    user-select: none;
+}
+
+/* Editable cells */
+.cell-editable {
+    background-color: #fff;
+    min-width: 110px;
+    min-height: 26px;
+}
+
+.cell-editable[contenteditable="true"]:focus {
+    outline: 2px solid var(--primary, #2490ef);
+    outline-offset: -2px;
+    background-color: #fffbeb;
+}
+
+/* Auto row label styling */
+.sa-row-auto td:first-child {
+    font-style: italic;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .sa-header-top,
+    .sa-header-bottom {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .sa-status-badge {
+        margin-left: 0;
+    }
+    .sa-kra-grid th,
+    .sa-kra-grid td {
+        font-size: 12px;
+        padding: 4px 6px;
+    }
+}
