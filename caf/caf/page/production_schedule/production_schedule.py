@@ -1837,6 +1837,68 @@ def clear_item(item_id):
     return {"success": True, "message": _("Slot cleared")}
 
 
+@frappe.whitelist()
+def copy_item(source_id, target_id):
+    """Copy a recipe slot's production data into an empty target slot.
+
+    Used by the WhatsApp AI planner (copy_recipe_slot). Copies the data
+    fields and sets produ_status = 'New Schedule'. The target keeps its
+    own link_id / workstation / round; the source is left untouched.
+    """
+    src = frappe.db.get_value(
+        CHILD_DOCTYPE, {"name": source_id},
+        ["name", "recipe_name", "size", "number_of_pack", "production_type",
+         "urgent_check", "recipe_note", "recipe_cook_time", "custom_yield"],
+        as_dict=True,
+    )
+    if not src or not src.recipe_name or src.recipe_name == NO_COOKING:
+        return {"success": False, "message": _("Source slot has no recipe to copy")}
+
+    tgt = frappe.db.get_value(
+        CHILD_DOCTYPE, {"name": target_id},
+        ["name", "parent", "recipe_name", "rq_status", "recipe_cook_workstaion",
+         "recipe_cook_round", "required_date"],
+        as_dict=True,
+    )
+    if not tgt:
+        return {"success": False, "message": _("Target slot not found")}
+    if tgt.recipe_name != NO_COOKING:
+        return {"success": False, "message": _("Target slot is not empty")}
+    if tgt.rq_status == "Processing":
+        return {"success": False, "message": _("Work Orders are being processed. Please wait.")}
+
+    values = {
+        "recipe_name": src.recipe_name,
+        "size": src.size or 0,
+        "number_of_pack": src.number_of_pack or 0,
+        "production_type": src.production_type or "",
+        "urgent_check": src.urgent_check or 0,
+        "recipe_note": src.recipe_note or "",
+        "recipe_cook_time": src.recipe_cook_time,
+        "custom_yield": src.custom_yield or 0,
+        "produ_status": "New Schedule",
+    }
+    for i in range(1, 8):
+        suffix = "" if i == 1 else f"_{i}"
+        values[f"pack_name{suffix}"] = src.get(f"pack_name{suffix}")
+        values[f"pack_qty{suffix}"] = src.get(f"pack_qty{suffix}") or 0
+        values[f"pack_remark{suffix}"] = src.get(f"pack_remark{suffix}")
+
+    frappe.db.set_value(CHILD_DOCTYPE, target_id, values)
+
+    _log_schedule_change("Add Recipe", day=tgt.required_date, dp_name=tgt.parent,
+                         child_row_name=target_id, recipe_name=src.recipe_name,
+                         workstation=tgt.recipe_cook_workstaion,
+                         cook_round=tgt.recipe_cook_round,
+                         old_data={"recipe_name": NO_COOKING},
+                         new_data={"recipe_name": src.recipe_name,
+                                   "size": src.size or 0,
+                                   "produ_status": "New Schedule"})
+
+    frappe.db.commit()
+    return {"success": True, "message": _("Recipe copied")}
+
+
 def _background_change_recipe(item_id, dp_name, new_recipe):
     """Background worker: reprocess WOs after recipe change via DP's process_recipe_change_or_size_change."""
     try:

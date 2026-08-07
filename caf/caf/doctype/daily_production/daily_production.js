@@ -184,6 +184,55 @@ function _validate_pack_weights(frm, cdt, cdn) {
 }
 const debounced_validate_pack = debounce((frm, cdt, cdn) => { _validate_pack_weights(frm, cdt, cdn); }, 500);
 
+// Poll the DP until the background worker finishes (rq_status no longer Processing), then reload
+function poll_dp_processing(frm, attempts) {
+    if (attempts === undefined) attempts = 0;
+    if (attempts > 20) { frm.reload_doc(); return; }
+    frappe.call({
+        method: "caf.caf.doctype.daily_production.daily_production.get_dp_row_statuses",
+        args: { dp_name: frm.doc.name },
+        callback: function(r) {
+            var busy = r.message && r.message.any_processing;
+            if (busy) {
+                setTimeout(function() { poll_dp_processing(frm, attempts + 1); }, 3000);
+            } else {
+                frm.reload_doc();
+                frappe.show_alert({ message: __('✅ Changes processed'), indicator: 'green' });
+            }
+        }
+    });
+}
+
+// Run process_manual_updates directly (WPD-style, synchronous with a loading
+// page — same as the page's "Create Work Order" button) only when WOs were
+// already created ("Create Work Order" clicked, i.e. custom_submit_ref is set).
+// Otherwise this is a no-op — the save is just persisted.
+function maybe_process_dp_changes(frm) {
+    if (!frm.doc.custom_submit_ref) return;
+    const pending = (frm.doc.production_table || []).filter(function(r) {
+        if (r.recipe_name === "No Cooking" || !r.produ_status) return false;
+        // "Recipe Change" on a row with no MR/PP/WOs is a passive editable marker
+        // (WDP-style) — nothing to regenerate server-side.
+        if (r.produ_status === "Recipe Change" && !r.mr_reference && !r.production_plane && !r.wo_list) return false;
+        return true;
+    });
+    if (pending.length === 0) return;
+    show_loading_overlay();
+    frappe.call({
+        doc: frm.doc,
+        method: 'process_manual_updates',
+        callback: function(r) {
+            hide_loading_overlay();
+            frm.reload_doc();
+            frappe.show_alert({ message: __('✅ Changes processed'), indicator: 'green' });
+        },
+        error: function(r) {
+            hide_loading_overlay();
+            frm.reload_doc();
+        }
+    });
+}
+
 function validate_unique_cook_combination(frm, cdt, cdn) {
     const current_row = locals[cdt][cdn]; const workstation = current_row.recipe_cook_workstaion; const round = current_row.recipe_cook_round;
     if (!workstation || !round) return;
@@ -253,9 +302,24 @@ function filter_produ_status(frm, cdn) {
     if (!grid_row) return;
     const field = grid_row.get_field("produ_status");
     if (!field) return;
-    const base = "\nNew Schedule\nRecipe Change\nCancelled\nChange Slot\nRearrange\nOnly Remark\nPack Change\nSingle WO";
-    const full = (!row.mr_reference && !row.production_plane) ? base + "\nClear" : base;
-    const options = (!row.recipe_name || row.recipe_name === "No Cooking") ? "\nNew Schedule\nChange Slot" : full;
+    const base = "\nNew Schedule\nRecipe Change\nCancelled\nChange Slot\nRearrange\nOnly Remark\nPack Change";
+    const no_wo = !row.mr_reference && !row.production_plane && !row.wo_list;
+    let options;
+    if (!row.recipe_name || row.recipe_name === "No Cooking") {
+        options = "\nNew Schedule\nChange Slot";
+    } else if (no_wo) {
+        // Recipe set but no MR/PP yet — New Schedule (all fields editable) plus the
+        // pure data moves Change Slot / Rearrange (no WOs to migrate).
+        options = "\nNew Schedule\nChange Slot\nRearrange";
+        if (row.produ_status && row.produ_status !== "New Schedule" && !options.includes(row.produ_status)) options += "\n" + row.produ_status;
+    } else {
+        // MR/PP rows: "Cancelled" is handled by the dialog Cancel button; "New
+        // Schedule" only when it is the current status. "Single WO" stays hidden
+        // (matches the doctype's produ_status options).
+        options = base.replace("\nCancelled", "");
+        if (row.produ_status !== "New Schedule") options = options.replace("\nNew Schedule", "");
+        if (row.produ_status && options.split("\n").indexOf(row.produ_status) === -1) options += "\n" + row.produ_status;
+    }
     field.df.options = options;
     field.set_options();
 }
@@ -273,6 +337,7 @@ frappe.ui.form.on("Daily Production", {
 
   refresh: function(frm) {
         const MAX_ROWS = 64;
+
         let grid = frm.get_field("production_table").grid;
         if (grid) {
             grid.page_length = MAX_ROWS;
@@ -379,30 +444,9 @@ frappe.ui.form.on("Daily Production", {
     },
 
     after_save: function(frm) {
+        // Synchronous process_manual_updates is triggered ONLY from the custom edit
+        // dialog's Save (see maybe_process_dp_changes). Normal Save just persists.
         debounced_apply_colors(frm);
-        if (frm.doc.custom_submit_ref) {
-            var pending = (frm.doc.production_table || []).filter(function(r) {
-                return r.recipe_name !== "No Cooking"
-                    && r.produ_status
-                    && r.rq_status !== "Done"
-                    && r.rq_status !== "Processing";
-            });
-            if (pending.length > 0) {
-                show_loading_overlay();
-                frm.call({
-                    doc: frm.doc,
-                    method: 'process_manual_updates',
-                    callback: function(r) {
-                        hide_loading_overlay();
-                        if(!r.exc) {
-                            frm.reload_doc();
-                            frappe.show_alert({ message: __('✅ Changes processed'), indicator: 'green' });
-                        }
-                    },
-                    error: function() { hide_loading_overlay(); }
-                });
-            }
-        }
     },
 
     before_submit: function(frm) {
@@ -691,8 +735,9 @@ frappe.ui.form.on("Create ProExl Items", {
             return;
         }
 
-        // ── Clear pack fields if recipe changed (matching WPD behavior) ──
-        if (current_row.produ_status === "Recipe Change" || !current_row.produ_status) {
+        // ── Clear pack fields + size if recipe changed (matching WPD behavior) ──
+        if (["Recipe Change", "New Schedule"].includes(current_row.produ_status) || !current_row.produ_status) {
+            frappe.model.set_value(cdt, cdn, "size", 0);
             for (let i = 1; i <= 7; i++) {
                 let s = i === 1 ? "" : "_" + i;
                 frappe.model.set_value(cdt, cdn, "pack_name" + s, null);
@@ -970,14 +1015,552 @@ function calculate_qty_or_size_WO(frm, row, field_changed) {
 const ALWAYS_READ_ONLY = ['recipe_cook_workstaion', 'recipe_cook_round', 'link_id',
     'mr_reference', 'rq_status', 'custom_yield', 'total_input', 'total_output', 'production_plane', 'custom_pair_id'];
 const SYSTEM_FIELDS = ['name', 'owner', 'creation', 'modified', 'modified_by', 'parent', 'parentfield', 'parenttype', 'idx', 'doctype'];
+// MR/PP travel with the recipe during a slot swap/rearrange; link_id stays fixed
+// to the slot so the server-side WO migration (by link_id) still works.
+const SWAP_EXTRA_FIELDS = ['mr_reference', 'production_plane'];
 
 /** Gets all user-data fields that are allowed to be moved or swapped */
 function get_moveable_fields(doctype) {
     const meta = frappe.get_meta(doctype);
     const non_data_types = ['Section Break', 'Column Break', 'Tab Break', 'HTML', 'Button', 'Heading', 'Fold'];
     return meta.fields
-        .filter(f => !ALWAYS_READ_ONLY.includes(f.fieldname) && !SYSTEM_FIELDS.includes(f.fieldname) && !non_data_types.includes(f.fieldtype))
+        .filter(f => SWAP_EXTRA_FIELDS.includes(f.fieldname) ||
+            (!ALWAYS_READ_ONLY.includes(f.fieldname) && !SYSTEM_FIELDS.includes(f.fieldname) && !non_data_types.includes(f.fieldtype)))
         .map(f => f.fieldname);
+}
+
+// =================================================================
+// CUSTOM ROW EDIT DIALOG (WPD-STYLE)
+// Rows are edited through this dialog. Values are STAGED inside the
+// dialog and applied to the row only when the user clicks Save.
+// Closing the dialog (X / ESC / outside click) discards all edits.
+// =================================================================
+
+function _dp_dialog_set_pack_visibility(d) {
+    const nop = parseInt(d.get_value("number_of_pack")) || 0;
+    for (let i = 1; i <= 7; i++) {
+        const s = i === 1 ? "" : "_" + i;
+        const show = i <= nop;
+        ["pack_name", "pack_qty", "pack_remark"].forEach(function(p) {
+            $(d.wrapper).find('[data-fieldname="' + p + s + '"]').closest(".frappe-control").toggle(show);
+        });
+    }
+}
+
+function _dp_dialog_restrict(d) {
+    const recipe = d.get_value("recipe") || "";
+    const no_cook = !recipe || recipe === "No Cooking";
+    const size_val = flt(d.get_value("size"));
+    const status = d.get_value("produ_status") || "";
+
+    const always_ro = ["cook_station", "cook_round", "custom_yield", "total_input", "total_output",
+        "link_id", "mr_reference", "production_plane", "rq_status"];
+    const pack_fields = [];
+    for (let i = 1; i <= 7; i++) {
+        const s = i === 1 ? "" : "_" + i;
+        pack_fields.push("pack_name" + s, "pack_qty" + s, "pack_remark" + s);
+    }
+    const all_user_fields = ["produ_status", "recipe", "size", "production_type", "urgent_check",
+        "recipe_note", "number_of_pack"].concat(pack_fields);
+
+    let editable = [];
+    if (no_cook) {
+        editable = ["produ_status"];
+        if (status === "New Schedule") editable.push("recipe");
+    } else if (status === "New Schedule") {
+        editable = ["recipe", "produ_status", "size"];
+        if (size_val > 0) editable = editable.concat(["production_type", "urgent_check", "recipe_note", "number_of_pack"].concat(pack_fields));
+    } else if (status === "Recipe Change") {
+        editable = ["recipe", "produ_status", "size", "production_type", "urgent_check", "recipe_note", "number_of_pack"].concat(pack_fields);
+    } else if (status === "" || status === "Cancelled") {
+        editable = ["produ_status"];
+    } else if (status === "Pack Change") {
+        editable = ["produ_status", "number_of_pack"].concat(pack_fields);
+    } else if (status === "Only Remark") {
+        editable = ["produ_status", "recipe_note"];
+    } else if (status === "Single WO") {
+        editable = ["produ_status", "recipe", "size"];
+    } else {
+        editable = all_user_fields;
+    }
+
+    // Lock pack fields when size is 0 (matching WPD / apply_edit_restrictions)
+    if (size_val <= 0 && !no_cook) {
+        editable = editable.filter(function(f) { return f !== "number_of_pack" && !f.startsWith("pack_"); });
+    }
+
+    all_user_fields.forEach(function(fn) {
+        const f = d.fields_dict[fn];
+        if (!f) return;
+        const enabled = editable.includes(fn) && !always_ro.includes(fn);
+        f.df.read_only = !enabled;
+        f.refresh();
+    });
+}
+
+function install_dp_edit_interceptor(frm) {
+    const grid = frm.get_field("production_table")?.grid;
+    if (!grid) return;
+
+    // Safety net: route ANY native row-form open (pencil, row number, keyboard,
+    // insert-row, programmatic toggle_view/show_form) to the custom dialog.
+    (grid.grid_rows || []).forEach(function(ui_row) {
+        if (!ui_row || !ui_row.doc || ui_row.__dp_wrapped) return;
+        ui_row.__dp_wrapped = true;
+        const orig_toggle = ui_row.toggle_view && ui_row.toggle_view.bind(ui_row);
+        ui_row.show_form = function() {
+            show_dp_edit_dialog(frm, ui_row.doc.doctype, ui_row.doc.name);
+        };
+        if (orig_toggle) {
+            ui_row.toggle_view = function(show, callback) {
+                if (show === false) {
+                    return orig_toggle(show, callback);
+                }
+                show_dp_edit_dialog(frm, ui_row.doc.doctype, ui_row.doc.name);
+                callback && callback();
+                return ui_row;
+            };
+        }
+    });
+
+    if (!grid.wrapper || !grid.wrapper[0]) return;
+    const el = grid.wrapper[0];
+    if (el.__dp_intercept) {
+        el.removeEventListener('click', el.__dp_intercept, true);
+        el.__dp_intercept = null;
+    }
+    const handler = function(e) {
+        const t = e.target;
+        if (!t || !t.closest) return;
+        // Clicking the checkbox / row search input must behave normally.
+        if (t.closest('.grid-row-check')) return;
+        const btn = t.closest('.btn-open-row');
+        const rowIndex = t.closest('.row-index');
+        if (!btn && (!rowIndex || t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
+        const $row = $(t).closest('.grid-row');
+        if (!$row.length) return;
+        const docname = $row.attr('data-name');
+        if (!docname) return;
+        e.preventDefault();
+        e.stopPropagation();
+        show_dp_edit_dialog(frm, 'Create ProExl Items', docname);
+    };
+    el.__dp_intercept = handler;
+    el.addEventListener('click', handler, true);
+}
+
+function show_dp_edit_dialog(frm, cdt, cdn) {
+    const row = locals[cdt]?.[cdn];
+    if (!row) return;
+
+    if (row.rq_status === "Processing") {
+        frappe.show_alert({ message: __('Row is being processed. Please wait…'), indicator: 'orange' }, 3);
+        return;
+    }
+
+    const orig_recipe = row.recipe_name || "";
+    const orig_size = flt(row.size);
+    const orig_nop = String(row.number_of_pack || 0);
+    const orig_status = row.produ_status || "";
+
+    const no_cook = !row.recipe_name || row.recipe_name === "" || row.recipe_name === "No Cooking";
+    // Rows that already produced WOs must NOT be treated as a fresh schedule.
+    const has_wos = !!(row.wo_list || row.mr_reference);
+
+    const no_wo = !row.mr_reference && !row.production_plane && !row.wo_list;
+    // Keep the row's current status visible even if it is an immediate-action status
+    // (e.g. Change Slot / Rearrange) so it is preserved unless the user changes it.
+    let status_options;
+    if (no_cook) {
+        status_options = "\nNew Schedule\nChange Slot";
+        if (orig_status && orig_status !== "New Schedule" && !status_options.includes(orig_status)) status_options += "\n" + orig_status;
+    } else if (no_wo) {
+        // Recipe set but no MR/PP yet (scheduled via "New Schedule"): New Schedule
+        // unlocks all fields once size is set, so there is no separate "Change
+        // Recipe" — Clear/Cancel are dialog buttons instead. Change Slot / Rearrange
+        // are pure data moves here (no WOs to migrate). No leading "\n": the blank
+        // option is removed so an empty status can't be picked on a row that must
+        // have a status.
+        status_options = "New Schedule\nChange Slot\nRearrange";
+        if (orig_status && orig_status !== "New Schedule" && !status_options.includes(orig_status)) status_options += "\n" + orig_status;
+    } else {
+        // Rows with MR/PP: match WDP — "Recipe Change"/"Only Remark"/"Pack Change"
+        // plus the WO-driving moves Change Slot / Rearrange. "Cancelled" is replaced
+        // by the dialog's Cancel button; "New Schedule" and "Single WO" are not
+        // offered here.
+        status_options = "\nRecipe Change\nOnly Remark\nPack Change\nChange Slot\nRearrange";
+        if (orig_status && status_options.split("\n").indexOf(orig_status) === -1) status_options += "\n" + orig_status;
+    }
+
+    const fields = [
+        { fieldname: "sec_slot", fieldtype: "Section Break", label: __("Slot Info") },
+        { fieldname: "cook_station", fieldtype: "Data", label: __("Cook Workstation"), read_only: 1, default: row.recipe_cook_workstaion || "" },
+        { fieldtype: "Column Break" },
+        { fieldname: "cook_round", fieldtype: "Data", label: __("Cook Round"), read_only: 1, default: row.recipe_cook_round || "" },
+        { fieldname: "sec_prod", fieldtype: "Section Break", label: __("Production") },
+        { fieldname: "produ_status", fieldtype: "Select", label: __("Production Status"), options: status_options, default: orig_status || (no_cook && !has_wos ? "New Schedule" : "") },
+        { fieldname: "recipe", fieldtype: "Link", label: __("Recipe"), options: "Item", default: row.recipe_name || "", get_query: function() { return { filters: { item_group: ["in", ["Recipe", "WIP Floss"]] } }; } },
+        { fieldtype: "Column Break" },
+        { fieldname: "size", fieldtype: "Float", label: __("Size"), default: orig_size, precision: 3 },
+        { fieldname: "production_type", fieldtype: "Select", label: __("Production Type"), options: "\nNew\nRecook\nReheat\nRepack", default: row.production_type || "" },
+        { fieldtype: "Column Break" },
+        { fieldname: "urgent_check", fieldtype: "Check", label: __("Urgent Order"), default: row.urgent_check ? 1 : 0 },
+        { fieldname: "recipe_note", fieldtype: "Data", label: __("Recipe Note"), default: row.recipe_note || "" },
+        { fieldname: "sec_info", fieldtype: "Section Break", label: __("Production Info") },
+        { fieldname: "custom_yield", fieldtype: "Float", label: __("Yield (KG)"), read_only: 1, default: row.custom_yield || 0, precision: 6 },
+        { fieldtype: "Column Break" },
+        { fieldname: "total_input", fieldtype: "Float", label: __("Total Input (KG)"), read_only: 1, default: row.total_input || 0, precision: 6 },
+        { fieldtype: "Column Break" },
+        { fieldname: "total_output", fieldtype: "Float", label: __("Total Output (KG)"), read_only: 1, default: row.total_output || 0, precision: 6 },
+        { fieldname: "sec_pack", fieldtype: "Section Break", label: __("Pack Details") },
+        { fieldname: "number_of_pack", fieldtype: "Select", label: __("Number of Packs"), options: "0\n1\n2\n3\n4\n5\n6\n7", default: orig_nop },
+        { fieldname: "sec_pack_grid", fieldtype: "Section Break" }
+    ];
+
+    for (let i = 1; i <= 7; i++) {
+        const sfx = i === 1 ? "" : "_" + i;
+        (function(s) {
+            fields.push({
+                fieldname: "pack_name" + s, fieldtype: "Link", options: "Item",
+                label: i === 1 ? __("Pack Name") : __("Pack {0} Name", [i]),
+                default: row["pack_name" + s] || "",
+                get_query: function() {
+                    const cur_recipe = d.get_value("recipe") || "";
+                    if (!cur_recipe || cur_recipe === "No Cooking") return { filters: { name: ["=", ""] } };
+                    const excluded = [];
+                    for (let j = 1; j <= 7; j++) {
+                        const sj = j === 1 ? "" : "_" + j;
+                        const v = d.get_value("pack_name" + sj);
+                        if (v && sj !== s) excluded.push(v);
+                    }
+                    return {
+                        query: "caf.caf.doctype.daily_production.daily_production.get_packs_for_recipe",
+                        filters: { recipe_name: cur_recipe, excluded_items: excluded }
+                    };
+                }
+            });
+        })(sfx);
+    }
+    fields.push({ fieldtype: "Column Break" });
+    for (let i = 1; i <= 7; i++) {
+        const sfx = i === 1 ? "" : "_" + i;
+        fields.push({ fieldname: "pack_qty" + sfx, fieldtype: "Float", label: i === 1 ? __("Pack QTY") : __("Pack {0} QTY", [i]), default: flt(row["pack_qty" + sfx]) });
+    }
+    fields.push({ fieldtype: "Column Break" });
+    for (let i = 1; i <= 7; i++) {
+        const sfx = i === 1 ? "" : "_" + i;
+        fields.push({ fieldname: "pack_remark" + sfx, fieldtype: "Data", label: i === 1 ? __("Pack Remark") : __("Pack {0} Remark", [i]), default: row["pack_remark" + sfx] || "" });
+    }
+
+    fields.push(
+        { fieldname: "sec_sys", fieldtype: "Section Break", label: __("System Info") },
+        { fieldname: "link_id", fieldtype: "Data", label: __("Link ID"), read_only: 1, default: row.link_id || "" },
+        { fieldtype: "Column Break" },
+        { fieldname: "mr_reference", fieldtype: "Data", label: __("MR Reference"), read_only: 1, default: row.mr_reference || "" },
+        { fieldname: "rq_status", fieldtype: "Data", label: __("RQ Status"), read_only: 1, default: row.rq_status || "" },
+        { fieldname: "pack_weight_msg", fieldtype: "HTML", options: '<div class="pack-weight-msg" style="display:none;color:#e53e3e;font-size:12px;padding:6px 0;"></div>' }
+    );
+
+    // WDP-style slot actions: "Clear" when no MR/PP (reset slot to defaults,
+    // no WO cancellation), "Cancel" only when MR exists (cancels through to WOs).
+    const slot_actions = [];
+    if (!no_cook && !no_wo) {
+        slot_actions.push('<button type="button" class="btn btn-danger btn-xs dp-slot-btn-cancel">' + __("Cancel Recipe") + '</button>');
+    }
+    if (!no_cook && no_wo) {
+        slot_actions.push('<button type="button" class="btn btn-default btn-xs dp-slot-btn-clear">' + __("Clear") + '</button>');
+    }
+    if (slot_actions.length) {
+        fields.push({ fieldname: "sec_actions", fieldtype: "Section Break", label: __("Actions") });
+        fields.push({ fieldname: "slot_actions_html", fieldtype: "HTML", options: '<div class="dp-slot-action-btns">' + slot_actions.join(' ') + '</div>' });
+    }
+
+    const d = new frappe.ui.Dialog({
+        title: __('Edit Row {0}', [row.idx]) + (row.recipe_name ? ' — ' + row.recipe_name : ''),
+        fields: fields,
+        primary_action_label: __('Save'),
+        primary_action: async function(values) {
+            if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
+            values = d.get_values();
+            if (!values) return;
+
+            const recipe_val = values.recipe || "";
+            const status_val = values.produ_status || "";
+            const size_val = flt(values.size);
+            const nop = parseInt(values.number_of_pack) || 0;
+            const no_cook = !recipe_val || recipe_val === "No Cooking";
+
+            // Cannot save a slot that has no recipe yet
+            if (no_cook) {
+                frappe.msgprint(__("Please enter a recipe first."));
+                return;
+            }
+            if (recipe_val && recipe_val !== "No Cooking" && size_val === 0) {
+                frappe.msgprint(__("Size is required when a recipe is set."));
+                return;
+            }
+            if (!no_cook && nop >= 1) {
+                for (let i = 1; i <= nop; i++) {
+                    const s = i === 1 ? "" : "_" + i;
+                    if (!values["pack_name" + s]) {
+                        $(d.wrapper).find('[data-fieldname="pack_name' + s + '"]').closest(".frappe-control").addClass("has-error");
+                        frappe.msgprint(__("All packs must have a pack name."));
+                        return;
+                    }
+                }
+            }
+            if (!no_cook && nop > 1) {
+                for (let i = 1; i < nop; i++) {
+                    const s = i === 1 ? "" : "_" + i;
+                    if (flt(values["pack_qty" + s]) <= 0) {
+                        frappe.msgprint(__("Please fill qty for all packs except the last one."));
+                        return;
+                    }
+                }
+                for (let i = 2; i <= nop; i++) {
+                    const s = "_" + i;
+                    const prev_s = i === 2 ? "" : "_" + (i - 1);
+                    if (flt(values["pack_qty" + s]) > 0 && flt(values["pack_qty" + prev_s]) <= 0) {
+                        frappe.msgprint(__("Please fill Pack {0} Qty first before entering Pack {1} Qty.", [i - 1, i]));
+                        return;
+                    }
+                }
+                const packs = [];
+                for (let i = 1; i <= nop; i++) {
+                    const s = i === 1 ? "" : "_" + i;
+                    if (values["pack_name" + s]) packs.push({ name: values["pack_name" + s], qty: flt(values["pack_qty" + s]) });
+                }
+                if (packs.length > 1) {
+                    let valid = true;
+                    frappe.call({
+                        method: "caf.caf.page.production_schedule.production_schedule.validate_pack_weights",
+                        args: { recipe_name: recipe_val, size: values.size, packs: JSON.stringify(packs) },
+                        async: false,
+                        callback: function(vr) {
+                            if (vr.message && !vr.message.valid) {
+                                valid = false;
+                                frappe.msgprint(vr.message.message);
+                            }
+                        }
+                    });
+                    if (!valid) return;
+                }
+            }
+
+            // ── Apply staged values to the row (existing field handlers fire) ──
+            // The grid's recipe_name handler clears size/packs/nop on change, so re-apply
+            // nop/size/packs unconditionally whenever the recipe changed.
+            // NOTE: frappe.model.set_value marks the form dirty asynchronously, so each
+            // call must be awaited before frm.is_dirty() is consulted for the save.
+            const recipe_changed = recipe_val !== orig_recipe;
+            if (recipe_changed) {
+                await frappe.model.set_value(cdt, cdn, "recipe_name", recipe_val);
+            }
+            await frappe.model.set_value(cdt, cdn, "number_of_pack", values.number_of_pack);
+            if (recipe_changed || flt(values.size) !== orig_size) {
+                await frappe.model.set_value(cdt, cdn, "size", values.size);
+            }
+            for (let i = 1; i <= 7; i++) {
+                const s = i === 1 ? "" : "_" + i;
+                const new_name = values["pack_name" + s] || null;
+                const new_qty = flt(values["pack_qty" + s]);
+                const new_remark = values["pack_remark" + s] || null;
+                if (recipe_changed || (new_name || "") !== (row["pack_name" + s] || "")) await frappe.model.set_value(cdt, cdn, "pack_name" + s, new_name);
+                if (recipe_changed || new_qty !== flt(row["pack_qty" + s])) await frappe.model.set_value(cdt, cdn, "pack_qty" + s, new_qty);
+                if (recipe_changed || (new_remark || "") !== (row["pack_remark" + s] || "")) await frappe.model.set_value(cdt, cdn, "pack_remark" + s, new_remark);
+            }
+            if ((values.production_type || "") !== (row.production_type || "")) await frappe.model.set_value(cdt, cdn, "production_type", values.production_type || null);
+            if (!!values.urgent_check !== !!row.urgent_check) await frappe.model.set_value(cdt, cdn, "urgent_check", values.urgent_check ? 1 : 0);
+            if ((values.recipe_note || "") !== (row.recipe_note || "")) await frappe.model.set_value(cdt, cdn, "recipe_note", values.recipe_note || null);
+            if (status_val !== orig_status) await frappe.model.set_value(cdt, cdn, "produ_status", status_val);
+
+            show_loading_overlay();
+            // frm.save() never settles its promise when the doc has no changes
+            // (frappe skips the server call), which would leave the overlay stuck.
+            // Only round-trip when something actually changed.
+            const dirty = frm.is_dirty();
+            const save_promise = dirty ? frm.save() : Promise.resolve();
+            save_promise.then(function() {
+                hide_loading_overlay();
+                d.hide();
+                maybe_process_dp_changes(frm);
+                setTimeout(function() { if (window.opener) window.close(); }, 500);
+            }, function(err) {
+                hide_loading_overlay();
+                console.error("❌ DP dialog save failed:", err);
+            });
+        },
+        secondary_action_label: __('Cancel'),
+        secondary_action: function() { d.hide(); }
+    });
+    d._dp_raw_materials = flt(row._raw_materials);
+    d._dp_max_packs = row._max_packs || 7;
+
+    // ── Live behaviors (staged inside the dialog only) ──
+    d.fields_dict.recipe.df.change = function() {
+        const recipe = d.get_value("recipe") || "";
+        const is_nc = !recipe || recipe === "No Cooking";
+        d.set_value("size", 0);
+        d.set_value("number_of_pack", is_nc ? 0 : 1);
+        for (let i = 1; i <= 7; i++) {
+            const s = i === 1 ? "" : "_" + i;
+            d.set_value("pack_name" + s, null);
+            d.set_value("pack_qty" + s, 0);
+            d.set_value("pack_remark" + s, null);
+        }
+        d.set_value("custom_yield", 0);
+        d.set_value("total_input", 0);
+        d.set_value("total_output", 0);
+        d._dp_raw_materials = 0;
+        d._dp_max_packs = 7;
+        if (is_nc) {
+            d.fields_dict.produ_status.df.options = "\nNew Schedule\nChange Slot";
+            d.fields_dict.produ_status.set_options();
+            if (!has_wos && d.get_value("produ_status") === "") d.set_value("produ_status", "New Schedule");
+            _dp_dialog_restrict(d);
+            _dp_dialog_set_pack_visibility(d);
+            return;
+        }
+        let opts;
+        const cur_status = d.get_value("produ_status") || "";
+        if (no_wo) {
+            opts = "New Schedule\nChange Slot\nRearrange";
+            if (cur_status && cur_status !== "New Schedule" && !opts.includes(cur_status)) opts += "\n" + cur_status;
+        } else {
+            opts = "\nRecipe Change\nOnly Remark\nPack Change\nChange Slot\nRearrange";
+            if (cur_status && opts.split("\n").indexOf(cur_status) === -1) opts += "\n" + cur_status;
+        }
+        d.fields_dict.produ_status.df.options = opts;
+        d.fields_dict.produ_status.set_options();
+        frappe.call({
+            method: "caf.caf.page.production_schedule.production_schedule.get_recipe_bom_data",
+            args: { recipe_name: recipe },
+            callback: function(r) {
+                if (r.message) {
+                    d._dp_max_packs = r.message.pack_count || 7;
+                    d._dp_raw_materials = r.message.raw_materials || 0;
+                    d.set_value("custom_yield", r.message.yield || 0);
+                    const sz = flt(d.get_value("size"));
+                    const ti = flt(d._dp_raw_materials) * sz;
+                    d.set_value("total_input", ti);
+                    d.set_value("total_output", ti * flt(r.message.yield));
+                }
+            }
+        });
+        _dp_dialog_restrict(d);
+        _dp_dialog_set_pack_visibility(d);
+    };
+
+    d.fields_dict.size.df.change = function() {
+        const recipe = d.get_value("recipe") || "";
+        if (!recipe || recipe === "No Cooking") return;
+        const sz = flt(d.get_value("size"));
+        const raw = flt(d._dp_raw_materials);
+        if (raw) {
+            const ti = raw * sz;
+            d.set_value("total_input", ti);
+            d.set_value("total_output", ti * flt(d.get_value("custom_yield")));
+        }
+        _dp_dialog_restrict(d);
+    };
+
+    d.fields_dict.number_of_pack.df.change = function() {
+        const nop = parseInt(d.get_value("number_of_pack")) || 0;
+        const maxp = d._dp_max_packs || 7;
+        if (nop > maxp) {
+            frappe.show_alert({ message: __('Number of packs cannot exceed {0} for this recipe.', [maxp]), indicator: 'red' }, 3);
+            d.set_value("number_of_pack", String(maxp));
+            return;
+        }
+        _dp_dialog_set_pack_visibility(d);
+    };
+
+    d.fields_dict.produ_status.df.change = function() {
+        const v = d.get_value("produ_status") || "";
+        if (v === "Change Slot" || v === "Rearrange") {
+            // Route to the dedicated action dialog (matching grid-dropdown behavior).
+            d.hide();
+            if (v === "Change Slot") {
+                show_change_slot_dialog(frm, cdt, cdn);
+            } else {
+                show_rearrange_dialog(frm, cdt, cdn);
+            }
+            return;
+        }
+        _dp_dialog_restrict(d);
+    };
+
+    d.show();
+    _dp_dialog_restrict(d);
+    _dp_dialog_set_pack_visibility(d);
+
+    // ── WDP-style slot actions ──
+    // Clear: no MR/PP → reset the slot to a clean "No Cooking" slot (no WOs to cancel).
+    $(d.wrapper).on("click", ".dp-slot-btn-clear", async function() {
+        await frappe.model.set_value(cdt, cdn, "produ_status", "");
+        await frappe.model.set_value(cdt, cdn, "recipe_name", "No Cooking");
+        await frappe.model.set_value(cdt, cdn, "size", 0);
+        await frappe.model.set_value(cdt, cdn, "number_of_pack", 0);
+        for (let i = 1; i <= 7; i++) {
+            const s = i === 1 ? "" : "_" + i;
+            await frappe.model.set_value(cdt, cdn, "pack_name" + s, null);
+            await frappe.model.set_value(cdt, cdn, "pack_qty" + s, 0);
+            await frappe.model.set_value(cdt, cdn, "pack_remark" + s, null);
+        }
+        await frappe.model.set_value(cdt, cdn, "production_type", "");
+        await frappe.model.set_value(cdt, cdn, "urgent_check", 0);
+        await frappe.model.set_value(cdt, cdn, "recipe_note", "");
+        await frappe.model.set_value(cdt, cdn, "custom_yield", 0);
+        await frappe.model.set_value(cdt, cdn, "mr_reference", "");
+        await frappe.model.set_value(cdt, cdn, "production_plane", "");
+        await frappe.model.set_value(cdt, cdn, "wo_list", "");
+        await frappe.model.set_value(cdt, cdn, "wo_list_with_type", "");
+        await frappe.model.set_value(cdt, cdn, "rq_status", "");
+        await frappe.model.set_value(cdt, cdn, "custom_pair_id", "");
+        show_loading_overlay();
+        const dirty = frm.is_dirty();
+        const save_promise = dirty ? frm.save() : Promise.resolve();
+        save_promise.then(function() {
+            hide_loading_overlay();
+            d.hide();
+        }, function(err) {
+            hide_loading_overlay();
+            console.error("❌ DP dialog clear failed:", err);
+        });
+    });
+
+    // Cancel: only for rows WITH MR/PP → cancels all the way through to WOs.
+    $(d.wrapper).on("click", ".dp-slot-btn-cancel", function() {
+        if (orig_status === "Cancelled") {
+            frappe.msgprint(__("This item is already cancelled."));
+            return;
+        }
+        frappe.confirm(__("Cancel this recipe? Existing WOs will be cancelled."), function() {
+            frappe.model.set_value(cdt, cdn, "produ_status", "Cancelled").then(function() {
+                show_loading_overlay();
+                const dirty = frm.is_dirty();
+                const save_promise = dirty ? frm.save() : Promise.resolve();
+                save_promise.then(function() {
+                    hide_loading_overlay();
+                    d.hide();
+                    maybe_process_dp_changes(frm);
+                    setTimeout(function() { if (window.opener) window.close(); }, 500);
+                }, function(err) {
+                    hide_loading_overlay();
+                    console.error("❌ DP dialog cancel failed:", err);
+                });
+            });
+        });
+    });
+
+    // Ctrl+Shift+Enter → Save & Close (Metabase popup flow)
+    $(d.wrapper).on("keydown.dp_ctrlshiftenter", function(e) {
+        if (e.ctrlKey && e.shiftKey && e.key === "Enter") {
+            e.preventDefault();
+            e.stopPropagation();
+            d.get_primary_btn().trigger("click");
+        }
+    });
 }
 
 // =================================================================
@@ -993,7 +1576,7 @@ function reopen_pencil_dialog(frm, row_name) {
         }
         if (row) {
             grid.refresh_row(row.doc.name);
-            row.show_form();
+            show_dp_edit_dialog(frm, 'Create ProExl Items', row.doc.name);
         }
     }, 300);
 }
@@ -1032,6 +1615,43 @@ function show_rearrange_dialog(frm, cdt, cdn) {
             );
             if (!target_row) return;
 
+            action_applied = true;
+            const has_wos = !!frm.doc.custom_submit_ref;
+
+            if (has_wos) {
+                // WOs exist: delegate the whole swap + WO migration to the atomic
+                // server method (single transaction). No client-side field swap, no
+                // status markers, no separate save — on failure the transaction rolls
+                // back and the rows stay in their original slots.
+                show_loading_overlay();
+                frappe.call({
+                    method: "caf.caf.doctype.daily_production.rearrange_and_change_slot.process_rearrange_atomic",
+                    args: {
+                        dp_name: frm.doc.name,
+                        row_a_name: source_row.name,
+                        row_b_name: target_row.name,
+                    },
+                    callback: function(r) {
+                        hide_loading_overlay();
+                        d.hide();
+                        if (r.message && r.message.success) {
+                            frm.reload_doc();
+                            frappe.show_alert({ message: __('✅ Rearranged'), indicator: 'green' });
+                        } else {
+                            frm.reload_doc();
+                            frappe.show_alert({ message: r.message && r.message.message || __('Rearrange failed'), indicator: 'red' }, 6);
+                        }
+                    },
+                    error: function() {
+                        hide_loading_overlay();
+                        d.hide();
+                        frm.reload_doc();
+                    }
+                });
+                return;
+            }
+
+            // No WOs: pure data swap — no status markers, no pair_id (WDP-style).
             const fields = get_moveable_fields(source_row.doctype);
             const swaps = fields.map(fn => ({ fn, s_val: source_row[fn], t_val: target_row[fn] }));
             // Direct locals assignment bypasses field change handlers that could corrupt values
@@ -1040,15 +1660,16 @@ function show_rearrange_dialog(frm, cdt, cdn) {
                 locals[target_row.doctype][target_row.name][fn] = s_val;
             });
 
-            action_applied = true;
-            const pair_id = Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
-            frappe.model.set_value(source_row.doctype, source_row.name, 'produ_status', 'Rearrange');
-            frappe.model.set_value(target_row.doctype, target_row.name, 'produ_status', 'Rearrange');
-            frappe.model.set_value(source_row.doctype, source_row.name, 'custom_pair_id', pair_id);
-            frappe.model.set_value(target_row.doctype, target_row.name, 'custom_pair_id', pair_id);
+            frappe.model.set_value(source_row.doctype, source_row.name, 'produ_status', '');
+            frappe.model.set_value(target_row.doctype, target_row.name, 'produ_status', '');
+            frappe.model.set_value(source_row.doctype, source_row.name, 'custom_pair_id', '');
+            frappe.model.set_value(target_row.doctype, target_row.name, 'custom_pair_id', '');
 
             frm.refresh_field("production_table");
-            frm.save().then(() => { d.hide(); reopen_pencil_dialog(frm, source_row.name); }, () => { d.hide(); });
+            frm.save().then(() => {
+                d.hide();
+                reopen_pencil_dialog(frm, source_row.name);
+            }, () => { d.hide(); });
         },
         secondary_action_label: __('Cancel'),
         secondary_action: function() { d.hide(); }
@@ -1124,6 +1745,43 @@ function show_change_slot_dialog(frm, cdt, cdn) {
                 return;
             }
 
+            action_applied = true;
+            const has_wos = !!frm.doc.custom_submit_ref;
+
+            if (has_wos) {
+                // WOs exist: delegate the whole swap + WO migration to the atomic
+                // server method (single transaction). No client-side field swap, no
+                // status markers, no separate save — on failure the transaction rolls
+                // back and the rows stay in their original slots.
+                show_loading_overlay();
+                frappe.call({
+                    method: "caf.caf.doctype.daily_production.rearrange_and_change_slot.process_slot_swap_atomic",
+                    args: {
+                        dp_name: frm.doc.name,
+                        source_row: source_row.name,
+                        target_row: target_row.name,
+                    },
+                    callback: function(r) {
+                        hide_loading_overlay();
+                        d.hide();
+                        if (r.message && r.message.success) {
+                            frm.reload_doc();
+                            frappe.show_alert({ message: __('✅ Slot changed'), indicator: 'green' });
+                        } else {
+                            frm.reload_doc();
+                            frappe.show_alert({ message: r.message && r.message.message || __('Slot change failed'), indicator: 'red' }, 6);
+                        }
+                    },
+                    error: function() {
+                        hide_loading_overlay();
+                        d.hide();
+                        frm.reload_doc();
+                    }
+                });
+                return;
+            }
+
+            // No WOs: pure data move — no status markers, no pair_id (WDP-style).
             const fields = get_moveable_fields(child_doctype);
             const swaps = fields.map(fn => ({ fn, s_val: source_row[fn], t_val: target_row[fn] }));
             swaps.forEach(({ fn, s_val, t_val }) => {
@@ -1131,13 +1789,10 @@ function show_change_slot_dialog(frm, cdt, cdn) {
                 locals[target_row.doctype][target_row.name][fn] = s_val;
             });
 
-            action_applied = true;
-            const pair_id = Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
-
-            frappe.model.set_value(target_row.doctype, target_row.name, 'produ_status', 'Change Slot');
-            frappe.model.set_value(source_row.doctype, source_row.name, 'produ_status', 'Change Slot');
-            frappe.model.set_value(target_row.doctype, target_row.name, 'custom_pair_id', pair_id);
-            frappe.model.set_value(source_row.doctype, source_row.name, 'custom_pair_id', pair_id);
+            frappe.model.set_value(target_row.doctype, target_row.name, 'produ_status', '');
+            frappe.model.set_value(source_row.doctype, source_row.name, 'produ_status', '');
+            frappe.model.set_value(target_row.doctype, target_row.name, 'custom_pair_id', '');
+            frappe.model.set_value(source_row.doctype, source_row.name, 'custom_pair_id', '');
 
             frm.refresh_field("production_table");
             frm.save().then(() => {
@@ -1199,9 +1854,28 @@ window.apply_edit_restrictions = function(frm, cdt, cdn) {
         let field_configs = {};
         const status = row.produ_status;
         const is_no_cook = !row.recipe_name || row.recipe_name === "" || row.recipe_name === "No Cooking";
+        var size_val = flt(row.size);
+
+        // Lock the whole row while a background job is running (WPD-style)
+        if (row.rq_status === "Processing") {
+            all_fields.forEach(function (fn) {
+                frm.set_df_property('production_table', 'read_only', 1, frm.doc.name, fn, row.name);
+            });
+            return;
+        }
 
         if (status === "New Schedule") {
-            all_fields.forEach(f => { if (!ALWAYS_READ_ONLY.includes(f)) field_configs[f] = 0; });
+            // Progressive unlock: recipe → size → the rest (WPD-style)
+            all_fields.forEach(f => { if (!ALWAYS_READ_ONLY.includes(f)) field_configs[f] = 1; });
+            field_configs.produ_status = 0;
+            field_configs.recipe_name = 0;
+            if (!is_no_cook) {
+                if (size_val > 0) {
+                    all_fields.forEach(f => { if (!ALWAYS_READ_ONLY.includes(f)) field_configs[f] = 0; });
+                } else {
+                    field_configs.size = 0;
+                }
+            }
         }
         else if (status === "Recipe Change") {
             all_fields.forEach(f => { if (!ALWAYS_READ_ONLY.includes(f)) field_configs[f] = 0; });
@@ -1238,7 +1912,6 @@ window.apply_edit_restrictions = function(frm, cdt, cdn) {
         }
 
         // Lock pack fields when size is 0 (matching WPD behavior)
-        var size_val = flt(row.size);
         if (size_val <= 0 && !is_no_cook) {
             field_configs.number_of_pack = 1;
             for (var _pi = 1; _pi <= 7; _pi++) {
@@ -1398,7 +2071,7 @@ frappe.ui.form.on('Daily Production', {
 
             if (row) {
                 grid.refresh_row(row.doc.name);
-                row.show_form();
+                show_dp_edit_dialog(frm, 'Create ProExl Items', row.doc.name);
 
                 const params = new URLSearchParams(window.location.search);
                 params.delete('row');
@@ -1407,55 +2080,6 @@ frappe.ui.form.on('Daily Production', {
                 window.history.replaceState({}, document.title, newUrl);
             }
         }
-    }
-});
-
-// =================================================================
-// Ctrl+Shift+Enter — Save & Close with Metabase Refresh
-// =================================================================
-
-frappe.ui.form.on('Create ProExl Items', {
-    form_render: function(frm, cdt, cdn) {
-        let table_fieldname = "production_table";
-        let grid_row = frm.fields_dict[table_fieldname].grid.grid_rows_by_docname[cdn];
-
-        if (!grid_row || !grid_row.grid_form) return;
-
-        let wrapper = grid_row.grid_form.wrapper;
-        wrapper.attr('tabindex', 0);
-        wrapper.off('keydown.ctrlshiftenter');
-
-        wrapper.on('keydown.ctrlshiftenter', async function(e) {
-            if (e.ctrlKey && e.shiftKey && e.key === 'Enter') {
-                e.preventDefault();
-                e.stopPropagation();
-
-                try {
-                    $(document.activeElement).blur();
-                    await frappe.utils.sleep(200);
-
-                    await frm.save();
-
-                    frappe.show_alert({
-                        message: __('Success! Syncing Metabase...'),
-                        indicator: 'green'
-                    });
-
-                    grid_row.hide_form();
-
-                    setTimeout(() => {
-                        window.close();
-                    }, 500);
-
-                } catch (err) {
-                    console.error("❌ ERROR:", err);
-                    frappe.msgprint({
-                        title: __('Error'),
-                        message: err.message || err,
-                        indicator: 'red'
-                    });
-                }
-            }
-        });
+        install_dp_edit_interceptor(frm);
     }
 });

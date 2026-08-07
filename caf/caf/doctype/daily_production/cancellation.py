@@ -394,18 +394,53 @@ def _process_cancel_row(row_name: str, child_doctype: str) -> None:
     # Run the 2-Phase Cancellation
     _cancel_work_orders_by_id(row.link_id)
 
-    if row.production_plane: _cancel_production_plan(row.production_plane)
-    if row.mr_reference: _clear_mr_link_id(row.mr_reference)
+    if row.production_plane: 
+        _cancel_production_plan(row.production_plane)
+    if row.mr_reference: 
+        _clear_mr_link_id(row.mr_reference)
 
-    frappe.db.set_value(child_doctype, row_name, {
-        "wo_list": "", "production_plane": "", "mr_reference": "",
-        "produ_status": "Cancelled", "wo_list_with_type": ""
+    # 1. Inspect DocType metadata to clear ALL fields automatically
+    meta = frappe.get_meta(child_doctype)
+    values_to_update = {}
+
+    # Standard system/DocType administrative fields to preserve
+    ignored_fields = {
+        "name", "creation", "modified", "modified_by", 
+        "owner", "docstatus", "parent", "parentfield", "parenttype", "idx","link_id","recipe_cook_workstaion",
+        "recipe_cook_round"
+    }
+
+    numeric_types = ("Int", "Float", "Currency", "Percent", "Check")
+
+    for df in meta.fields:
+        # Skip section breaks, column breaks, read-only headings, and system fields
+        if df.fieldtype in ("Section Break", "Column Break", "Tab Break", "HTML", "Heading") or df.fieldname in ignored_fields:
+            continue
+            
+        # Set numeric/checkbox fields to 0 (or default), others to None/empty
+        if df.fieldtype in numeric_types:
+            values_to_update[df.fieldname] = int(df.default) if df.default and df.default.isdigit() else 0
+        else:
+            values_to_update[df.fieldname] = df.default if df.default is not None else None
+
+    # 2. Override specific custom cancellation rules
+    values_to_update.update({
+        # "produ_status": "Cancelled",
+        "recipe_name": "No Cooking",
     })
+
+    # 3. Update the database in a single query
+    frappe.db.set_value(child_doctype, row_name, values_to_update)
 
 @frappe.whitelist()
 def process_cancellations(doc_name: str, doctype: str, child_doctype: str) -> None:
+    for row in frappe.get_all(child_doctype, filters={"parent": doc_name, "produ_status": "Cancelled"}, fields=["*"]):
+        print(row)
     cancel_rows = frappe.get_all(child_doctype, filters={"parent": doc_name, "produ_status": "Cancelled"}, fields=["name"])
     if not cancel_rows: return
+    print("cancel_rows", len(cancel_rows))
     for row in cancel_rows:
         _process_cancel_row(row.name, child_doctype)
 
+                                                        
+   

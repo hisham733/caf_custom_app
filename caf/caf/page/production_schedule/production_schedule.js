@@ -1487,7 +1487,8 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 		if (is_no_cook) {
 			_status_options = "\nNew Schedule";
 		} else if (!mr_reference) {
-			_status_options = "\nNew Schedule\nRecipe Change";
+			_status_options = "New Schedule";
+			if (status && status !== "New Schedule" && _status_options.indexOf(status) === -1) _status_options += "\n" + status;
 		} else {
 			_status_options = "\nRecipe Change\nOnly Remark\nPack Change";
 		}
@@ -1641,7 +1642,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			fields.push(
 				{ fieldname: "sec_actions", fieldtype: "Section Break", label: __("Actions") },
 				{
-					label: __("Cancel Recipe"), fieldname: "btn_cancel", fieldtype: "Button",
+					label: __("Cancel Recipe"), fieldname: "btn_cancel", fieldtype: "Button", input_class: "btn-danger",
 					click: function () {
 						if (status === "Cancelled") {
 							frappe.msgprint(__("This item is already cancelled."));
@@ -1965,17 +1966,18 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 				var recipe_val = d.get_value("recipe");
 				var no_cook = !recipe_val || recipe_val === "No Cooking";
 				var status_field = d.get_field("status");
+				var cur_status = d.get_value("status") || "";
 				if (status_field) {
 				if (no_cook) {
 					status_field.df.options = "\nNew Schedule";
 				} else if (!mr_reference) {
-					status_field.df.options = "\nNew Schedule\nRecipe Change";
+					status_field.df.options = "New Schedule";
+					if (cur_status && cur_status !== "New Schedule" && status_field.df.options.indexOf(cur_status) === -1) status_field.df.options += "\n" + cur_status;
 				} else {
 					status_field.df.options = "\nRecipe Change\nOnly Remark\nPack Change";
 				}
 					status_field.set_options();
 				}
-			var cur_status = d.get_value("status") || "";
 			me._apply_dialog_restrictions(d, cur_status, no_cook);
 			if (cur_status === "Recipe Change" && recipe_val !== recipe) {
 				d.set_value("size", 0);

@@ -98,14 +98,18 @@ def process_recipe_change_or_size_change(doc_or_name, child_doctype: str) -> Non
             "parent"      : doc_name,
             "produ_status": STATUS_CHANGE_SIZE,
         },
-        fields=["name", "idx", "recipe_name", "link_id", "production_plane","production_type"],
+        fields=["name", "idx", "recipe_name", "link_id", "mr_reference", "production_plane","production_type"],
         order_by="idx asc",
     )
 
     if not rows:
         return
-
+    print("rows size change", len(rows))
     for r in rows:
+        # WDP-style: "Recipe Change" on a row with no MR/PP is a passive editable
+        # marker — there is no existing WO chain to regenerate.
+        if not r.mr_reference:
+            continue
         row_doc = next((d for d in parent_doc.production_table if d.name == r.name), None)
         if not row_doc:
             continue

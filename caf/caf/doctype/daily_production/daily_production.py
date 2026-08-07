@@ -12,7 +12,6 @@ from caf.caf.doctype.daily_production.rws import rws
 from .rearrange_and_change_slot import process_slot_swaps , process_switch
 from .change_size import process_recipe_change_or_size_change
 from .change_pack import process_pack_change_or_add
-
 import json
 import datetime
 # from caf.caf.overrides.production_plan import get_items_for_material_requests
@@ -42,7 +41,7 @@ class DailyProduction(Document):
 
         Rules:
         1. Row with existing WOs cannot be set to "New Schedule"
-        2. Row with "No Cooking" cannot have any status except "Change Slot"
+        2. Row with "No Cooking" cannot have any status except "Change Slot"/"New Schedule"
         3. Non-cooking rows must have a size > 0
         4. On submit, at least one row must have a produ_status
         """
@@ -55,7 +54,7 @@ class DailyProduction(Document):
                     _("Row {0}: This row already has Work Orders. You cannot select <b>{1}</b>. Please clear the status.")
                     .format(item.idx, NEW_SCHEDULE)
                 )
-            if item.produ_status and item.produ_status != "Change Slot" and item.recipe_name == NO_COOKING:
+            if item.produ_status and item.produ_status not in ("Change Slot", NEW_SCHEDULE) and item.recipe_name == NO_COOKING:
                 frappe.throw(
                     _("Row Number {0}: You cannot set a Production Status <strong>\"{2}\"</strong> if the Recipe is <b>{1}</b>. Please clear the status or select a valid recipe.")
                     .format(item.idx, NO_COOKING, item.produ_status)
@@ -307,7 +306,6 @@ class DailyProduction(Document):
     @frappe.whitelist()
     def process_manual_updates(self):
         """Orchestrate all post-submit production workflows.
-
         Called from on_submit (after DB commit). Runs each workflow step
         sequentially. If any step throws, the entire transaction is rolled back.
 
@@ -334,18 +332,18 @@ class DailyProduction(Document):
                 if not has_mr:
                     self.db_set("custom_submit_ref", "")
                     frappe.db.commit()
-
+                    
             process_cancellations(self.name, self.doctype, CHILD_DOCTYPE)
             process_recipe_change_or_size_change(self, CHILD_DOCTYPE)
             process_slot_swaps(self, CHILD_DOCTYPE)
-            process_switch(self, CHILD_DOCTYPE)
+            switch_rows = process_switch(self, CHILD_DOCTYPE)
             process_pack_change_or_add(self, CHILD_DOCTYPE)
             
             rws(self, CHILD_DOCTYPE)
 
             # Pre-validate: "New Schedule" rows must have pack fields before creating MRs
             for row in self.production_table:
-                if row.produ_status == NEW_SCHEDULE:
+                if row.produ_status == NEW_SCHEDULE and row.recipe_name != NO_COOKING:
                     count = int(row.number_of_pack or 0)
                     if count == 0:
                         frappe.throw(
@@ -362,6 +360,19 @@ class DailyProduction(Document):
 
             self._process_new_schedules()
             self._obsolete_older_records()
+
+            # 1b. Everything processed successfully — clear all row statuses
+            # (WPD-style: once WOs are created, rows go back to a blank state)
+            for row in self.production_table :
+                frappe.db.set_value(CHILD_DOCTYPE, row.name, "produ_status", "")
+
+            # 1c. Re-apply visual marker for just-processed rearranges only.
+            # The rows are marked rq_status="Done" so they are not re-processed on
+            # the next run; the markers are wiped on the next edit/save that runs
+            # process_manual_updates (blanket clear above). Change Slot rows end
+            # with a blank status (no marker).
+            for row_name in (switch_rows or []):
+                frappe.db.set_value(CHILD_DOCTYPE, row_name, "produ_status", "Rearrange")
 
             # 2. Update the reference flag
             # We use db_set to update the value without triggering another save cycle
@@ -394,7 +405,30 @@ class DailyProduction(Document):
             # Message for the user
             frappe.throw(_("Update failed and changes were rolled back. Error: {0}").format(str(e)))
 
-               
+    @frappe.whitelist()
+    def start_background_processing(self):
+        """Mark pending rows 'Processing' and enqueue the background worker.
+
+        Used by the DP form's save flow (WPD-style): rows with a status are
+        locked (Processing) and processed in the background; on success their
+        status is cleared and rq_status set to 'Done'.
+        """
+        pending = [
+            r for r in self.production_table
+            if r.recipe_name != NO_COOKING and r.produ_status and r.rq_status not in ("Done", "Processing")
+        ]
+        for r in pending:
+            frappe.db.set_value(CHILD_DOCTYPE, r.name, "rq_status", "Processing")
+        frappe.db.commit()
+
+        if pending:
+            frappe.enqueue(
+                "caf.caf.doctype.daily_production.daily_production._background_process_dp",
+                dp_name=self.name,
+                queue="short",
+            )
+        return {"success": True, "pending": len(pending)}
+
     # ── Production Table Flow ─────────────────────────────────────────────────
     def _on_submit_production_table(self) -> None:
         """Validate rows → group by recipe → create one MR per group."""
@@ -420,11 +454,17 @@ class DailyProduction(Document):
         rolls back the entire transaction (no partial WOs created).
         """
         recipe_groups = _get_recipe_rows(self.production_table)
+        print("recipe_groups", len(recipe_groups))
         for group in recipe_groups:
-            if group["rows"][0].produ_status == NEW_SCHEDULE or (not group["rows"][0].mr_reference and not group["rows"][0].production_plane):
+            first = group["rows"][0]
+            is_new_schedule = first.produ_status == NEW_SCHEDULE
+            no_references = not first.mr_reference and not first.production_plane and not first.wo_list
+            # WDP-style: "Recipe Change" without MR/PP is a passive editable
+            # marker, not a request to create MRs.
+            if is_new_schedule or (no_references and first.produ_status != "Recipe Change"):
                 self.create_material_request(group["recipe"], group["rows"])
-                link_id = group["rows"][0].link_id
-                reheat = group["rows"][0].production_type
+                link_id = first.link_id
+                reheat = first.production_type
                 if link_id and reheat == "Reheat":
                     remove_all_wip_wo(link_id, work=True)
 
@@ -509,6 +549,42 @@ class DailyProduction(Document):
             newly_born_wos = getattr(new_mr, "wo_list", [])
             _write_back_to_row_additive(rows[0], new_mr.name, new_mr)
             return newly_born_wos
+
+
+def _background_process_dp(dp_name):
+    """Background worker: run process_manual_updates, mark rows Done + clear status.
+
+    On failure the Processing rows are marked 'Failed' with the error message.
+    """
+    try:
+        dp = frappe.get_doc("Daily Production", dp_name)
+        pending = frappe.get_all(
+            CHILD_DOCTYPE,
+            filters={"parent": dp_name, "rq_status": "Processing"},
+            fields=["name"],
+        )
+        dp.process_manual_updates()
+        for r in pending:
+            frappe.db.set_value(CHILD_DOCTYPE, r.name, {"rq_status": "Done", "produ_status": ""})
+        frappe.db.commit()
+    except Exception:
+        frappe.log_error(title="DP background processing failed", message=frappe.get_traceback())
+        rows = frappe.get_all(
+            CHILD_DOCTYPE,
+            filters={"parent": dp_name, "rq_status": "Processing"},
+            fields=["name"],
+        )
+        for r in rows:
+            frappe.db.set_value(CHILD_DOCTYPE, r.name, {"rq_status": "Failed"})
+        frappe.db.commit()
+
+
+@frappe.whitelist()
+def get_dp_row_statuses(dp_name):
+    """Return whether any row is still Processing (poll for the background worker)."""
+    any_processing = frappe.db.exists(CHILD_DOCTYPE, {"parent": dp_name, "rq_status": "Processing"})
+    return {"any_processing": bool(any_processing)}
+
 
 #  Material Request Helpers  (module-level, no self needed)
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1656,7 +1732,7 @@ def submit_dp(docname):
     if dp.workflow_state == "Submitted":
         frappe.throw(_("Daily Production is already submitted."))
 
-    if all(d.recipe_name == NO_COOKING and not d.produ_status for d in dp.production_table):
+    if all(d.recipe_name == NO_COOKING for d in dp.production_table):
         frappe.throw(_("All rows have recipe <strong>No Cooking</strong> — not allowed"))
 
     for row in dp.production_table:

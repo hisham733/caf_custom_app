@@ -13,7 +13,11 @@
   "waha_api_key",
   "test_waha",
   "dp_whatsapp_section",
-  "dp_whatsapp_template"
+  "dp_whatsapp_template",
+  "ai_planner_section",
+  "ai_planner_enabled",
+  "ai_planner_chat_ids",
+  "ai_planner_webhook_token"
  ],
  "fields": [
   {
@@ -61,6 +65,30 @@
    "fieldtype": "Select",
    "label": "DP WhatsApp Template",
    "options": "New\nOld"
+  },
+  {
+   "fieldname": "ai_planner_section",
+   "fieldtype": "Section Break",
+   "label": "AI Planner (WhatsApp)"
+  },
+  {
+   "default": "0",
+   "description": "Enable the WhatsApp AI planner for authorized chat IDs.",
+   "fieldname": "ai_planner_enabled",
+   "fieldtype": "Check",
+   "label": "AI Planner Enabled"
+  },
+  {
+   "description": "One WhatsApp chat ID per line — only these chats can talk to the AI planner.",
+   "fieldname": "ai_planner_chat_ids",
+   "fieldtype": "Small Text",
+   "label": "AI Planner Chat IDs"
+  },
+  {
+   "description": "Secret token required by the WAHA webhook URL (?token=...).",
+   "fieldname": "ai_planner_webhook_token",
+   "fieldtype": "Password",
+   "label": "AI Planner Webhook Token"
   }
  ],
  "grid_page_length": 50,
