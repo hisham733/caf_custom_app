@@ -207,28 +207,80 @@ function poll_dp_processing(frm, attempts) {
 // page — same as the page's "Create Work Order" button) only when WOs were
 // already created ("Create Work Order" clicked, i.e. custom_submit_ref is set).
 // Otherwise this is a no-op — the save is just persisted.
-function maybe_process_dp_changes(frm) {
-    if (!frm.doc.custom_submit_ref) return;
+function _dp_extract_server_error(r) {
+    let msg = "";
+    try {
+        if (r && r._server_messages) {
+            const parsed = JSON.parse(r._server_messages);
+            parsed.forEach(function(m) { if (m && m.message) msg += (msg ? " " : "") + m.message; });
+        }
+    } catch (e) {}
+    if (!msg && r && r.exc) msg = String(r.exc);
+    return msg || __("Failed to process. Please review and retry.");
+}
+
+function _dp_dialog_show_error(d, msg) {
+    if (!d) return;
+    const el = $(d.wrapper).find(".dp-wo-error");
+    if (el.length) {
+        el.html(frappe.utils.escape_html ? frappe.utils.escape_html(msg) : msg).show();
+    } else {
+        frappe.show_alert({ message: msg, indicator: "red" }, 6);
+    }
+}
+
+function _dp_dialog_clear_error(d) {
+    if (!d) return;
+    const el = $(d.wrapper).find(".dp-wo-error");
+    if (el.length) el.hide().html("");
+}
+
+function maybe_process_dp_changes(frm, row_name, dialog, on_success) {
+    const finish_success = function() {
+        if (dialog) dialog.hide();
+        if (typeof on_success === "function") on_success();
+    };
+    if (!frm.doc.custom_submit_ref) {
+        finish_success();
+        return;
+    }
+    // WPD-style: a dialog save only processes the edited row. Rows already
+    // marked Done keep their status marker for the planner and are skipped.
     const pending = (frm.doc.production_table || []).filter(function(r) {
+        if (row_name && r.name !== row_name) return false;
+        if (r.rq_status === "Done") return false;
         if (r.recipe_name === "No Cooking" || !r.produ_status) return false;
         // "Recipe Change" on a row with no MR/PP/WOs is a passive editable marker
         // (WDP-style) — nothing to regenerate server-side.
         if (r.produ_status === "Recipe Change" && !r.mr_reference && !r.production_plane && !r.wo_list) return false;
         return true;
     });
-    if (pending.length === 0) return;
+    if (pending.length === 0) {
+        finish_success();
+        return;
+    }
+    _dp_dialog_clear_error(dialog);
     show_loading_overlay();
     frappe.call({
         doc: frm.doc,
         method: 'process_manual_updates',
+        args: row_name ? { row_name: row_name } : {},
         callback: function(r) {
             hide_loading_overlay();
+            if (r && r.exc) {
+                // Server threw (process_manual_updates already rolled back).
+                // Keep the dialog open and surface the error so the planner can
+                // fix the row and retry.
+                _dp_dialog_show_error(dialog, _dp_extract_server_error(r));
+                return;
+            }
+            finish_success();
             frm.reload_doc();
             frappe.show_alert({ message: __('✅ Changes processed'), indicator: 'green' });
         },
         error: function(r) {
             hide_loading_overlay();
-            frm.reload_doc();
+            _dp_dialog_show_error(dialog, _dp_extract_server_error(r));
         }
     });
 }
@@ -293,6 +345,13 @@ function validate_field_dependency(frm, cdt, cdn, fieldname, dependency_fieldnam
     return true;
 }
 
+function is_complete_recipe(row) {
+    return !!(row.recipe_name && row.recipe_name !== "No Cooking"
+        && flt(row.size) > 0
+        && (parseInt(row.number_of_pack) || 0) >= 1
+        && row.pack_name);
+}
+
 function filter_produ_status(frm, cdn) {
     const grid = frm.fields_dict["production_table"]?.grid;
     if (!grid) return;
@@ -304,13 +363,14 @@ function filter_produ_status(frm, cdn) {
     if (!field) return;
     const base = "\nNew Schedule\nRecipe Change\nCancelled\nChange Slot\nRearrange\nOnly Remark\nPack Change";
     const no_wo = !row.mr_reference && !row.production_plane && !row.wo_list;
+    const complete = is_complete_recipe(row);
     let options;
     if (!row.recipe_name || row.recipe_name === "No Cooking") {
-        options = "\nNew Schedule\nChange Slot";
+        options = "\nNew Schedule";
     } else if (no_wo) {
-        // Recipe set but no MR/PP yet — New Schedule (all fields editable) plus the
-        // pure data moves Change Slot / Rearrange (no WOs to migrate).
-        options = "\nNew Schedule\nChange Slot\nRearrange";
+        // Recipe set but no MR/PP yet. Change Slot / Rearrange are pure data moves
+        // and only make sense once the row is fully set (recipe + size + >= 1 pack).
+        options = complete ? "\nNew Schedule\nChange Slot\nRearrange" : "\nNew Schedule";
         if (row.produ_status && row.produ_status !== "New Schedule" && !options.includes(row.produ_status)) options += "\n" + row.produ_status;
     } else {
         // MR/PP rows: "Cancelled" is handled by the dialog Cancel button; "New
@@ -1149,6 +1209,30 @@ function install_dp_edit_interceptor(frm) {
     el.addEventListener('click', handler, true);
 }
 
+// Recompute the dialog's produ_status options from the staged values. Change Slot /
+// Rearrange are offered only once the row is fully set (recipe + size + >= 1 pack).
+function refresh_dialog_status_options(d, no_wo) {
+    const recipe = d.get_value("recipe") || "";
+    const no_cook = !recipe || recipe === "No Cooking";
+    const complete = flt(d.get_value("size")) > 0
+        && (parseInt(d.get_value("number_of_pack")) || 0) >= 1
+        && d.get_value("pack_name");
+    let opts;
+    if (no_cook) {
+        opts = "\nNew Schedule";
+    } else if (no_wo) {
+        opts = complete ? "New Schedule\nChange Slot\nRearrange" : "New Schedule";
+    } else {
+        opts = "\nRecipe Change\nOnly Remark\nPack Change\nChange Slot\nRearrange";
+    }
+    const cur_status = d.get_value("produ_status") || "";
+    if (cur_status && opts.split("\n").indexOf(cur_status) === -1) {
+        opts += "\n" + cur_status;
+    }
+    d.fields_dict.produ_status.df.options = opts;
+    d.fields_dict.produ_status.set_options();
+}
+
 function show_dp_edit_dialog(frm, cdt, cdn) {
     const row = locals[cdt]?.[cdn];
     if (!row) return;
@@ -1168,20 +1252,21 @@ function show_dp_edit_dialog(frm, cdt, cdn) {
     const has_wos = !!(row.wo_list || row.mr_reference);
 
     const no_wo = !row.mr_reference && !row.production_plane && !row.wo_list;
+    const complete = is_complete_recipe(row);
     // Keep the row's current status visible even if it is an immediate-action status
     // (e.g. Change Slot / Rearrange) so it is preserved unless the user changes it.
     let status_options;
     if (no_cook) {
-        status_options = "\nNew Schedule\nChange Slot";
+        status_options = "\nNew Schedule";
         if (orig_status && orig_status !== "New Schedule" && !status_options.includes(orig_status)) status_options += "\n" + orig_status;
     } else if (no_wo) {
         // Recipe set but no MR/PP yet (scheduled via "New Schedule"): New Schedule
         // unlocks all fields once size is set, so there is no separate "Change
         // Recipe" — Clear/Cancel are dialog buttons instead. Change Slot / Rearrange
-        // are pure data moves here (no WOs to migrate). No leading "\n": the blank
-        // option is removed so an empty status can't be picked on a row that must
-        // have a status.
-        status_options = "New Schedule\nChange Slot\nRearrange";
+        // are pure data moves here (no WOs to migrate) and require a complete row.
+        // No leading "\n": the blank option is removed so an empty status can't be
+        // picked on a row that must have a status.
+        status_options = complete ? "New Schedule\nChange Slot\nRearrange" : "New Schedule";
         if (orig_status && orig_status !== "New Schedule" && !status_options.includes(orig_status)) status_options += "\n" + orig_status;
     } else {
         // Rows with MR/PP: match WDP — "Recipe Change"/"Only Remark"/"Pack Change"
@@ -1258,7 +1343,8 @@ function show_dp_edit_dialog(frm, cdt, cdn) {
         { fieldtype: "Column Break" },
         { fieldname: "mr_reference", fieldtype: "Data", label: __("MR Reference"), read_only: 1, default: row.mr_reference || "" },
         { fieldname: "rq_status", fieldtype: "Data", label: __("RQ Status"), read_only: 1, default: row.rq_status || "" },
-        { fieldname: "pack_weight_msg", fieldtype: "HTML", options: '<div class="pack-weight-msg" style="display:none;color:#e53e3e;font-size:12px;padding:6px 0;"></div>' }
+        { fieldname: "pack_weight_msg", fieldtype: "HTML", options: '<div class="pack-weight-msg" style="display:none;color:#e53e3e;font-size:12px;padding:6px 0;"></div>' },
+        { fieldname: "dp_wo_error", fieldtype: "HTML", options: '<div class="dp-wo-error" style="display:none;color:#e53e3e;font-size:12px;padding:6px 0;"></div>' }
     );
 
     // WDP-style slot actions: "Clear" when no MR/PP (reset slot to defaults,
@@ -1373,6 +1459,9 @@ function show_dp_edit_dialog(frm, cdt, cdn) {
             if (!!values.urgent_check !== !!row.urgent_check) await frappe.model.set_value(cdt, cdn, "urgent_check", values.urgent_check ? 1 : 0);
             if ((values.recipe_note || "") !== (row.recipe_note || "")) await frappe.model.set_value(cdt, cdn, "recipe_note", values.recipe_note || null);
             if (status_val !== orig_status) await frappe.model.set_value(cdt, cdn, "produ_status", status_val);
+            // A previously-processed row keeps its status marker (rq_status="Done").
+            // Any fresh edit makes it processable again.
+            if (row.rq_status === "Done") await frappe.model.set_value(cdt, cdn, "rq_status", "");
 
             show_loading_overlay();
             // frm.save() never settles its promise when the doc has no changes
@@ -1382,11 +1471,15 @@ function show_dp_edit_dialog(frm, cdt, cdn) {
             const save_promise = dirty ? frm.save() : Promise.resolve();
             save_promise.then(function() {
                 hide_loading_overlay();
-                d.hide();
-                maybe_process_dp_changes(frm);
-                setTimeout(function() { if (window.opener) window.close(); }, 500);
+                // Keep the dialog open until WO processing completes. maybe_process_dp_changes
+                // closes it on success and shows the error inline on failure so the planner
+                // can fix the row and retry.
+                maybe_process_dp_changes(frm, cdn, d, function() {
+                    setTimeout(function() { if (window.opener) window.close(); }, 500);
+                });
             }, function(err) {
                 hide_loading_overlay();
+                _dp_dialog_show_error(d, _dp_extract_server_error(err));
                 console.error("❌ DP dialog save failed:", err);
             });
         },
@@ -1414,7 +1507,7 @@ function show_dp_edit_dialog(frm, cdt, cdn) {
         d._dp_raw_materials = 0;
         d._dp_max_packs = 7;
         if (is_nc) {
-            d.fields_dict.produ_status.df.options = "\nNew Schedule\nChange Slot";
+            d.fields_dict.produ_status.df.options = "\nNew Schedule";
             d.fields_dict.produ_status.set_options();
             if (!has_wos && d.get_value("produ_status") === "") d.set_value("produ_status", "New Schedule");
             _dp_dialog_restrict(d);
@@ -1424,7 +1517,12 @@ function show_dp_edit_dialog(frm, cdt, cdn) {
         let opts;
         const cur_status = d.get_value("produ_status") || "";
         if (no_wo) {
-            opts = "New Schedule\nChange Slot\nRearrange";
+            // Change Slot / Rearrange are pure data moves and only make sense once
+            // the row is fully set (recipe + size + >= 1 pack).
+            const complete = flt(d.get_value("size")) > 0
+                && (parseInt(d.get_value("number_of_pack")) || 0) >= 1
+                && d.get_value("pack_name");
+            opts = complete ? "New Schedule\nChange Slot\nRearrange" : "New Schedule";
             if (cur_status && cur_status !== "New Schedule" && !opts.includes(cur_status)) opts += "\n" + cur_status;
         } else {
             opts = "\nRecipe Change\nOnly Remark\nPack Change\nChange Slot\nRearrange";
@@ -1462,6 +1560,7 @@ function show_dp_edit_dialog(frm, cdt, cdn) {
             d.set_value("total_output", ti * flt(d.get_value("custom_yield")));
         }
         _dp_dialog_restrict(d);
+        refresh_dialog_status_options(d, no_wo);
     };
 
     d.fields_dict.number_of_pack.df.change = function() {
@@ -1473,6 +1572,7 @@ function show_dp_edit_dialog(frm, cdt, cdn) {
             return;
         }
         _dp_dialog_set_pack_visibility(d);
+        refresh_dialog_status_options(d, no_wo);
     };
 
     d.fields_dict.produ_status.df.change = function() {
@@ -1537,16 +1637,20 @@ function show_dp_edit_dialog(frm, cdt, cdn) {
         }
         frappe.confirm(__("Cancel this recipe? Existing WOs will be cancelled."), function() {
             frappe.model.set_value(cdt, cdn, "produ_status", "Cancelled").then(function() {
+                if (row.rq_status === "Done") frappe.model.set_value(cdt, cdn, "rq_status", "");
                 show_loading_overlay();
                 const dirty = frm.is_dirty();
                 const save_promise = dirty ? frm.save() : Promise.resolve();
                 save_promise.then(function() {
                     hide_loading_overlay();
-                    d.hide();
-                    maybe_process_dp_changes(frm);
-                    setTimeout(function() { if (window.opener) window.close(); }, 500);
+                    // Keep the dialog open until WO cancellation completes; on failure
+                    // the error is shown inline so the planner can act on it.
+                    maybe_process_dp_changes(frm, cdn, d, function() {
+                        setTimeout(function() { if (window.opener) window.close(); }, 500);
+                    });
                 }, function(err) {
                     hide_loading_overlay();
+                    _dp_dialog_show_error(d, _dp_extract_server_error(err));
                     console.error("❌ DP dialog cancel failed:", err);
                 });
             });

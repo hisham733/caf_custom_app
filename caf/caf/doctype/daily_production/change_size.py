@@ -76,7 +76,7 @@ def _cleanup_redundant_wips_targeted(newly_born_list: list, row_doc, child_docty
 # ══════════════════════════════════════════════════════════════════════════════
 
 @frappe.whitelist()
-def process_recipe_change_or_size_change(doc_or_name, child_doctype: str) -> None:
+def process_recipe_change_or_size_change(doc_or_name, child_doctype: str, row_name: str = None) -> None:
     """
     Triggered for rows with status "Recipe Change".
     1. Validation: Uses link_id to check if Cook WO is 'Completed'.
@@ -92,12 +92,15 @@ def process_recipe_change_or_size_change(doc_or_name, child_doctype: str) -> Non
     doc_name = parent_doc.name
 
     # 1. Fetch rows marked for size change
+    filters = {
+        "parent"      : doc_name,
+        "produ_status": STATUS_CHANGE_SIZE,
+    }
+    if row_name:
+        filters["name"] = row_name
     rows = frappe.get_all(
         child_doctype,
-        filters={
-            "parent"      : doc_name,
-            "produ_status": STATUS_CHANGE_SIZE,
-        },
+        filters=filters,
         fields=["name", "idx", "recipe_name", "link_id", "mr_reference", "production_plane","production_type"],
         order_by="idx asc",
     )

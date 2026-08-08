@@ -179,16 +179,19 @@ def _group_rows_by_pair(rows: list, status_label: str, child_doctype: str) -> li
 # ══════════════════════════════════════════════════════════════════════════════
 
 @frappe.whitelist()
-def process_switch(dp_doc, child_doctype: str) -> None:
+def process_switch(dp_doc, child_doctype: str, row_name: str = None) -> None:
     """Entry point for Rearrange: swap link_ids between paired rows, cancel/recreate WOs.
 
     Phase 3: Accepts DailyProduction doc object directly — no reload.
     """
     doc_name = dp_doc.name
     start_time = now_datetime()
+    filters = {"parent": doc_name, "produ_status": STATUS_SWITCH, "rq_status": ["!=", "Done"]}
+    if row_name:
+        filters["name"] = row_name
     rows = frappe.get_all(
         child_doctype,
-        filters={"parent": doc_name, "produ_status": STATUS_SWITCH, "rq_status": ["!=", "Done"]},
+        filters=filters,
         fields=["name", "recipe_name", "link_id", "idx", "custom_pair_id"],
         order_by="idx asc"
     )
@@ -241,16 +244,19 @@ def _process_one_switch_pair(pair: list, parent_doc, child_doctype: str, start_t
 
 
 @frappe.whitelist()
-def process_slot_swaps(dp_doc, child_doctype: str) -> None:
+def process_slot_swaps(dp_doc, child_doctype: str, row_name: str = None) -> None:
     """Entry point for Change Slot: migrate link_id from a source row into an empty target slot.
 
     Phase 3: Accepts DailyProduction doc object directly — no reload.
     """
     doc_name = dp_doc.name
     start_time = now_datetime()
+    filters = {"parent": doc_name, "produ_status": STATUS_CHANGE_SLOT, "rq_status": ["!=", "Done"]}
+    if row_name:
+        filters["name"] = row_name
     rows = frappe.get_all(
         child_doctype,
-        filters={"parent": doc_name, "produ_status": STATUS_CHANGE_SLOT, "rq_status": ["!=", "Done"]},
+        filters=filters,
         fields=["name", "recipe_name", "link_id", "idx", "custom_pair_id"],
         order_by="idx asc"
     )

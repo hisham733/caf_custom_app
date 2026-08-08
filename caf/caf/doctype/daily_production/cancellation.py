@@ -433,10 +433,13 @@ def _process_cancel_row(row_name: str, child_doctype: str) -> None:
     frappe.db.set_value(child_doctype, row_name, values_to_update)
 
 @frappe.whitelist()
-def process_cancellations(doc_name: str, doctype: str, child_doctype: str) -> None:
-    for row in frappe.get_all(child_doctype, filters={"parent": doc_name, "produ_status": "Cancelled"}, fields=["*"]):
+def process_cancellations(doc_name: str, doctype: str, child_doctype: str, row_name: str = None) -> None:
+    filters = {"parent": doc_name, "produ_status": "Cancelled"}
+    if row_name:
+        filters["name"] = row_name
+    for row in frappe.get_all(child_doctype, filters=filters, fields=["*"]):
         print(row)
-    cancel_rows = frappe.get_all(child_doctype, filters={"parent": doc_name, "produ_status": "Cancelled"}, fields=["name"])
+    cancel_rows = frappe.get_all(child_doctype, filters=filters, fields=["name"])
     if not cancel_rows: return
     print("cancel_rows", len(cancel_rows))
     for row in cancel_rows:

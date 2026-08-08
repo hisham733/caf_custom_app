@@ -551,6 +551,7 @@ def save_move_item(item_id, source_date, target_date, target_cooker, target_roun
         for i, r in enumerate(source_dp.production_table):
             r.idx = i + 1
 
+        source_dp.flags.skip_edit_log = True
         source_dp.save(ignore_permissions=True)
         frappe.db.commit()
 
@@ -672,6 +673,8 @@ def save_move_item(item_id, source_date, target_date, target_cooker, target_roun
     for i, r in enumerate(target_dp.production_table):
         r.idx = i + 1
 
+    source_dp.flags.skip_edit_log = True
+    target_dp.flags.skip_edit_log = True
     source_dp.save(ignore_permissions=True)
     target_dp.save(ignore_permissions=True)
     frappe.db.commit()
@@ -1109,6 +1112,7 @@ def add_recipe(day, recipe, size, cooker, pack_count, round_num, **kwargs):
     for i, r in enumerate(dp.production_table):
         r.idx = i + 1
 
+    dp.flags.skip_edit_log = True
     dp.save(ignore_permissions=True)
     frappe.db.commit()
 
@@ -1209,6 +1213,8 @@ def swap_recipes(source_id, target_id):
         new_a = {fn: row_a.get(fn) for fn in swappable}
         new_b = {fn: row_b.get(fn) for fn in swappable}
 
+        src_doc.flags.skip_edit_log = True
+        tgt_doc.flags.skip_edit_log = True
         src_doc.save(ignore_permissions=True)
         tgt_doc.save(ignore_permissions=True)
         frappe.db.commit()
@@ -1274,6 +1280,7 @@ def swap_recipes(source_id, target_id):
         row_a.rq_status = "Processing"
         row_b.rq_status = "Processing"
 
+    dp.flags.skip_edit_log = True
     dp.save(ignore_permissions=True)
     frappe.db.commit()
 
@@ -1970,6 +1977,7 @@ def _background_cancel_item(item_id, dp_name):
                 row.set(f"pack_name{suffix}", None)
                 row.set(f"pack_qty{suffix}", 0)
                 row.set(f"pack_remark{suffix}", None)
+            dp.flags.skip_edit_log = True
             dp.save(ignore_permissions=True)
             frappe.db.commit()
         else:
