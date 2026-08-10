@@ -32,7 +32,8 @@ TEMPLATE = "CAF Monthly Appraisal"
 NO_SAT = "8am no OT no Sat"     # the shift that does not work Saturday
 
 D_ABSENT = "2026-07-11"         # a Saturday: Workday by default, punchless -> Absent
-D_LEAVE = "2026-07-08"          # a free Wednesday
+D_LEAVE = "2026-07-08"          # a free Wednesday, NO Finger Log
+D_BOTH = "2026-07-09"           # punchless AND later covered by leave — the OD-60 case
 D_LATE = "2026-07-15"           # the B3 / A3 probe date
 LEAVE_TYPE = "Emergency"        # is_lwp -> no allocation needed, and FBR37 counts it
 
@@ -57,7 +58,7 @@ def remove(doctype, name):
 def cleanup():
     """Scoped to this suite's employees, cycle and dates — never by employee
     alone. Purging by employee ate ~50 rows of imported July data once."""
-    days = [D_ABSENT, D_LEAVE, D_LATE]
+    days = [D_ABSENT, D_LEAVE, D_BOTH, D_LATE]
     for emp in (EMP_A, EMP_B):
         for la in frappe.get_all("Leave Application",
                                  filters={"employee": emp,
@@ -167,13 +168,14 @@ def comments(name):
 def run():
     cleanup()
 
-    # A punchless Saturday -> Absent -> FBR37's second branch counts day 11.
+    # Two punchless days -> two Absents -> FBR37's second branch counts 9 and 11.
     make_absent_log(EMP_A, D_ABSENT)
+    make_absent_log(EMP_A, D_BOTH)
     app = make_appraisal(EMP_A, submit=True)
     baseline = cell(app.name)
-    check("FIX", app.docstatus == 1 and baseline == "11",
+    check("FIX", app.docstatus == 1 and baseline == "9, 11",
           f"fixture: appraisal {app.name} submitted, Attendance cell = {baseline!r} "
-          f"(day {getdate(D_ABSENT).day} = the punchless Saturday)")
+          f"(days {getdate(D_BOTH).day} and {getdate(D_ABSENT).day} = the punchless days)")
 
     submitted_at = ar.submitted_on(app.name)
     check("SUBM-a", submitted_at is not None,
@@ -184,7 +186,7 @@ def run():
     v_before, c_before = versions(app.name), comments(app.name)
     file_leave(EMP_A, D_LEAVE)
     after = cell(app.name)
-    check("A4", after == "8, 11",
+    check("A4", after == "8, 9, 11",
           f"late {LEAVE_TYPE} on {D_LEAVE}: cell {baseline!r} -> {after!r} — the number went UP")
     check("A2a", versions(app.name) > v_before,
           f"a Version was written: {v_before} -> {versions(app.name)} (option (a), not db_set)")
@@ -200,17 +202,67 @@ def run():
     # ---------------------------------------------------------------- A5
     # 🔴 The direction nobody tests. A late Shift Assignment makes the Saturday a
     # rest day, Chunk 4 cancels the false Absent, and the count must go DOWN.
-    file_assignment(EMP_A, D_ABSENT, NO_SAT)
+    sa = file_assignment(EMP_A, D_ABSENT, NO_SAT)
     down = cell(app.name)
     att = frappe.get_all("Attendance",
                          filters={"employee": EMP_A, "attendance_date": D_ABSENT},
                          fields=["name", "status", "docstatus"])
-    check("A5", down == "8",
+    check("A5", down == "8, 9",
           f"late Shift Assignment on {D_ABSENT}: cell {after!r} -> {down!r} — "
           f"the number went DOWN")
     check("A5b", att and att[0].docstatus == 2,
           f"the Absent was CANCELLED not deleted: docstatus={att[0].docstatus if att else None} "
           f"(the row still exists)")
+
+    # ---------------------------------------------------------------- A7
+    # OD-60, the easy half: unfiling the assignment must put the day back on the
+    # appraisal too. Chunk 4 already reverts the Attendance; this proves the
+    # appraisal follows it.
+    frappe.get_doc("Shift Assignment", sa.name).cancel()
+    back = cell(app.name)
+    check("A7", back == "8, 9, 11",
+          f"Shift Assignment cancelled: cell {down!r} -> {back!r} — the day returns")
+
+    # ------------------------------------------------------- A6 / B4 / AUDIT
+    # 🔴 OD-60, the half that is NOT two lines. Stock's cancel_attendance()
+    # db_sets docstatus = 2, which ERASES the day instead of reverting it: the
+    # Absent that stood there before the leave does not come back. So the count
+    # must be IDENTICAL before the leave and after the cancel — without
+    # restore_day_after_leave() it silently drops to "8, 11".
+    before_leave = cell(app.name)
+    la = file_leave(EMP_A, D_BOTH)
+    covered = cell(app.name)
+    on_leave = frappe.get_all("Attendance",
+                              filters={"employee": EMP_A, "attendance_date": D_BOTH,
+                                       "docstatus": 1},
+                              fields=["status", "leave_type"])
+    check("B4a", covered == before_leave and on_leave
+          and on_leave[0].status == "On Leave",
+          f"leave over an existing Absent: cell {before_leave!r} -> {covered!r} (unchanged — "
+          f"still counted, other branch), attendance now {on_leave[0].status if on_leave else None}")
+
+    frappe.get_doc("Leave Application", la.name).cancel()
+    restored = cell(app.name)
+    live = frappe.get_all("Attendance",
+                          filters={"employee": EMP_A, "attendance_date": D_BOTH,
+                                   "docstatus": 1},
+                          fields=["name", "status", "leave_type"])
+    check("A6", restored == before_leave,
+          f"leave CANCELLED: cell {covered!r} -> {restored!r} — back to where it started, "
+          f"not down to '8, 11'")
+    check("B4b", len(live) == 1 and live[0].status == "Absent" and not live[0].leave_type,
+          f"the day's own verdict is restored: {[(r.status, r.leave_type) for r in live]} "
+          f"(exactly one live row, Absent, no leave_type)")
+
+    killed = frappe.get_all("Attendance",
+                            filters={"employee": EMP_A, "attendance_date": D_BOTH,
+                                     "docstatus": 2}, fields=["name"])
+    trail = sum(frappe.db.count("Comment", {"reference_doctype": "Attendance",
+                                            "reference_name": r.name,
+                                            "comment_type": "Comment"}) for r in killed)
+    check("AUDIT", killed and trail > 0,
+          f"the row stock db_set to docstatus 2 carries a comment: {len(killed)} cancelled "
+          f"row(s), {trail} comment(s) — db_set writes no Version, so this is the only trail")
 
     # ---------------------------------------------------------------- SUBM-b
     # Two update_after_submit writes have now moved `modified`. The FBR39 window
@@ -279,6 +331,25 @@ def run():
     check("A3", not any(r.docstatus == 1 for r in stuck),
           f"nothing was left submitted-and-rejected: {stuck or 'no rows at all'} "
           f"(refusing in before_submit, not on_submit)")
+
+    # ---------------------------------------------------------------- B5
+    # 🔴 The asymmetry, decided by MG 2026-08-11. The window is shut, yet a
+    # CANCEL must still go through: filing asks for something new, cancelling
+    # corrects what is already on the record. Refusing here would leave a
+    # known-wrong leave standing and the appraisal counting it forever.
+    before_cancel = cell(app.name)
+    la_early = frappe.get_all("Leave Application",
+                              filters={"employee": EMP_A, "from_date": D_LEAVE,
+                                       "docstatus": 1}, fields=["name"])
+    allowed, why = False, ""
+    try:
+        frappe.get_doc("Leave Application", la_early[0].name).cancel()
+        allowed = True
+    except Exception as e:
+        why = str(e)[:110]
+    check("B5", allowed and cell(app.name) != before_cancel,
+          f"cancel past the closed window is ALLOWED and still refreshes: "
+          f"cell {before_cancel!r} -> {cell(app.name)!r}{' — REFUSED: ' + why if why else ''}")
 
     cleanup()
     frappe.db.commit()

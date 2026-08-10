@@ -38,6 +38,7 @@ identically against a broken model.
 
 | **A1–A5**, **B3** | a late correction reaching a **submitted** appraisal — including the number going **DOWN** | 5 |
 | **LOCK · SUBM · IDEM** | the OD-44 unlock is no wider than two cells; the FBR39 window actually closes; a no-op refresh writes nothing | 5 |
+| **A6 · A7 · B4 · AUDIT · B5** | the **cancel** direction — the count returns to baseline, the day's own verdict comes back, and a cancel is never refused on FBR39 grounds | 5b |
 
 Still to come: W1/W5–W7/W9/W10, L1–L3, B1–B2 and E4/E6 from **Chunk 3**;
 S1–S4 and E5 from **Chunk 4**; E7 from **Chunk 6**.
@@ -52,7 +53,14 @@ wsl docker exec -w /workspace/development/frappe-bench frappe bench --site devel
 ```
 
 `test_chunk3_decisions.run` (21/21) · `test_chunk4_reresolve.run` (10/10) ·
-`test_chunk5_appraisal.run` (15/15).
+`test_chunk5_appraisal.run` (21/21).
+
+**A test for a silent failure is worth nothing until it has been watched failing.**
+A6, B4b and AUDIT assert that a cancelled leave does not quietly cost the employee
+a counted day. That was verified by **mutation**: monkeypatch
+`appraisal_refresh.restore_day_after_leave` to a no-op, re-run, and confirm exactly
+those three go red while the other eighteen stay green. Worth repeating whenever
+this file's cancel path is touched.
 
 ⚠️ **Chunk 5 writes to a doctype that holds live data.** Its `cleanup()` is scoped
 to two employees, three dates and one cycle — never to an employee alone. Purging

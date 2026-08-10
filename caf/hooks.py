@@ -512,9 +512,17 @@ doc_events = {
     #                   rejected (the Chunk 3 trap).
     #   on_submit     - refresh, and never throw: a throw here would roll back an
     #                   approved leave over a downstream display cell.
+    #   on_cancel     - OD-60, the other direction. Stock's cancel_attendance()
+    #                   db_sets docstatus=2, which ERASES the day rather than
+    #                   reverting it: the Absent that stood there before the
+    #                   leave does not come back. The day is restored from its
+    #                   Finger Log first, THEN the appraisal reads it. No FBR39
+    #                   gate here by decision - cancelling corrects the record,
+    #                   it does not ask for something new.
     "Leave Application": {
         "before_submit": "caf.caf.appraisal_refresh.check_leave_window",
         "on_submit": "caf.caf.appraisal_refresh.on_leave_application_submit",
+        "on_cancel": "caf.caf.appraisal_refresh.on_leave_application_cancel",
     },
     # CAF Chunk 4 (2026-08-10) - OD-40. A swap filed AFTER the date has to reach
     # back and correct what that day meant: day_type, shift_type and the OT that
@@ -531,7 +539,12 @@ doc_events = {
         # the cancel while any Attendance carries this shift - and does not even
         # filter on docstatus. Without it a swap could be filed but never unfiled.
         "before_cancel": "caf.caf.re_resolve.before_shift_assignment_cancel",
-        "on_cancel": "caf.caf.re_resolve.on_shift_assignment_cancel",
+        # Same ordering contract as on_submit: the day reverts, then the
+        # appraisal reads it (OD-60).
+        "on_cancel": [
+            "caf.caf.re_resolve.on_shift_assignment_cancel",
+            "caf.caf.appraisal_refresh.on_shift_assignment_refresh",
+        ],
     },
 }
 

@@ -48,8 +48,9 @@ import json
 
 import frappe
 from frappe import _
-from frappe.utils import add_to_date, get_datetime, getdate, now_datetime
+from frappe.utils import add_days, add_to_date, get_datetime, getdate, now_datetime
 
+from caf.caf import re_resolve
 from caf.caf.overrides import appraisal as ap
 
 # The cells this module is allowed to move. Kept as a constant so the unlock in
@@ -202,6 +203,81 @@ def refresh_for(employee, start_date, end_date, reason="", trigger=None):
     return results
 
 
+# ---------------------------------------------------- the cancel side (OD-60)
+
+def _days(from_date, to_date):
+    out, day, end = [], getdate(from_date), getdate(to_date or from_date)
+    while day <= end:
+        out.append(day)
+        day = add_days(day, 1)
+    return out
+
+
+def restore_day_after_leave(employee, from_date, to_date, leave_application):
+    """Put the day's own verdict back after a leave is cancelled — OD-60.
+
+    🔴 **Stock does not revert the day, it ERASES it.**
+    `LeaveApplication.cancel_attendance()` (hrms `leave_application.py:347`) runs
+
+        frappe.db.set_value("Attendance", name, "docstatus", 2)
+
+    — a raw `db_set` of `docstatus`. So: no Version, `on_cancel` never fires, and
+    `leave_type` / `leave_application` are left populated on the dead row. Worst
+    of all, the `Absent` that stood there *before* the leave does not come back.
+
+    Measured consequence, which is why this function exists: a punchless day
+    counted by FBR37's second branch (unexplained absence) becomes an MC counted
+    by its first branch, and on cancel becomes **counted by nothing**. The
+    appraisal number would go DOWN when it should return to where it started —
+    and `refresh_for()` would faithfully write that wrong number into a submitted
+    appraisal.
+
+    `existing_attendance()` filters `docstatus < 2`, so the cancelled row is
+    invisible to Chunk 4's reconciler and it rebuilds the verdict cleanly. Where
+    no Finger Log exists — a leave for a day Ingress never emitted a row for —
+    there is correctly nothing to restore.
+
+    ⚠️ **No FBR39 gate here, by decision (MG, 2026-08-11).** Filing asks for
+    something new; cancelling corrects something already on the record. Refusing
+    a late cancel would leave a known-wrong leave standing, and the appraisal
+    counting it, forever.
+    """
+    trail, restored = [], []
+
+    # The trail stock did not write (OD-26). `db_set` leaves no Version, so on a
+    # row that feeds an appraisal and a pay slip the comment is the only record.
+    for row in frappe.get_all(
+            "Attendance",
+            filters={"employee": employee, "leave_application": leave_application,
+                     "attendance_date": ("between", [getdate(from_date), getdate(to_date)])},
+            fields=["name", "docstatus", "attendance_date", "status", "leave_type"]):
+        if row.docstatus != 2:
+            continue
+        att = frappe.get_doc("Attendance", row.name)
+        att.flags.ignore_permissions = True
+        att.add_comment("Comment", _(
+            "Leave Application {0} was cancelled. Stock set docstatus = 2 directly, which "
+            "writes no Version — this comment is the trail (OD-26). The day's own verdict "
+            "is restored from its Finger Log below."
+        ).format(leave_application))
+        trail.append(row.name)
+
+    for day in _days(from_date, to_date):
+        for log in frappe.get_all("Finger Log",
+                                  filters={"employee": employee, "work_date": day,
+                                           "docstatus": 1}, fields=["name"]):
+            sp = f"rl_{log.name}".replace("-", "_")[:60]
+            frappe.db.savepoint(sp)
+            try:
+                fl = frappe.get_doc("Finger Log", log.name)
+                restored.append((str(day), re_resolve.reconcile_attendance(fl)))
+            except Exception as e:
+                frappe.db.rollback(save_point=sp)
+                restored.append((str(day), f"error: {str(e).splitlines()[0][:80]}"))
+
+    return {"commented": trail, "restored": restored}
+
+
 # ---------------------------------------------------------------- doc_events
 
 def check_leave_window(doc, method=None):
@@ -245,12 +321,32 @@ def on_leave_application_submit(doc, method=None):
                          message=frappe.get_traceback())
 
 
+def on_leave_application_cancel(doc, method=None):
+    """A withdrawn leave moves Attendance too — OD-60.
+
+    Order is the contract, exactly as on the submit side: the day is restored
+    FIRST, then the appraisal reads it. Reversed, the appraisal would recompute
+    against the hole stock left and record the wrong number.
+    """
+    try:
+        restore_day_after_leave(doc.employee, doc.from_date, doc.to_date, doc.name)
+        refresh_for(doc.employee, doc.from_date, doc.to_date,
+                    reason=_("{0} for {1} to {2} was CANCELLED").format(
+                        doc.leave_type, doc.from_date, doc.to_date),
+                    trigger=("Leave Application", doc.name))
+    except Exception:
+        frappe.log_error(title=f"Appraisal refresh failed for cancelled {doc.name}",
+                         message=frappe.get_traceback())
+
+
 def on_shift_assignment_refresh(doc, method=None):
     """A late swap can REMOVE a counted day — scenario A5, the direction nobody
     tests. Chunk 4 already cancelled the false Absent; this tells the appraisal.
 
     Hooked after `re_resolve.on_shift_assignment_submit`, so the Attendance is
-    already correct when the appraisal reads it.
+    already correct when the appraisal reads it. The same function serves
+    `on_cancel` — Chunk 4 re-resolves the day there too, so by the time this runs
+    the Attendance is right either way and the refresh simply reads it.
     """
     try:
         refresh_for(doc.employee, doc.start_date, doc.end_date or doc.start_date,
