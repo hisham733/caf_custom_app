@@ -48,8 +48,21 @@ def remove(doctype, name):
 
 
 def cleanup():
+    # 🔴 SCOPED TO OCTOBER — this suite's own month (D = "2026-10-%02d").
+    #
+    # It used to purge by EMPLOYEE ALONE, and that quietly deleted every imported
+    # Finger Log belonging to these three: 62 rows of real July data per run,
+    # while the suite reported 21/21 green. Caught 2026-08-11 by the canary in
+    # `test_chunk_t.run_all`, which counts the imported month before and after.
+    #
+    # This is the SAME mistake already written up for the Chunk 2b suite, which
+    # ate ~50 rows the same way. Documenting it there did not stop it recurring
+    # here — hence the canary, which does.
     for emp in (EMP_OT, EMP_NOLUNCH, EMP_MONFRI):
-        for f in frappe.get_all("Finger Log", filters={"employee": emp},
+        for f in frappe.get_all("Finger Log",
+                                filters={"employee": emp,
+                                         "work_date": ("between",
+                                                       ["2026-10-01", "2026-10-31"])},
                                 fields=["name"], limit_page_length=0):
             for a in frappe.get_all("Attendance", filters={"caf_finger_log": f.name},
                                     fields=["name"]):
@@ -280,8 +293,20 @@ def run():
         check("COLLIDE", False, "no approved Leave Application on dev to test against")
 
     cleanup()
-    check("CLEAN", frappe.db.count("Finger Log", {"employee": EMP_OT}) == 0,
-          "fixtures removed")
+    # 🔴 This used to assert `count(employee=EMP_OT) == 0` — that the employee had
+    # NO Finger Logs anywhere. It passed only because cleanup was deleting their
+    # imported July rows too, so the assertion was encoding the bug rather than
+    # catching it. Scope it to the suite's own month, and assert the imported data
+    # is still there.
+    left = frappe.db.count("Finger Log", {"employee": EMP_OT,
+                                          "work_date": ("between",
+                                                        ["2026-10-01", "2026-10-31"])})
+    imported = frappe.db.count("Finger Log", {"employee": EMP_OT,
+                                              "work_date": ("between",
+                                                            ["2026-07-01", "2026-07-31"])})
+    check("CLEAN", left == 0 and imported > 0,
+          f"fixtures removed ({left} left in October) and the imported month is "
+          f"UNTOUCHED ({imported} July rows still present)")
 
     frappe.db.commit()
 

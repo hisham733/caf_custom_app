@@ -37,11 +37,18 @@ def remove(doctype, name):
 
 
 def past_saturday():
-    """A Saturday in the recent past that the employee's default shift works."""
-    day = getdate(nowdate())
-    while day.weekday() != 5:
-        day = add_days(day, -1)
-    return add_days(day, -14)
+    """A fixed Saturday that the employee's default shift works.
+
+    🔴 It used to be computed from `nowdate()` — two Saturdays ago — which on
+    2026-08-11 resolved to **2026-07-25, inside the imported month**. `cleanup()`
+    then deleted that day's imported Finger Log on every run. A moving date cannot
+    be checked against the import window, so it is pinned instead.
+
+    2026-06-13: a Saturday, a workday under `CAF Mon-Sat 2026`, a rest day under
+    `CAF Mon-Fri 2026` (which is what the swap tests need), carrying no seeded OT
+    Approval for this employee, and in a month the importer never touched.
+    """
+    return getdate("2026-06-13")
 
 
 def cleanup(day):

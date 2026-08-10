@@ -27,17 +27,33 @@ from caf.caf import appraisal_refresh as ar
 
 EMP_A = "HR-EMP-00016"
 EMP_B = "HR-EMP-00017"          # A1 — the draft-appraisal case
-CYCLE = "2026-07"
+CYCLE = "2026-06"
 TEMPLATE = "CAF Monthly Appraisal"
 NO_SAT = "8am no OT no Sat"     # the shift that does not work Saturday
 
-D_ABSENT = "2026-07-11"         # a Saturday: Workday by default, punchless -> Absent
-D_LEAVE = "2026-07-08"          # a free Wednesday, NO Finger Log
-D_BOTH = "2026-07-09"           # punchless AND later covered by leave — the OD-60 case
-D_LATE = "2026-07-15"           # the B3 / A3 probe date
-D_REJ = "2026-07-16"            # REJ needs its OWN date — B3 leaves a refused draft
+# 🔴 JUNE, NOT JULY — and this is not cosmetic. The Ingress importer covers
+# 2026-07-01..31 and nothing else. `cleanup()` deletes by (employee, date), so
+# every July run was deleting REAL IMPORTED ROWS: 67 of them across the four
+# suites before this was caught on 2026-08-11, while every run reported green.
+# June carries zero imported Finger Logs and zero Attendance for these employees,
+# so a fixture here can only ever delete what it created. It also makes the
+# expected values exact, because no imported day can drift into the cell.
+D_ABSENT = "2026-06-20"         # a Saturday: Workday by default, punchless -> Absent
+D_LEAVE = "2026-06-15"          # a free Monday, NO Finger Log
+D_BOTH = "2026-06-18"           # punchless AND later covered by leave — the OD-60 case
+D_LATE = "2026-06-22"           # the B3 / A3 probe date
+D_REJ = "2026-06-23"            # REJ needs its OWN date — B3 leaves a refused draft
                                 # on D_LATE, and stock's overlap check would fire
                                 # first, failing REJ1 for the wrong reason
+
+
+def d(*dates):
+    """Render the expected cell for these dates, the way format_day_cell would.
+
+    Derived from the date constants rather than typed as "9, 11": when the dates
+    moved from July to June, every hardcoded expectation became a lie at once.
+    """
+    return ", ".join(str(getdate(x).day) for x in sorted(dates))
 LEAVE_TYPE = "Emergency"        # is_lwp -> no allocation needed, and FBR37 counts it
 
 RESULTS = []
@@ -176,7 +192,7 @@ def run():
     make_absent_log(EMP_A, D_BOTH)
     app = make_appraisal(EMP_A, submit=True)
     baseline = cell(app.name)
-    check("FIX", app.docstatus == 1 and baseline == "9, 11",
+    check("FIX", app.docstatus == 1 and baseline == d(D_BOTH, D_ABSENT),
           f"fixture: appraisal {app.name} submitted, Attendance cell = {baseline!r} "
           f"(days {getdate(D_BOTH).day} and {getdate(D_ABSENT).day} = the punchless days)")
 
@@ -189,7 +205,7 @@ def run():
     v_before, c_before = versions(app.name), comments(app.name)
     file_leave(EMP_A, D_LEAVE)
     after = cell(app.name)
-    check("A4", after == "8, 9, 11",
+    check("A4", after == d(D_LEAVE, D_BOTH, D_ABSENT),
           f"late {LEAVE_TYPE} on {D_LEAVE}: cell {baseline!r} -> {after!r} — the number went UP")
     check("A2a", versions(app.name) > v_before,
           f"a Version was written: {v_before} -> {versions(app.name)} (option (a), not db_set)")
@@ -210,7 +226,7 @@ def run():
     att = frappe.get_all("Attendance",
                          filters={"employee": EMP_A, "attendance_date": D_ABSENT},
                          fields=["name", "status", "docstatus"])
-    check("A5", down == "8, 9",
+    check("A5", down == d(D_LEAVE, D_BOTH),
           f"late Shift Assignment on {D_ABSENT}: cell {after!r} -> {down!r} — "
           f"the number went DOWN")
     check("A5b", att and att[0].docstatus == 2,
@@ -223,7 +239,7 @@ def run():
     # appraisal follows it.
     frappe.get_doc("Shift Assignment", sa.name).cancel()
     back = cell(app.name)
-    check("A7", back == "8, 9, 11",
+    check("A7", back == d(D_LEAVE, D_BOTH, D_ABSENT),
           f"Shift Assignment cancelled: cell {down!r} -> {back!r} — the day returns")
 
     # ------------------------------------------------------- A6 / B4 / AUDIT
@@ -239,8 +255,8 @@ def run():
                               filters={"employee": EMP_A, "attendance_date": D_BOTH,
                                        "docstatus": 1},
                               fields=["status", "leave_type"])
-    check("B4a", covered == before_leave and on_leave
-          and on_leave[0].status == "On Leave",
+    check("B4a", covered == before_leave and covered == d(D_LEAVE, D_BOTH, D_ABSENT)
+          and on_leave and on_leave[0].status == "On Leave",
           f"leave over an existing Absent: cell {before_leave!r} -> {covered!r} (unchanged — "
           f"still counted, other branch), attendance now {on_leave[0].status if on_leave else None}")
 
@@ -252,7 +268,7 @@ def run():
                           fields=["name", "status", "leave_type"])
     check("A6", restored == before_leave,
           f"leave CANCELLED: cell {covered!r} -> {restored!r} — back to where it started, "
-          f"not down to '8, 11'")
+          f"not down to {d(D_LEAVE, D_ABSENT)!r}")
     check("B4b", len(live) == 1 and live[0].status == "Absent" and not live[0].leave_type,
           f"the day's own verdict is restored: {[(r.status, r.leave_type) for r in live]} "
           f"(exactly one live row, Absent, no leave_type)")
@@ -303,7 +319,7 @@ def run():
     draft.flags.caf_skip_supervisor_check = True
     draft.refresh_auto_fill(force=True)
     draft.save(ignore_permissions=True)
-    check("A1", "skipped" in skipped and cell(draft.name) == "15",
+    check("A1", "skipped" in skipped and cell(draft.name) == d(D_LATE),
           f"draft appraisal: OD-44 declines it ({skipped.get('skipped')}) and an ordinary "
           f"save picks the day up anyway — cell = {cell(draft.name)!r}")
 

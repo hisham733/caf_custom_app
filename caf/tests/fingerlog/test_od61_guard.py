@@ -39,9 +39,11 @@ import frappe
 from caf.caf import appraisal_refresh, re_resolve
 
 EMP = "HR-EMP-00016"
-CYCLE = "2026-07"
+CYCLE = "2026-06"
 TEMPLATE = "CAF Monthly Appraisal"
-D_LOG = "2026-07-27"          # a Monday, clear of the other suites' dates
+# 🔴 June: the importer covers July only, and cleanup() deletes by (employee,
+# date). Every July run deleted real imported rows — 67 across the four suites.
+D_LOG = "2026-06-19"          # a Friday, clear of the other suites' dates
 
 RESULTS = []
 

@@ -46,14 +46,24 @@ EMP_A = "HR-EMP-00016"        # 8am Schedule    — Mon–Sat, caf_allow_ot 1, 0
 EMP_C = "HR-EMP-00127"        # 8am no OT no Sat — Mon–Fri, Saturday is a rest day
 NO_OT_SHIFT = "8am no OT no Sat"
 SAT_SHIFT = "8am Schedule"
-CYCLE = "2026-07"
+CYCLE = "2026-06"
 TEMPLATE = "CAF Monthly Appraisal"
 MARKER = "CHUNK T TEST"
 
-D_OT = "2026-07-20"           # Mon — punches + 2.0 h APPROVED OT  -> the OT Hours cell
-D_LATEP = "2026-07-21"        # Tue — a late punch                 -> the Punctuality cell
-D_ABS = "2026-07-23"          # Thu — punchless -> Absent          -> the uncounted-leave case
-D_SAT = "2026-07-25"          # Sat — EMP_C's rest day             -> the REVERSE swap
+# 🔴 JUNE, NOT JULY. The importer covers 2026-07 only, and `cleanup()` deletes by
+# (employee, date) — so every July run deleted real imported rows. 67 were lost
+# across the four suites before this was caught, with every run reporting green.
+# June has none, so a fixture here can only delete what it created.
+#
+# ⚠️ D_OT must carry NO pre-existing OT Approval. Dev holds 7,006 of them and
+# HR-EMP-00016 alone has ten in June; `ot_approval.py` refuses a duplicate
+# (emp_id, work_date) outright. The first June date tried was the 24th, which
+# already had one — the same trap that made W3 pass for the wrong reason in
+# Chunk 2b. T-CLEAN now asserts it instead of trusting it.
+D_OT = "2026-06-03"           # Wed — punches + 2.0 h APPROVED OT  -> the OT Hours cell
+D_LATEP = "2026-06-04"        # Thu — a late punch                 -> the Punctuality cell
+D_ABS = "2026-06-05"          # Fri — punchless -> Absent          -> the uncounted-leave case
+D_SAT = "2026-06-27"          # Sat — EMP_C's rest day             -> the REVERSE swap
 
 UNCOUNTED = "Annual"          # deliberately NOT in caf_attendance_leave_codes
 
@@ -190,6 +200,14 @@ def run():
     cleanup()
 
     # -------------------------------------------------- the enriched fixture
+    # Assert the date is clean rather than trusting it — Chunk 2b's lesson.
+    stale = frappe.get_all("OT Approval Table",
+                           filters={"emp_id": EMP_A, "work_date": D_OT,
+                                    "docstatus": ("<", 2)}, fields=["parent"])
+    check("T-CLEAN", not stale,
+          f"{D_OT} carries no pre-existing OT Approval for {EMP_A}: {stale or 'clean'} "
+          f"(dev holds 7,006 — a duplicate makes make_approval() throw)")
+
     make_approval(EMP_A, D_OT, 2.0, "08:00:00", "18:30:00")
     ot_log = make_log(EMP_A, D_OT, "08:00:00", "18:30:00", overtime=2.0)
     make_log(EMP_A, D_LATEP, "09:15:00", "16:30:00")     # 75 minutes late
@@ -198,7 +216,8 @@ def run():
     app = make_appraisal(EMP_A)
     base = cells(app.name)
     check("T-FIX", ot_log.final_ot == 2.0
-          and base["Attendance"] == "23" and base["Punctuality"] == "21"
+          and base["Attendance"] == str(getdate(D_ABS).day)
+          and base["Punctuality"] == str(getdate(D_LATEP).day)
           and base["OT Hours"] == "2 h",
           f"the fixture is finally rich enough: final_ot={ot_log.final_ot}, cells={base} "
           f"— all THREE auto-filled cells populated, where Chunk 5 only ever moved one")
@@ -217,7 +236,8 @@ def run():
     # -------------------------------------------------- T-KEEP · nothing blanked
     # `force=True` rewrites all three cells on every refresh, so a cell that is
     # still correct must survive a refresh triggered for a different one.
-    check("T-KEEP", after["Punctuality"] == base["Punctuality"] == "21"
+    check("T-KEEP", after["Punctuality"] == base["Punctuality"]
+          == str(getdate(D_LATEP).day)
           and after["Attendance"] == base["Attendance"],
           f"the untouched cells survived the refresh: Punctuality "
           f"{after['Punctuality']!r}, Attendance {after['Attendance']!r} "
@@ -234,7 +254,7 @@ def run():
                          filters={"employee": EMP_A, "attendance_date": D_ABS,
                                   "docstatus": 1},
                          fields=["status", "leave_type"])
-    check("T-UNC", before_unc == "23" and unc == ""
+    check("T-UNC", before_unc == str(getdate(D_ABS).day) and unc == ""
           and att and att[0].leave_type == UNCOUNTED,
           f"late {UNCOUNTED} over an Absent: Attendance cell {before_unc!r} -> {unc!r} "
           f"— DOWN via a leave application, because {UNCOUNTED} is not a counted code "
@@ -266,7 +286,8 @@ def run():
                           fields=["name", "status"])
     after_c = cells(app_c.name)["Attendance"]
     check("T-REV2", rest_log.day_type == "Workday" and post
-          and post[0].status == "Absent" and after_c == "25" and base_c != after_c,
+          and post[0].status == "Absent"
+          and after_c == str(getdate(D_SAT).day) and base_c != after_c,
           f"reverse swap onto {SAT_SHIFT}: day_type {rest_log.day_type}, attendance "
           f"{post[0].status if post else None}, appraisal cell {base_c!r} -> {after_c!r} "
           f"— an Absent is CREATED and the number goes UP")
@@ -288,12 +309,20 @@ def run_all():
     import sys
 
     from caf.tests.fingerlog import (test_chunk3_decisions, test_chunk4_reresolve,
-                                     test_chunk5_appraisal)
+                                     test_chunk5_appraisal, test_chunk_r,
+                                     test_od61_guard)
     # `__import__(__name__)` returns the top-level `caf` package, not this module.
+    #
+    # The imported July data is the canary: if a suite's cleanup is scoped wrongly
+    # this count drops, and every run before 2026-08-11 dropped it silently.
+    july = frappe.db.count("Finger Log", {"work_date": ("between",
+                                                        ["2026-07-01", "2026-07-31"])})
     out = []
     for name, mod in (("chunk 3 decisions", test_chunk3_decisions),
                       ("chunk 4 re-resolve", test_chunk4_reresolve),
                       ("chunk 5 + 5b appraisal", test_chunk5_appraisal),
+                      ("OD-61/62 guard", test_od61_guard),
+                      ("chunk R roles", test_chunk_r),
                       ("chunk T enriched", sys.modules[__name__])):
         mod.RESULTS.clear()
         ok = mod.run()
@@ -302,4 +331,10 @@ def run_all():
     print("\n=== THE WHOLE MATRIX ===")
     for name, ok, total, failed in out:
         print(f"   {name:26s} {total - failed}/{total} {'PASS' if ok else 'FAIL'}")
-    return all(o for _, o, _, _ in out)
+
+    after = frappe.db.count("Finger Log", {"work_date": ("between",
+                                                         ["2026-07-01", "2026-07-31"])})
+    intact = after == july
+    print(f"\n   imported July rows: {july} -> {after}  "
+          f"{'INTACT' if intact else '🔴 THE SUITE ATE ' + str(july - after) + ' OF THEM'}")
+    return all(o for _, o, _, _ in out) and intact
