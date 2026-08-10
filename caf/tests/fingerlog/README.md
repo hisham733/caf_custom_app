@@ -36,8 +36,28 @@ identically against a broken model.
 | **C1** | a rest Saturday's hours are **all** OT — FBR4 | Chunk 2 checkpoint |
 | **C2** | same date, different `day_type` per employee — FDR6 | Chunk 2 checkpoint |
 
+| **A1–A5**, **B3** | a late correction reaching a **submitted** appraisal — including the number going **DOWN** | 5 |
+| **LOCK · SUBM · IDEM** | the OD-44 unlock is no wider than two cells; the FBR39 window actually closes; a no-op refresh writes nothing | 5 |
+
 Still to come: W1/W5–W7/W9/W10, L1–L3, B1–B2 and E4/E6 from **Chunk 3**;
-S1–S4 and E5 from **Chunk 4**; A1–A5 and B3 from **Chunk 5**; E7 from **Chunk 6**.
+S1–S4 and E5 from **Chunk 4**; E7 from **Chunk 6**.
+
+## Running the server-side suites
+
+Chunks 3–5 run inside bench rather than over REST — fixture cleanup needs
+`flags.ignore_links`, which the REST API cannot set:
+
+```powershell
+wsl docker exec -w /workspace/development/frappe-bench frappe bench --site development.localhost execute caf.tests.fingerlog.test_chunk5_appraisal.run
+```
+
+`test_chunk3_decisions.run` (21/21) · `test_chunk4_reresolve.run` (10/10) ·
+`test_chunk5_appraisal.run` (15/15).
+
+⚠️ **Chunk 5 writes to a doctype that holds live data.** Its `cleanup()` is scoped
+to two employees, three dates and one cycle — never to an employee alone. Purging
+by employee ate ~50 rows of imported July data once, and the run reported green
+while doing it.
 
 ## Two things this suite learned the hard way
 

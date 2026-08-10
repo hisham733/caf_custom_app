@@ -503,11 +503,30 @@ doc_events = {
         # that measurement silently, because auto-fill matches rows by KRA name
         "validate": "caf.caf.overrides.appraisal_template.warn_on_missing_auto_fill_kras"
     },
+    # CAF Chunk 5 (2026-08-10) - OD-44 / FBR39. A leave approved after the
+    # appraisal was submitted has to reach the appraisal, or the two documents
+    # disagree permanently.
+    #   before_submit - REFUSE if the FBR39 window has closed. It must be
+    #                   before_submit: Frappe writes docstatus=1 before on_submit
+    #                   runs, so refusing there leaves the doc submitted AND
+    #                   rejected (the Chunk 3 trap).
+    #   on_submit     - refresh, and never throw: a throw here would roll back an
+    #                   approved leave over a downstream display cell.
+    "Leave Application": {
+        "before_submit": "caf.caf.appraisal_refresh.check_leave_window",
+        "on_submit": "caf.caf.appraisal_refresh.on_leave_application_submit",
+    },
     # CAF Chunk 4 (2026-08-10) - OD-40. A swap filed AFTER the date has to reach
     # back and correct what that day meant: day_type, shift_type and the OT that
     # hangs off them. The punches are never touched (FDR10).
     "Shift Assignment": {
-        "on_submit": "caf.caf.re_resolve.on_shift_assignment_submit",
+        # A list, and the order is the contract: re_resolve fixes Attendance
+        # first, then the appraisal reads it. Reversed, the appraisal would
+        # recompute from the stale verdict.
+        "on_submit": [
+            "caf.caf.re_resolve.on_shift_assignment_submit",
+            "caf.caf.appraisal_refresh.on_shift_assignment_refresh",
+        ],
         # before_cancel clears stock's validate_attendance() guard, which refuses
         # the cancel while any Attendance carries this shift - and does not even
         # filter on docstatus. Without it a swap could be filed but never unfiled.
