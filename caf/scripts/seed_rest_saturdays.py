@@ -20,24 +20,27 @@ WHAT IS AND IS NOT SEEDED
 Source: `ingress_snapshot/attendance.csv.gz`, `daytype = 'R'` on a Saturday,
 matched to an Active employee by `attendance_device_id`.
 
-Three filters, each of which cost a wrong number when first counted:
+⚠️ **This is a TEST fixture, not a production migration.** `development.localhost`
+needs enough real rest Saturdays to exercise OD-52 in both directions — it does
+not need CAF's full roster history, and pulling the whole snapshot in drags along
+one-off events that have to be reasoned about individually. `SEED_MONTHS` keeps
+the window to the recent past for that reason. Widening it is a decision, not a
+default: at 14 months the load also picks up **2026-04-04**, a company-wide
+Saturday shutdown affecting 76 of 88 employees, which is a Holiday List question
+rather than 76 Shift Assignments.
 
-  1. Employees whose DEFAULT shift already does not work Saturday are SKIPPED.
+Two filters:
+
+  1. Only the last `SEED_MONTHS` months. Older rest Saturdays are real but add
+     nothing a test can use.
+
+  2. Employees whose DEFAULT shift already does not work Saturday are SKIPPED.
      Their Saturdays resolve Restday without any assignment; filing one would be
-     a no-op that only makes the data look busier than it is. 3 employees, 153 rows.
+     a no-op that only makes the data look busier than it is.
 
-  2. `COMPANY_WIDE` dates are SKIPPED. 2026-04-04 is a rest Saturday for 76 of
-     88 active employees — a shutdown, not an alternating pattern. 76 one-off
-     Shift Assignments would be the wrong shape for it; it belongs in the
-     Holiday List as one row. Awaiting HR.
-
-  3. Only Saturdays. Ingress marks rest days on other weekdays too, but those
-     follow the shift's working week and need no per-date override.
-
-⚠️ Counting these WITHOUT filter 1 gives 469 rows over 16 employees, and without
-filter 2 as well gives 545 over 78. The roadmap's remembered "418 over 15" is a
-third window again. Check per employee, never in aggregate — a total that looks
-plausible can hide which people it is made of.
+⚠️ Check per employee, never in aggregate. The same source counted over three
+different windows gives 545 rows / 78 employees, 469 / 16, and 316 / 13 — all
+"plausible" totals hiding entirely different sets of people.
 
 USAGE
 -----
@@ -45,7 +48,8 @@ USAGE
     bench --site <site> execute caf.scripts.seed_rest_saturdays.seed
 
 Re-runnable: it removes the assignments it made on a previous run first, not
-last, so a failed run does not poison the next one.
+last, so a failed run does not poison the next one — and so narrowing the window
+actually shrinks the data rather than leaving orphans behind.
 """
 
 import csv
@@ -54,11 +58,12 @@ from collections import defaultdict
 from datetime import datetime
 
 import frappe
+from frappe.utils import add_months, getdate, nowdate
 
 SNAPSHOT = "/tmp/attendance.csv.gz"
 
-# A company-wide Saturday off. Not an individual rest pattern — see filter 2.
-COMPANY_WIDE = {"2026-04-04"}
+# How far back to seed. A test fixture, not a migration — see the header.
+SEED_MONTHS = 3
 
 
 def _date(value):
@@ -104,8 +109,9 @@ def pick_rest_shift(default_shift: str, candidates: list) -> str:
     return min(pool, key=lambda c: abs((c.start_time - default.start_time).total_seconds())).name
 
 
-def collect(snapshot: str = SNAPSHOT) -> dict:
+def collect(snapshot: str = SNAPSHOT, since=None) -> dict:
     """{employee: {date: default_shift}} — the Saturdays needing an assignment."""
+    since = getdate(since or add_months(nowdate(), -SEED_MONTHS))
     by_device, sat_works = {}, {}
     for s in frappe.get_all("Shift Type", fields=["name", "caf_work_sat"]):
         sat_works[s.name] = s.caf_work_sat
@@ -120,7 +126,7 @@ def collect(snapshot: str = SNAPSHOT) -> dict:
             if (row.get("daytype") or "").strip().upper() != "R":
                 continue
             day = _date(row.get("date"))
-            if not day or day.weekday() != 5 or str(day) in COMPANY_WIDE:
+            if not day or day.weekday() != 5 or day < since:
                 continue
             emp = by_device.get((row.get("userid") or "").strip())
             if not emp or not emp.default_shift:
@@ -154,9 +160,13 @@ def clear(employees=None) -> int:
     return removed
 
 
-def seed(snapshot: str = SNAPSHOT, submit: bool = True) -> dict:
-    wanted = collect(snapshot)
-    removed = clear(wanted.keys())
+def seed(snapshot: str = SNAPSHOT, submit: bool = True, since=None) -> dict:
+    since = getdate(since or add_months(nowdate(), -SEED_MONTHS))
+    wanted = collect(snapshot, since)
+    # Clear ALL previously seeded rows, not just the ones inside the current
+    # window — otherwise narrowing the window leaves the old rows orphaned and
+    # the fixture never actually shrinks.
+    removed = clear()
     candidates = no_saturday_shifts()
 
     created, failed = 0, {}
@@ -185,6 +195,7 @@ def seed(snapshot: str = SNAPSHOT, submit: bool = True) -> dict:
 
     frappe.db.commit()
 
+    print(f"window           {since} onward ({SEED_MONTHS} months)")
     print(f"employees        {len(wanted)}")
     print(f"removed (rerun)  {removed}")
     print(f"created          {created}")

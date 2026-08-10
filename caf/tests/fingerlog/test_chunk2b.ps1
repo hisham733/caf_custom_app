@@ -80,10 +80,17 @@ $D_WED = "2026-09-09"   # plain Workday, no public holiday that week
 $D_THU = "2026-09-10"
 $D_FRI = "2026-09-11"
 $D_PH_SAT = "2026-03-21"   # HARI RAYA PUASA, and it falls on a Saturday
-$D_SWAP = "2026-01-03"     # a seeded rest Saturday for $EMP_SWAP
 
 $ALL_EMP = @($EMP_OT, $EMP_NOOT, $EMP_NOSHIFT, $EMP_MONFRI, $EMP_SWAP, $EMP_RESTOT)
-$ALL_DATES = @($D_WED, $D_THU, $D_FRI, $D_PH_SAT, $D_SWAP)
+
+# ⚠️ The swap date is DERIVED, never hardcoded. seed_rest_saturdays seeds a
+# rolling SEED_MONTHS window, so any literal date here rots the moment the
+# window moves - which it did: an earlier revision pinned 2026-01-03 and E3
+# started failing when the window narrowed to 3 months.
+function FirstAssignment($emp) {
+  $f = Esc ('[["employee","=","' + $emp + '"],["docstatus","=",1]]')
+  return (Req GET "/api/resource/Shift%20Assignment?filters=$f&fields=%5B%22start_date%22%2C%22shift_type%22%5D&order_by=start_date&limit_page_length=1").json.data
+}
 
 # ---------------------------------------------------------------- cleanup FIRST
 # ⚠️ Cleanup runs as Admin, and ONLY cleanup does. HR Manager holds `cancel` but
@@ -194,15 +201,22 @@ Result "E2" ($dtMonSat -eq "Holiday" -and $dtMonFri -eq "Restday") `
 # ---------------------------------------------------------------- E3 / C2
 # One Saturday, two employees, opposite verdicts - OD-52. The swap employee has
 # a Shift Assignment onto a no-Saturday shift; the control has none.
-$rRest = NewLog $EMP_SWAP $D_SWAP 0 "00:00:00" "00:00:00"
-$rWork = NewLog $EMP_OT $D_SWAP 0 "08:00:00" "16:30:00"
-$dtRest = $rRest.json.message.day_type
-$dtWork = $rWork.json.message.day_type
-$shRest = $rRest.json.message.shift_type
-$shWork = $rWork.json.message.shift_type
-Result "E3" ($dtRest -eq "Restday" -and $dtWork -eq "Workday") `
-  "${D_SWAP}: $EMP_SWAP=$dtRest (shift $shRest) vs $EMP_OT=$dtWork (shift $shWork)"
-Result "C2" ($dtRest -ne $dtWork) "same date, different day_type for two employees - FDR6 / OD-52"
+$swap = FirstAssignment $EMP_SWAP
+if ($swap) {
+  $D_SWAP = $swap[0].start_date
+  $rRest = NewLog $EMP_SWAP $D_SWAP 0 "00:00:00" "00:00:00"
+  $rWork = NewLog $EMP_OT $D_SWAP 0 "08:00:00" "16:30:00"
+  $dtRest = $rRest.json.message.day_type
+  $dtWork = $rWork.json.message.day_type
+  $shRest = $rRest.json.message.shift_type
+  $shWork = $rWork.json.message.shift_type
+  Result "E3" ($dtRest -eq "Restday" -and $dtWork -eq "Workday") `
+    "${D_SWAP}: $EMP_SWAP=$dtRest (shift $shRest) vs $EMP_OT=$dtWork (shift $shWork)"
+  Result "C2" ($dtRest -ne $dtWork) "same date, different day_type for two employees - FDR6 / OD-52"
+} else {
+  Result "E3" $false "no Shift Assignment for $EMP_SWAP - run caf.scripts.seed_rest_saturdays.seed"
+  Result "C2" $false "skipped, depends on E3's fixture"
+}
 
 # ---------------------------------------------------------------- W3
 # Past the gate, no OT Approval anywhere. FBR11: OT ALWAYS needs an approval, so
@@ -256,8 +270,7 @@ Result "W8" ($otHours -eq 0 -and $sub.code -eq 200 -and $doc.docstatus -eq 1) `
 # (FBR4). The rest shift must preserve OT eligibility - two of CAF's three
 # no-Saturday shifts carry caf_allow_ot = 0, so a careless assignment would
 # silently zero this and the test would pass for the wrong reason.
-$f = Esc ('[["employee","=","' + $EMP_RESTOT + '"],["docstatus","=",1]]')
-$sa = (Req GET "/api/resource/Shift%20Assignment?filters=$f&fields=%5B%22start_date%22%2C%22shift_type%22%5D&order_by=start_date&limit_page_length=1").json.data
+$sa = FirstAssignment $EMP_RESTOT
 if ($sa) {
   $dRest = $sa[0].start_date
   $r = NewLog $EMP_RESTOT $dRest 3.00 "08:00:00" "11:00:00"
