@@ -10,6 +10,8 @@ from datetime import datetime
 
 from frappe.utils import getdate, cint
 from caf.caf.shift_resolution import get_shift_params, resolve_day_type
+from caf.caf import work_hours
+from caf.caf.attendance_verdict import create_attendance, cancel_attendance, assert_no_clash
 # Employee Checkin generation is DORMANT — decision F16, analysis §12.8.
 # Finger Log writes Attendance directly and nothing reads Employee Checkin.
 # See the header of emp_checklist.py for why it is kept and how to re-enable.
@@ -54,16 +56,38 @@ def apply_ot_rules(overtime, params):
 
 
 class FingerLog(Document):
+    def before_submit(self):
+        # OD-58 — an incomplete punch record may not become a verdict. Measured
+        # 2026-08-10: before this guard existed, EVERY incomplete shape saved and
+        # submitted freely, because validate() never looked at the punches.
+        if self.caf_not_full_day:
+            frappe.throw(_(
+                "Not a full day: {0} is missing {1}. Correct the punches, or file "
+                "half-day leave — a Finger Log may not decide that half a day was worked."
+            ).format(self.work_date, ", ".join(getattr(self, "_missing", None) or ["a punch"])))
+
+        # Refuse a day that is already decided, BEFORE the docstatus is written.
+        assert_no_clash(self)
+
     def on_submit(self):
         # make_employee_checkin_from_finger_log(self.name)   # dormant — F16
-        pass
+        create_attendance(self)
+
+    def on_cancel(self):
+        # Now that Attendance links back here, stock REFUSES the cancel while a
+        # submitted document points at this one (frappe/model/delete_doc.py:334
+        # — the Work Order / Stock Entry behaviour). on_cancel alone is too late:
+        # the link guard runs first. ignore_links + cancel the CHILD first is the
+        # pattern ERPNext itself uses. Spec §6.3.
+        self.flags.ignore_links = True
+        cancel_attendance(self)
     def autoname(self):
         # set FingerLog Name to work_date + getseries
-        # note that self.work_date can be a datetime object (2021-01-01 00:00:00) or a string (2021-01-01)
-        if isinstance(self.work_date, datetime):  # Corrected line
-            date_str = self.work_date.strftime('%Y-%m-%d')
-        else:
-            date_str = self.work_date
+        # work_date arrives as a str, a datetime, or a plain date. The original
+        # test was `isinstance(self.work_date, datetime)`, which is False for a
+        # date — so `date + '-'` raised TypeError on every row the importer
+        # created. getdate() normalises all three.
+        date_str = getdate(self.work_date).strftime('%Y-%m-%d')
         key = date_str
         self.name = key + '-' + getseries(key, 3)
         # debug
@@ -86,6 +110,10 @@ class FingerLog(Document):
             # what kind of day was this, and on which shift. MUST run before
             # det_ot_in_hour() — the OT rules are read off the resolved shift.
             self.resolve_shift_and_day_type()
+
+            # hours served, and whether the record is even complete. Also shift-
+            # derived, so it has the same ordering requirement.
+            self.det_work_hours()
 
             # apply the resolved shift's OT rules to the clocked overtime
             self.det_ot_in_hour()
@@ -112,6 +140,35 @@ class FingerLog(Document):
 
         self.shift_type = shift
         self.day_type = day_type
+
+    def det_work_hours(self):
+        # OD-59 — derived here, NOT imported from Ingress. `work` is the part of
+        # the scheduled shift actually served; anything outside the window is
+        # overtime. See work_hours.py for why elapsed time is the wrong formula.
+        params = get_shift_params(self.shift_type)
+        self._missing = work_hours.missing_punches(self, params)
+
+        # OD-58 — "Not Full Day". The name is deliberate: it records only what
+        # was observed. Claiming he worked half a day is a DECISION, and FDR4
+        # keeps decisions with the Leave Application.
+        self.caf_not_full_day = 1 if self._missing else 0
+
+        work, short = work_hours.compute(
+            self.time_in, self.get("break"), self.resume, self.out, params)
+
+        if work is None and work_hours.is_all_zero(self):
+            # He did not come. On a Workday he missed the whole scheduled shift,
+            # so `short` is the full net — that is what makes the day countable.
+            # On a Restday or Holiday nothing was scheduled, so nothing is short.
+            self.caf_work_hours = 0
+            self.short = round(work_hours.net_minutes(params) / 60.0, 4) \
+                if self.day_type == "Workday" else 0
+        else:
+            # Not computable and not all-zero = an incomplete record. Leave both
+            # at 0 rather than inventing a number; caf_not_full_day carries the
+            # meaning and HR resolves it (OD-58).
+            self.caf_work_hours = work or 0
+            self.short = short if short is not None else 0
 
     def det_ot_in_hour(self):
         # The OT rules are per-SHIFT (FBR36 / FDR7), never per-department. The

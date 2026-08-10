@@ -89,8 +89,12 @@ $ALL_EMP = @($EMP_OT, $EMP_NOOT, $EMP_NOSHIFT, $EMP_MONFRI, $EMP_SWAP, $EMP_REST
 # started failing when the window narrowed to 3 months.
 function FirstAssignment($emp) {
   $f = Esc ('[["employee","=","' + $emp + '"],["docstatus","=",1]]')
-  return (Req GET "/api/resource/Shift%20Assignment?filters=$f&fields=%5B%22start_date%22%2C%22shift_type%22%5D&order_by=start_date&limit_page_length=1").json.data
+  $r = (Req GET "/api/resource/Shift%20Assignment?filters=$f&fields=%5B%22start_date%22%2C%22shift_type%22%5D&order_by=start_date&limit_page_length=1").json.data
+  # Remember it so Cleanup can scope itself to the dates this suite touched.
+  if ($r) { $script:DERIVED_DATES += $r[0].start_date }
+  return $r
 }
+$script:DERIVED_DATES = @()
 
 # ---------------------------------------------------------------- cleanup FIRST
 # ⚠️ Cleanup runs as Admin, and ONLY cleanup does. HR Manager holds `cancel` but
@@ -113,11 +117,57 @@ function Purge($doctype, $filters) {
 }
 
 function Cleanup {
+  # ⚠️ Server-side. REST cannot set `ignore_links`, and stock refuses to cancel
+  # or delete a Finger Log while Attendance links back to it (spec §6.3), so an
+  # HTTP-only cleanup leaves a SUBMITTED log behind and the next run's insert
+  # fails as a 405 built from a null name. See purge.py.
+  $out = wsl docker exec -w /workspace/development/frappe-bench frappe `
+         bench --site development.localhost execute caf.tests.fingerlog.purge.run 2>&1
+  $line = $out | Select-String -Pattern "^purged" | Select-Object -First 1
+  if ($line) { Write-Host "      $line" -ForegroundColor DarkGray }
+  if ($line -match "(\d+) stuck" -and [int]$Matches[1] -gt 0) { return [int]$Matches[1] }
+  return 0
+}
+
+function CleanupRest {
   $left = 0
-  # Every Finger Log for the fixture employees, whatever the date. Filtering by
-  # a date LIST silently orphans anything created by an older revision of this
-  # file - which is how the first leftovers survived.
-  $left += Purge "Finger Log" ('[["employee","in",["' + ($ALL_EMP -join '","') + '"]]]')
+  # ⚠️ Scoped to the suite's OWN employees AND its OWN dates. An earlier version
+  # purged every Finger Log for the fixture employees whatever the date - which
+  # was harmless while the table was empty, and became DESTRUCTIVE the moment
+  # Chunk 3's importer put real rows in it: one run ate ~50 imported July logs.
+  # A test suite must never be able to delete data it did not create.
+  $dates = @($ALL_DATES + $script:DERIVED_DATES | Where-Object { $_ }) | Sort-Object -Unique
+  $f = '[["employee","in",["' + ($ALL_EMP -join '","') + '"]],' +
+       '["work_date","in",["' + ($dates -join '","') + '"]]]'
+
+  # ⚠️ Chunk 3 made Attendance link back to Finger Log, and that link BLOCKS the
+  # Finger Log's deletion even once the Attendance is cancelled. Each log's
+  # children are cleared IMMEDIATELY BEFORE that log is removed - a single
+  # pre-pass is not enough, because cancelling a log can itself touch Attendance,
+  # so rows fetched up front go stale and one submitted log survives every run.
+  $logs = (ReqAs Admin GET "/api/resource/Finger%20Log?filters=$(Esc $f)&fields=%5B%22name%22%2C%22docstatus%22%5D&limit_page_length=0").json.data
+  foreach ($fl in $logs) {
+    $af = Esc ('[["caf_finger_log","=","' + $fl.name + '"]]')
+    foreach ($a in (ReqAs Admin GET "/api/resource/Attendance?filters=$af&fields=%5B%22name%22%2C%22docstatus%22%5D&limit_page_length=0").json.data) {
+      if ($a.docstatus -eq 1) { ReqAs Admin PUT "/api/resource/Attendance/$(Esc $a.name)" '{"docstatus":2}' | Out-Null }
+      ReqAs Admin DELETE "/api/resource/Attendance/$(Esc $a.name)" | Out-Null
+    }
+    if ($fl.docstatus -eq 1) { ReqAs Admin PUT "/api/resource/Finger%20Log/$(Esc $fl.name)" '{"docstatus":2}' | Out-Null }
+    # cancelling may have created or cancelled Attendance - clear again
+    foreach ($a in (ReqAs Admin GET "/api/resource/Attendance?filters=$af&fields=%5B%22name%22%5D&limit_page_length=0").json.data) {
+      ReqAs Admin DELETE "/api/resource/Attendance/$(Esc $a.name)" | Out-Null
+    }
+    ReqAs Admin DELETE "/api/resource/Finger%20Log/$(Esc $fl.name)" | Out-Null
+
+    # What actually matters is that nothing SUBMITTED survives: check_previous_submission
+    # filters docstatus=1, so a cancelled leftover cannot poison the next run, but a
+    # submitted one makes the very next insert fail with a 405 built from a null name.
+    # Deleting can legitimately fail here - stock refuses to delete a doc another
+    # document links to, and Attendance links back (spec 6.3) - so assert the state
+    # that matters rather than the operation.
+    $still = (ReqAs Admin GET "/api/resource/Finger%20Log/$(Esc $fl.name)").json.data
+    if ($still -and $still.docstatus -eq 1) { $left++ }
+  }
   # OT Approvals created by this suite carry the marker in `reason`
   $left += Purge "OT Approval" '[["reason","like","%CHUNK2B TEST%"]]'
   if ($left -gt 0) {
@@ -285,8 +335,12 @@ if ($sa) {
 Write-Host ""
 Write-Host "cleaning up..."
 $stuck = Cleanup
-# Assert the cleanup actually worked. Without this the suite can leave a growing
-# pile behind and still report a clean sheet - which it did, for four runs.
-$remain = @((ReqAs Admin GET "/api/resource/Finger%20Log?fields=%5B%22name%22%5D&limit_page_length=0").json.data).Count
-Result "CLN" ($stuck -eq 0 -and $remain -eq 0) "after cleanup: $remain Finger Log(s) remain, $stuck undeletable"
+# Assert the cleanup worked - scoped to THIS suite's rows. Asserting the whole
+# table is empty was right when Finger Log had 0 rows and became wrong the moment
+# the Chunk 3 importer existed; it would now fail on legitimate data.
+$dates = @($ALL_DATES + $script:DERIVED_DATES | Where-Object { $_ }) | Sort-Object -Unique
+$f = Esc ('[["employee","in",["' + ($ALL_EMP -join '","') + '"]],["work_date","in",["' + ($dates -join '","') + '"]]]')
+$f2 = Esc ('[["employee","in",["' + ($ALL_EMP -join '","') + '"]],["work_date","in",["' + ($dates -join '","') + '"]],["docstatus","=",1]]')
+$remain = @((ReqAs Admin GET "/api/resource/Finger%20Log?filters=$f2&fields=%5B%22name%22%5D&limit_page_length=0").json.data).Count
+Result "CLN" ($stuck -eq 0 -and $remain -eq 0) "after cleanup: $remain SUBMITTED Finger Log(s) of this suite remain (must be 0), $stuck stuck"
 Write-Host "done." -ForegroundColor Cyan

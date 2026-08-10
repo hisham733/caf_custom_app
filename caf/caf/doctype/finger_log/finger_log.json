@@ -16,7 +16,6 @@
   "column_break_ww1j",
   "work_date",
   "day_type",
-  "department",
   "ot_approval_section",
   "ot_approval_id",
   "has_overwrite",
@@ -28,10 +27,11 @@
   "out",
   "column_break_1z2p",
   "overtime",
+  "caf_work_hours",
   "ot_in_hour",
   "short",
-  "leave_taken",
-  "approval"
+  "caf_not_full_day",
+  "leave_taken"
  ],
  "fields": [
   {
@@ -101,11 +101,6 @@
    "fieldtype": "Data",
    "label": "Day Type",
    "read_only": 1
-  },
-  {
-   "fieldname": "department",
-   "fieldtype": "Data",
-   "label": "Department"
   },
   {
    "fieldname": "ot_approval_section",
@@ -185,9 +180,12 @@
    "read_only": 1
   },
   {
+   "allow_on_submit": 1,
+   "description": "Scheduled hours MISSED. short = net - caf_work_hours; the pair is the import's own checksum.",
    "fieldname": "short",
    "fieldtype": "Float",
-   "label": "Short"
+   "label": "Short Hours",
+   "read_only": 1
   },
   {
    "fieldname": "leave_taken",
@@ -210,16 +208,26 @@
   },
   {
    "allow_on_submit": 1,
-   "fieldname": "approval",
-   "fieldtype": "Data",
-   "hidden": 1,
-   "label": "Approval"
+   "description": "Scheduled shift SERVED - derived, not imported (OD-59). work + short = net. hour.minute is NOT used here: this is decimal hours.",
+   "fieldname": "caf_work_hours",
+   "fieldtype": "Float",
+   "label": "Work Hours",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "default": "0",
+   "description": "The punch record is incomplete (OD-58). Cannot submit until HR corrects the punches or files half-day leave. NOT a claim that half a day was worked - that decision belongs to the Leave Application (FDR4).",
+   "fieldname": "caf_not_full_day",
+   "fieldtype": "Check",
+   "label": "Not Full Day",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-08-10 17:16:37.189637",
+ "modified": "2026-08-10 21:27:38.674887",
  "modified_by": "Administrator",
  "module": "Caf",
  "name": "Finger Log",
