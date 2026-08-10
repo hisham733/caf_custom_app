@@ -166,6 +166,9 @@ def re_resolve_finger_log(name: str, reason: str = "") -> dict:
         return {"name": name, "changed": {}, "attendance": "unchanged"}
 
     doc.flags.ignore_permissions = True
+    # OD-62: re-resolve IS the machine writing the derived fields — the one
+    # caller `FingerLog.before_update_after_submit` lets past.
+    doc.flags.caf_system_write = True
     doc.save()                      # update_after_submit — writes a Version (OD-48)
 
     if changed:

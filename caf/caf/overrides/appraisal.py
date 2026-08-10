@@ -27,7 +27,7 @@ from datetime import datetime, timedelta
 
 import frappe
 from frappe import _
-from frappe.utils import cint, flt, get_last_day, getdate, now, nowdate
+from frappe.utils import cint, cstr, flt, get_last_day, getdate, now, nowdate
 from frappe.utils.nestedset import get_descendants_of
 
 from hrms.hr.doctype.appraisal.appraisal import Appraisal
@@ -605,6 +605,63 @@ class CustomAppraisal(Appraisal):
         # time; this is what stops one being finalised before M has ended.
         self.validate_month_ended()
 
+    def before_update_after_submit(self):
+        """OD-61 - the lock OD-44 claimed but never had.
+
+        OD-44 unlocked `caf_date_cell` and `caf_remarks` with allow_on_submit so
+        that a late MC could reach a submitted appraisal, and its register row
+        said `read_only = 1` kept a person out. **Measured 2026-08-11: both are
+        read_only = 0, and read_only would not have helped anyway - it does not
+        stop a write.** So the four auto-filled GRID CELLS (caf_date_cell on the
+        Attendance / Punctuality / OT Hours rows, plus caf_remarks on Attendance)
+        were freely typeable on a submitted appraisal by anyone holding `write`
+        AND `submit`.
+
+        ⚠️ `validate()` does NOT run on this path - Frappe routes
+        update_after_submit to `before_update_after_submit`, so
+        `validate_state_edit_permission()` never fires here. This method is the
+        only gate on a submitted appraisal.
+
+        The three supervisor columns need no guard: they are allow_on_submit = 0,
+        which Frappe DOES enforce (UpdateAfterSubmitError).
+
+        Draft-time editing is untouched. That matters: `refresh_auto_fill(force
+        =False)` exists precisely so a supervisor's manual edit survives an
+        unrelated save (D3), and a docstatus-conditional guard is the only way to
+        keep that while closing the post-submit hole - `permlevel` and read_only
+        cannot be made conditional.
+        """
+        if self.flags.caf_system_write:
+            return
+        before = self.get_doc_before_save()
+        if not before:
+            return
+
+        changed = [f for f in ("auto_fill_computed_on",)
+                   if cstr(before.get(f)) != cstr(self.get(f))]
+
+        previous = {row.name: row for row in (before.get("appraisal_kra") or [])}
+        for row in self.get("appraisal_kra") or []:
+            old = previous.get(row.name)
+            if not old:
+                continue
+            for field in ("caf_date_cell", "caf_remarks"):
+                if cstr(old.get(field)) != cstr(row.get(field)):
+                    changed.append("%s / %s" % (row.kra, field))
+
+        if not changed:
+            return
+
+        frappe.throw(
+            _(
+                "This appraisal is submitted, and {0} is filled in from Attendance, "
+                "Finger Log and the shift - not by hand. It refreshes by itself when a "
+                "late leave application or shift assignment changes the month. Your own "
+                "Description / Root Cause / Corrective Action columns are unaffected."
+            ).format(frappe.bold(", ".join(changed))),
+            title=_("Auto-filled cell"),
+        )
+
     # -- CAF rules ---------------------------------------------------------
 
     def validate_supervisor(self):
@@ -840,8 +897,17 @@ class CustomAppraisal(Appraisal):
 
     @frappe.whitelist()
     def refresh_auto_fill_action(self):
-        """The form's "Refresh Data" button (Q4). Recomputes unconditionally."""
+        """The form's "Refresh Data" button (Q4). Recomputes unconditionally.
+
+        `caf_system_write` so OD-61's guard lets it through. The button itself is
+        already hidden once the appraisal is submitted (appraisal.js:208,
+        `docstatus !== 0`) - but hiding a button is not a lock (PROTOCOL C4), so
+        this method stays reachable over REST by design. That is safe: it only
+        ever RECOMPUTES from live data and never accepts a typed value, so there
+        is nothing here to forge. MG, 2026-08-11.
+        """
         self.refresh_auto_fill(force=True)
+        self.flags.caf_system_write = True
         self.save()
         return {
             "computed_on": self.auto_fill_computed_on,

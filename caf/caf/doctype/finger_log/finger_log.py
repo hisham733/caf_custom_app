@@ -8,7 +8,7 @@ from frappe.model.document import Document
 from frappe.model.naming import getseries
 from datetime import datetime
 
-from frappe.utils import getdate, cint
+from frappe.utils import getdate, cint, cstr, flt
 from caf.caf.shift_resolution import get_shift_params, resolve_day_type
 from caf.caf import work_hours
 from caf.caf.attendance_verdict import create_attendance, cancel_attendance, assert_no_clash
@@ -16,6 +16,27 @@ from caf.caf.attendance_verdict import create_attendance, cancel_attendance, ass
 # Finger Log writes Attendance directly and nothing reads Employee Checkin.
 # See the header of emp_checklist.py for why it is kept and how to re-enable.
 # from caf.caf.doctype.finger_log.emp_checklist import make_employee_checkin_from_finger_log
+
+# OD-62 — every field that is DERIVED and carries allow_on_submit = 1, i.e. every
+# field a machine writes after submission and a person never should. Measured, not
+# listed by hand: these are exactly the allow_on_submit fields on Finger Log, minus
+# `caf_hr_review` and `caf_hr_review_note`, which exist for HR to act on.
+DERIVED_AFTER_SUBMIT = (
+    "shift_type", "day_type", "ot_approval_id", "has_overwrite",
+    "final_ot", "caf_work_hours", "ot_in_hour", "short", "caf_not_full_day",
+)
+
+
+def _same(a, b):
+    """Compare a stored value with an in-memory one without tripping over types.
+
+    A Float arrives from the DB as Decimal and from Python as float; a Check as
+    int; a Data as str or None. Comparing raw would report a change on every save.
+    """
+    if isinstance(a, (int, float)) or isinstance(b, (int, float)):
+        return flt(a) == flt(b)
+    return cstr(a) == cstr(b)
+
 
 def overtime_to_minutes(overtime):
     # FBR2 — Finger Log.overtime is hour.minute, NOT decimal hours. 1.28 is
@@ -72,6 +93,47 @@ class FingerLog(Document):
     def on_submit(self):
         # make_employee_checkin_from_finger_log(self.name)   # dormant — F16
         create_attendance(self)
+
+    def before_update_after_submit(self):
+        """OD-62 — the lock OD-48 claimed but never had.
+
+        OD-48's register row said `read_only = 1` meant *"code may write them and
+        a person may not"*. **Measured 2026-08-11: `read_only` does not stop a
+        write at all** — it is form decoration, the same shape as workflow
+        `allow_edit`. Neither does `hidden`, and `set_only_once` is not even
+        checked on child rows. The only field property Frappe truly enforces is
+        `permlevel`, and that cannot be made conditional on `docstatus`.
+
+        So these fields were rewritable on a SUBMITTED Finger Log by anyone
+        holding `write` AND `submit` — 3 accounts here, and `final_ot` drives
+        overtime pay. This is the guard that makes the claim true.
+
+        ⚠️ `caf_hr_review` / `caf_hr_review_note` are deliberately NOT guarded:
+        they exist for a human to act on, so HR keeps a route to clear a flag
+        they have dealt with.
+
+        The sanctioned route for genuinely wrong DATA is unchanged and is what
+        OD-48 already specified: **cancel + amend** (Path 2).
+        """
+        if self.flags.caf_system_write:
+            return
+        before = self.get_doc_before_save()
+        if not before:
+            return
+        changed = [f for f in DERIVED_AFTER_SUBMIT
+                   if not _same(before.get(f), self.get(f))]
+        if not changed:
+            return
+        frappe.throw(
+            _(
+                "{0} is derived from the punches and the shift, and this log is already "
+                "submitted. {1} cannot be typed. If the DATA is wrong, cancel and amend "
+                "the log (OD-48 Path 2); if the SHIFT was wrong, file a Shift Assignment "
+                "and the day re-resolves itself."
+            ).format(frappe.bold(", ".join(changed)),
+                     _("They") if len(changed) > 1 else _("It")),
+            title=_("Derived field"),
+        )
 
     def on_cancel(self):
         # Now that Attendance links back here, stock REFUSES the cancel while a

@@ -165,6 +165,9 @@ def refresh_submitted_appraisal(name, reason="", trigger=None):
         return {"name": name, "changed": {}}
 
     doc.flags.ignore_permissions = True
+    # OD-61: this is the system writing the cells, which is the one thing the
+    # guard in `CustomAppraisal.before_update_after_submit` lets through.
+    doc.flags.caf_system_write = True
     # update_after_submit — validated against allow_on_submit, and it writes a
     # Version. That trail is the whole reason option (a) beat db_set.
     doc.save(ignore_permissions=True)
