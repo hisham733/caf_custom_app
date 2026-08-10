@@ -309,8 +309,8 @@ def run_all():
     import sys
 
     from caf.tests.fingerlog import (test_chunk3_decisions, test_chunk4_reresolve,
-                                     test_chunk5_appraisal, test_chunk_r,
-                                     test_od61_guard)
+                                     test_chunk5_appraisal, test_chunk7_report,
+                                     test_chunk_r, test_od61_guard)
     # `__import__(__name__)` returns the top-level `caf` package, not this module.
     #
     # The imported July data is the canary: if a suite's cleanup is scoped wrongly
@@ -323,6 +323,7 @@ def run_all():
                       ("chunk 5 + 5b appraisal", test_chunk5_appraisal),
                       ("OD-61/62 guard", test_od61_guard),
                       ("chunk R roles", test_chunk_r),
+                      ("chunk 7.1 my attendance", test_chunk7_report),
                       ("chunk T enriched", sys.modules[__name__])):
         mod.RESULTS.clear()
         ok = mod.run()
