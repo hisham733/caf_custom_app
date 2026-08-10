@@ -26,7 +26,6 @@
   "break",
   "resume",
   "out",
-  "work",
   "column_break_1z2p",
   "overtime",
   "ot_in_hour",
@@ -76,9 +75,11 @@
    "set_only_once": 1
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "shift_type",
    "fieldtype": "Data",
-   "label": "Shift Type"
+   "label": "Shift Type",
+   "read_only": 1
   },
   {
    "fieldname": "column_break_ww1j",
@@ -95,11 +96,11 @@
    "set_only_once": 1
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "day_type",
    "fieldtype": "Data",
    "label": "Day Type",
-   "read_only": 1,
-   "set_only_once": 1
+   "read_only": 1
   },
   {
    "fieldname": "department",
@@ -112,6 +113,7 @@
    "label": "OT Approval"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "ot_approval_id",
    "fieldtype": "Link",
    "label": "OT Approval ID",
@@ -119,6 +121,7 @@
    "read_only": 1
   },
   {
+   "allow_on_submit": 1,
    "default": "0",
    "fieldname": "has_overwrite",
    "fieldtype": "Check",
@@ -127,6 +130,7 @@
    "read_only": 1
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "final_ot",
    "fieldtype": "Float",
    "in_list_view": 1,
@@ -141,26 +145,23 @@
    "default": "00:00:00",
    "fieldname": "break",
    "fieldtype": "Time",
-   "label": "Break"
+   "label": "Break",
+   "read_only": 1
   },
   {
    "default": "00:00:00",
    "fieldname": "resume",
    "fieldtype": "Time",
-   "label": "Resume"
+   "label": "Resume",
+   "read_only": 1
   },
   {
    "default": "00:00:00",
    "fieldname": "out",
    "fieldtype": "Time",
    "in_list_view": 1,
-   "label": "Out"
-  },
-  {
-   "default": "0",
-   "fieldname": "work",
-   "fieldtype": "Float",
-   "label": "Work"
+   "label": "Out",
+   "read_only": 1
   },
   {
    "fieldname": "column_break_1z2p",
@@ -175,12 +176,13 @@
    "read_only": 1
   },
   {
+   "allow_on_submit": 1,
    "default": "0",
    "fieldname": "ot_in_hour",
    "fieldtype": "Float",
    "in_list_view": 1,
    "label": "OT in Hour",
-   "set_only_once": 1
+   "read_only": 1
   },
   {
    "fieldname": "short",
@@ -203,7 +205,8 @@
    "default": "00:00:00",
    "fieldname": "time_in",
    "fieldtype": "Time",
-   "label": "In"
+   "label": "In",
+   "read_only": 1
   },
   {
    "allow_on_submit": 1,
@@ -216,7 +219,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-06-03 09:49:31.766328",
+ "modified": "2026-08-10 17:16:37.189637",
  "modified_by": "Administrator",
  "module": "Caf",
  "name": "Finger Log",
@@ -262,6 +265,7 @@
    "write": 1
   }
  ],
+ "row_format": "Dynamic",
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],

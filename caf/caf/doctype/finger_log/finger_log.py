@@ -9,14 +9,15 @@ from frappe.model.naming import getseries
 from datetime import datetime
 
 from frappe.utils import getdate
-# import make_employee_checkin_from_finger_log function that is in emp_checklist.py to use it in on_submit function
-from caf.caf.doctype.finger_log.emp_checklist import make_employee_checkin_from_finger_log
+# Employee Checkin generation is DORMANT — decision F16, analysis §12.8.
+# Finger Log writes Attendance directly and nothing reads Employee Checkin.
+# See the header of emp_checklist.py for why it is kept and how to re-enable.
+# from caf.caf.doctype.finger_log.emp_checklist import make_employee_checkin_from_finger_log
 
 class FingerLog(Document):
     def on_submit(self):
-        doc = self.name
-        make_employee_checkin_from_finger_log(doc)
-        #the abouve function is in emp_checklist.py and it is used to create a new employee checkin from finger log
+        # make_employee_checkin_from_finger_log(self.name)   # dormant — F16
+        pass
     def autoname(self):
         # set FingerLog Name to work_date + getseries
         # note that self.work_date can be a datetime object (2021-01-01 00:00:00) or a string (2021-01-01)

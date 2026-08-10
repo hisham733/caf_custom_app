@@ -1,3 +1,22 @@
+"""Employee Checkin generation — DORMANT. Decision F16, analysis §12.8.
+
+Under the current framework Employee Checkin is NOT needed and is NOT generated:
+Finger Log writes `Attendance` directly, and nothing reads Employee Checkin.
+The call in `finger_log.py:on_submit` is commented out, not deleted, and the
+existing rows are left untouched.
+
+WHY IT IS KEPT rather than removed — four things would need it:
+  * Payroll `payment_days` computed from real attendance
+  * stock late-entry / early-exit flags (`mark_attendance_and_link_log`)
+  * the HRMS mobile app check-in/out (the PWA writes Employee Checkin directly)
+  * an audit of raw punch timestamps in ERPNext (Finger Log holds the summary)
+
+TO RE-ENABLE: uncomment the import and the call in `finger_log.py:on_submit`.
+⚠️ BUT FIRST: re-enabling makes this a SECOND producer of `Attendance`, so the
+"one computer, one answer" rule (analysis §12.1) has to be re-decided before it
+is switched back on.
+"""
+
 from pydoc import doc
 import frappe
 from frappe import _
