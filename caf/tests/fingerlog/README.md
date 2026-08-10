@@ -39,6 +39,36 @@ identically against a broken model.
 | **A1–A5**, **B3** | a late correction reaching a **submitted** appraisal — including the number going **DOWN** | 5 |
 | **LOCK · SUBM · IDEM** | the OD-44 unlock is no wider than two cells; the FBR39 window actually closes; a no-op refresh writes nothing | 5 |
 | **A6 · A7 · B4 · AUDIT · B5** | the **cancel** direction — the count returns to baseline, the day's own verdict comes back, and a cancel is never refused on FBR39 grounds | 5b |
+| **REJ1 · REJ2** | a **rejected** leave is never refused on FBR39 grounds and moves no cell — stock writes no Attendance for one | 5b |
+| **T-FIX … T-REV2** | the enriched fixture: all **three** auto-filled cells populated and proven to move, uncounted leave, the reverse swap | T |
+| **GUARD1–3 · SYS1–4** | OD-61/62 — the derived cells refuse a typed change, and the machine still gets through | T |
+| **R1–R7** | the **role pass** — the permission model as real users, not as Administrator | R |
+
+## Running everything
+
+```powershell
+wsl docker exec -w /workspace/development/frappe-bench frappe bench --site development.localhost execute caf.tests.fingerlog.test_chunk_t.run_all
+```
+
+**84/84**, and it ends with a **data canary**: it counts the imported month (July 2026) before and
+after the whole matrix and **fails the run if the count dropped**.
+
+> 🔴 **That canary exists because a documented lesson was not enough.** "Scope the purge" was written
+> up after the Chunk 2b suite ate ~50 imported rows — and it recurred twice anyway.
+> `test_chunk3_decisions.cleanup()` filtered on employee with **no date filter** and deleted **62
+> imported rows per run** while reporting 21/21 green, and Chunk 4's date was computed from
+> `nowdate()` and had drifted into the imported month. 67 rows were lost in total before the canary
+> caught it on 2026-08-11. All restored by re-running the importer, which skips existing rows (FDR1).
+
+**All fixtures live in JUNE 2026.** The importer covers July only, so a June fixture can only ever
+delete what it created — and the expected values are exact, because no imported day can drift into a
+cell. Expected values are **derived from the date constants**, never typed: moving month turned every
+hardcoded `"9, 11"` into a lie at once.
+
+⚠️ Two calendar traps when picking a new fixture date: **2026-06-17 is AWAL MUHARRAM** and stock
+refuses a leave whose every day is a holiday (that failed six of Chunk R's twelve assertions for
+reasons unrelated to roles); and dev holds **7,006 OT Approvals**, so a date may already carry one —
+`T-CLEAN` asserts it rather than trusting it.
 
 Still to come: W1/W5–W7/W9/W10, L1–L3, B1–B2 and E4/E6 from **Chunk 3**;
 S1–S4 and E5 from **Chunk 4**; E7 from **Chunk 6**.
