@@ -24,6 +24,7 @@ from caf.caf.shift_resolution import get_shift_params
 # fixtures
 EMP_OT = "HR-EMP-00016"       # 8am Schedule  08:00-16:30, lunch 60 -> net 7.5h
 EMP_NOLUNCH = "HR-EMP-00001"  # special       09:00-18:00, lunch 0  -> net 9.0h
+EMP_MONFRI = "HR-EMP-00127"   # 8am no OT no Sat - Saturday is a REST day
 D = "2026-10-%02d"            # October 2026: past the seeded OT Approvals
 
 RESULTS = []
@@ -47,7 +48,7 @@ def remove(doctype, name):
 
 
 def cleanup():
-    for emp in (EMP_OT, EMP_NOLUNCH):
+    for emp in (EMP_OT, EMP_NOLUNCH, EMP_MONFRI):
         for f in frappe.get_all("Finger Log", filters={"employee": emp},
                                 fields=["name"], limit_page_length=0):
             for a in frappe.get_all("Attendance", filters={"caf_finger_log": f.name},
@@ -160,6 +161,63 @@ def run():
     made_half = frappe.db.count("Attendance", {"caf_finger_log": half.name})
     check("OD-56", half.caf_not_full_day == 1 and made_half == 0,
           f"half-day shape -> Not Full Day, NOT Half Day; attendance rows created={made_half}")
+
+    # ---------------------------------------------------------------- REST
+    # 🔴 A REST DAY IS NOT AN ABSENCE. The creation path had no day_type check
+    # while the re-resolve did, and the two disagreeing produced 287 false
+    # Absents in a single month - every one a Sunday, and every one countable
+    # against the employee under FBR37.
+    sat = D % 10                                   # 2026-10-10 is a Saturday
+    for old in frappe.get_all("Finger Log",
+                              filters={"employee": EMP_MONFRI, "work_date": sat},
+                              fields=["name"]):
+        remove("Finger Log", old.name)
+    rest = make(EMP_MONFRI, sat)                   # all-zero, and a no-Saturday shift
+    rest.submit()
+    made = frappe.db.count("Attendance", {"caf_finger_log": rest.name})
+    check("REST", rest.day_type == "Restday" and made == 0,
+          f"all-zero on a {rest.day_type}: Attendance rows created={made} (must be 0 - "
+          f"he was never scheduled)")
+
+    # but if he DID punch on a rest day, that is real attendance
+    for old in frappe.get_all("Finger Log",
+                              filters={"employee": EMP_MONFRI, "work_date": sat},
+                              fields=["name"]):
+        for a in frappe.get_all("Attendance", filters={"caf_finger_log": old.name},
+                                fields=["name"]):
+            remove("Attendance", a.name)
+        remove("Finger Log", old.name)
+    worked = make(EMP_MONFRI, sat, time_in="08:00:00", out="16:30:00",
+                  **{"break": "12:00:00", "resume": "13:00:00"})
+    worked.submit()
+    att_r = frappe.get_all("Attendance", filters={"caf_finger_log": worked.name},
+                           fields=["status"])
+    check("REST2", worked.day_type == "Restday" and att_r and att_r[0].status == "Present",
+          f"punched on a {worked.day_type} -> {att_r[0].status if att_r else None} "
+          f"(he turned up; FBR4 makes every hour OT)")
+
+    # ---------------------------------------------------------------- FBR37
+    # The appraisal counts ATTENDANCE now, not Finger Log.leave_taken (OD-43).
+    from caf.caf.overrides.appraisal import get_upl_dates
+    codes = frappe.db.get_single_value("HR Settings", "caf_attendance_leave_codes") or ""
+    counted = [c.strip() for c in codes.split(",") if c.strip()]
+    probes = []
+    for status, lt, expect in (("On Leave", "MC", True),
+                               ("On Leave", "Annual", False),
+                               ("Absent", None, True)):
+        row = frappe.get_all("Attendance",
+                             filters={"docstatus": 1, "status": status,
+                                      "leave_type": lt or ("is", "not set")},
+                             fields=["employee", "attendance_date"], limit=1)
+        if not row:
+            continue
+        cell = get_upl_dates(row[0].employee, row[0].attendance_date,
+                             row[0].attendance_date)
+        probes.append((f"{status}/{lt or 'none'}", bool(cell), expect))
+    check("FBR37", probes and all(got == exp for _, got, exp in probes),
+          "counts authorised leave AND unexplained absence, ignores the rest: "
+          + "; ".join(f"{n} counted={g} expected={e}" for n, g, e in probes)
+          + f"   [list: {counted}]")
 
     # ---------------------------------------------------------------- FDR4
     leaked = frappe.db.sql("""select count(*) from tabAttendance

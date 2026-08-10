@@ -37,7 +37,8 @@ from frappe import _
 from frappe.utils import add_days, getdate, nowdate
 
 from caf.caf import work_hours
-from caf.caf.attendance_verdict import verdict, existing_attendance
+from caf.caf.attendance_verdict import (
+    existing_attendance, should_have_attendance, verdict)
 from caf.caf.doctype.finger_log.finger_log import apply_ot_rules
 from caf.caf.shift_resolution import get_shift_params, resolve_day_type
 
@@ -80,8 +81,9 @@ def reconcile_attendance(doc):
     All-zero, not Workday -> the Absent was false. Cancel it.
     """
     rows = existing_attendance(doc.employee, doc.work_date)
-    punched = not work_hours.is_all_zero(doc)
-    should_exist = punched or doc.day_type == "Workday"
+    # One predicate, shared with the creation path — they disagreed once and it
+    # produced 287 false Absents on rest days.
+    should_exist = should_have_attendance(doc)
 
     if not should_exist:
         for row in rows:

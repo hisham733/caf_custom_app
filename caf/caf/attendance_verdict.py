@@ -24,6 +24,25 @@ PRESENT = "Present"
 ABSENT = "Absent"
 
 
+def should_have_attendance(doc) -> bool:
+    """Does this day warrant an Attendance row at all?
+
+    🔴 **A REST DAY IS NOT AN ABSENCE.** He was never scheduled, so there is
+    nothing to record and nothing to answer for. Creating an `Absent` there is a
+    false accusation, and FBR37 counts unexplained absence — so it would land on
+    his appraisal.
+
+    Measured 2026-08-10, after the appraisal was re-pointed at Attendance:
+    **287 false Absents in one month, every one on a Sunday.** The creation path
+    had no day_type check while `reconcile_attendance()` did, so the two
+    disagreed. They now share this predicate precisely so they cannot drift.
+
+    He punched on a rest day → that IS an Attendance. He turned up; FBR4 makes
+    every hour of it OT.
+    """
+    return not work_hours.is_all_zero(doc) or doc.day_type == "Workday"
+
+
 def verdict(doc) -> str:
     """`Absent` for the all-zero row, else `Present`.
 
@@ -98,6 +117,9 @@ def create_attendance(doc):
     """
     # Belt and braces: before_submit already refused a clash, but this is the
     # last point before a row is written.
+    if not should_have_attendance(doc):
+        return None                     # a rest day nobody worked. Nothing to record.
+
     assert_no_clash(doc)
 
     att = frappe.new_doc("Attendance")

@@ -39,9 +39,10 @@ KRA_PUNCTUALITY = "Punctuality"
 KRA_OT_HOURS = "OT Hours"
 AUTO_FILLED_KRAS = (KRA_ATTENDANCE, KRA_PUNCTUALITY, KRA_OT_HOURS)
 
-# Codes that mean "half a day". The date cell marks these with a 1/2 sign so the
-# supervisor can see the difference on the form without any numeric weighting
-# behind it (D67/D68).
+# ⚠️ RETIRED 2026-08-10 (OD-43). A half day used to be spelled as an Ingress
+# code (`0.5UPL`) on Finger Log. The attendance line now reads Attendance, where
+# a half day is `status = 'Half Day'` — so the marker comes from the status, not
+# from a magic string. Kept only because other code may still import the name.
 HALF_DAY_CODES = {"0.5UPL"}
 
 # Written as an escape rather than a literal: this file travels through shells
@@ -72,8 +73,13 @@ def scoring_enabled():
 
 
 def attendance_leave_codes():
-    """D69/BR8 - which Finger Log leave codes count as an attendance issue.
-    Data, not logic: HR edits the field, no code change."""
+    """D69/FBR37 - which LEAVE TYPES count as an attendance issue.
+    Data, not logic: HR edits the field, no code change.
+
+    ⚠️ Re-vocabularised 2026-08-10 (OD-43): these are Leave Type names now
+    (`MC`, `Leave Without Pay`), not Ingress codes (`UPL`, `0.5UPL`).
+    `is_lwp` is NOT the key — MC is paid and counts; Maternity is unpaid and
+    does not. The list is genuinely hand-kept, which is why it is data."""
     raw = caf_setting("caf_attendance_leave_codes", "") or ""
     return [code.strip() for code in raw.split(",") if code.strip()]
 
@@ -149,25 +155,45 @@ def format_ot_cell(hours):
 
 
 def get_upl_dates(employee, start_date, end_date):
-    """BR8 - days whose Finger Log leave_taken matches a configured code."""
+    """FBR37 - the attendance line. Counts TWO things, from ATTENDANCE.
+
+        leave_type IN (HR Settings.caf_attendance_leave_codes)   authorised leave
+        OR status = 'Absent' with an empty leave_type            no explanation at all
+
+    ⚠️ **RE-POINTED 2026-08-10 (OD-43).** This used to read
+    `Finger Log.leave_taken` - Ingress free text. That field is an OBSERVATION
+    carrying a leave DECISION, which is the very thing **FDR4** exists to forbid
+    and the root cause of the 39 mislabelled days behind OD-21. It is also now
+    empty on every imported row, because the Chunk 3 importer deliberately does
+    not write it - so this cell had become structurally zero.
+
+    The second branch is not optional. Unexplained absence is arguably the most
+    serious attendance issue there is, and reading `leave_type` alone would make
+    it invisible: 587 such days exist in July 2026 alone. Spec §1.2.
+
+    A half day counts as **0.5** - `status = 'Half Day'`, spec §1.4.
+    """
     codes = attendance_leave_codes()
-    if not codes:
-        return ""
 
     rows = frappe.get_all(
-        "Finger Log",
+        "Attendance",
         filters={
             "employee": employee,
             "docstatus": 1,
-            "work_date": ["between", [start_date, end_date]],
-            "leave_taken": ["in", codes],
+            "attendance_date": ["between", [start_date, end_date]],
         },
-        fields=["work_date", "leave_taken"],
-        order_by="work_date asc",
+        fields=["attendance_date", "status", "leave_type"],
+        order_by="attendance_date asc",
     )
-    return format_day_cell(
-        (getdate(r.work_date).day, r.leave_taken in HALF_DAY_CODES) for r in rows
-    )
+
+    counted = []
+    for row in rows:
+        authorised = bool(row.leave_type) and row.leave_type in codes
+        unexplained = row.status == "Absent" and not row.leave_type
+        if authorised or unexplained:
+            counted.append((getdate(row.attendance_date).day, row.status == "Half Day"))
+
+    return format_day_cell(counted)
 
 
 def get_late_dates(employee, start_date, end_date):

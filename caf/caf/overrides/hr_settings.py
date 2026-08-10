@@ -32,16 +32,18 @@ FIELD = "caf_attendance_leave_codes"
 
 
 def get_known_leave_codes():
-    """Distinct non-empty leave_taken values currently in Finger Log."""
-    rows = frappe.db.sql(
-        """
-        SELECT DISTINCT leave_taken
-        FROM `tabFinger Log`
-        WHERE leave_taken IS NOT NULL AND leave_taken != ''
-        """,
-        as_dict=True,
-    )
-    return {r.leave_taken.strip() for r in rows if r.leave_taken}
+    """The Leave Types that exist on this site.
+
+    ⚠️ **RE-VOCABULARISED 2026-08-10 (OD-43).** This used to return the distinct
+    `Finger Log.leave_taken` values - Ingress free text like `UPL` / `0.5UPL`.
+    The appraisal now counts `Attendance.leave_type`, which is a **Link to Leave
+    Type**, so the list HR maintains has to be validated against Leave Types or
+    a correct entry (`MC`, `Leave Without Pay`) would be rejected as unknown.
+
+    Why this stayed data rather than moving into code: when HR decides another
+    leave type should count, they edit one field on a settings page. **D69.**
+    """
+    return {r.name for r in frappe.get_all("Leave Type", fields=["name"])}
 
 
 def validate_leave_codes(doc, method=None):
@@ -66,20 +68,20 @@ def validate_leave_codes(doc, method=None):
 
     known = get_known_leave_codes()
     if not known:
-        # No Finger Log data to check against - a fresh site. Do not block setup.
+        # No Leave Types on this site yet - a fresh install. Do not block setup.
         return
 
     unknown = [c for c in codes if c not in known]
     if unknown:
         frappe.throw(
             _(
-                "These leave codes do not appear anywhere in Finger Log: {0}.<br><br>"
-                "Codes currently in use: {1}.<br>"
-                "Enter them comma-separated and exactly as they appear in the fingerprint "
-                "import, e.g. <b>UPL, 0.5UPL</b>."
+                "These are not Leave Types on this site: {0}.<br><br>"
+                "Available Leave Types: {1}.<br>"
+                "Enter them comma-separated and exactly as the Leave Type is named, "
+                "e.g. <b>MC, Leave Without Pay</b>."
             ).format(
                 frappe.bold(", ".join(unknown)),
                 ", ".join(sorted(known)),
             ),
-            title=_("Unknown leave code"),
+            title=_("Unknown Leave Type"),
         )
