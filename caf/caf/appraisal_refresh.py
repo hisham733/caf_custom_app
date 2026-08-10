@@ -287,8 +287,18 @@ def check_leave_window(doc, method=None):
     In `before_submit`, not `on_submit`: Frappe writes `docstatus = 1` before
     `on_submit` runs, so a refusal there leaves the document both submitted and
     rejected. That trap cost a day during Chunk 3.
+
+    ⚠️ **Approved applications only.** A submitted Leave Application is either
+    Approved or Rejected (stock `on_submit` throws on anything else), and
+    `update_attendance()` opens with `if self.status != "Approved": return` — so
+    a **rejection touches no Attendance whatsoever**. FBR39 protects a submitted
+    appraisal from an Attendance change; where there is no change there is
+    nothing to protect, and refusing would only stop a supervisor recording that
+    they said no. Raised by MG 2026-08-11.
     """
     if doc.get("__islocal") or not doc.employee:
+        return
+    if doc.status != "Approved":
         return
     for app in submitted_appraisals(doc.employee, doc.from_date, doc.to_date):
         closed, submitted, deadline = window_closed(app.name)
@@ -310,7 +320,14 @@ def on_leave_application_submit(doc, method=None):
 
     Caught, never raised: the leave approval is the document that matters, and
     it is already committed by the time this runs.
+
+    A **Rejected** application is skipped for the same reason `check_leave_window`
+    skips it: stock wrote no Attendance, so there is nothing to recompute. The
+    refresh is idempotent and would be harmless — but it would also fire on every
+    rejection forever, for no reason.
     """
+    if doc.status != "Approved":
+        return
     try:
         refresh_for(doc.employee, doc.from_date, doc.to_date,
                     reason=_("{0} approved for {1} to {2}").format(

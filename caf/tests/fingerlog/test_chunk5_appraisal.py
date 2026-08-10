@@ -35,6 +35,9 @@ D_ABSENT = "2026-07-11"         # a Saturday: Workday by default, punchless -> A
 D_LEAVE = "2026-07-08"          # a free Wednesday, NO Finger Log
 D_BOTH = "2026-07-09"           # punchless AND later covered by leave — the OD-60 case
 D_LATE = "2026-07-15"           # the B3 / A3 probe date
+D_REJ = "2026-07-16"            # REJ needs its OWN date — B3 leaves a refused draft
+                                # on D_LATE, and stock's overlap check would fire
+                                # first, failing REJ1 for the wrong reason
 LEAVE_TYPE = "Emergency"        # is_lwp -> no allocation needed, and FBR37 counts it
 
 RESULTS = []
@@ -58,7 +61,7 @@ def remove(doctype, name):
 def cleanup():
     """Scoped to this suite's employees, cycle and dates — never by employee
     alone. Purging by employee ate ~50 rows of imported July data once."""
-    days = [D_ABSENT, D_LEAVE, D_BOTH, D_LATE]
+    days = [D_ABSENT, D_LEAVE, D_BOTH, D_LATE, D_REJ]
     for emp in (EMP_A, EMP_B):
         for la in frappe.get_all("Leave Application",
                                  filters={"employee": emp,
@@ -118,13 +121,13 @@ def make_appraisal(employee, submit=True):
     return doc
 
 
-def file_leave(employee, day, leave_type=LEAVE_TYPE):
+def file_leave(employee, day, leave_type=LEAVE_TYPE, status="Approved"):
     la = frappe.new_doc("Leave Application")
     la.employee = employee
     la.leave_type = leave_type
     la.from_date = day
     la.to_date = day
-    la.status = "Approved"
+    la.status = status
     la.company = frappe.db.get_value("Employee", employee, "company")
     la.flags.ignore_permissions = True
     la.insert()
@@ -350,6 +353,27 @@ def run():
     check("B5", allowed and cell(app.name) != before_cancel,
           f"cancel past the closed window is ALLOWED and still refreshes: "
           f"cell {before_cancel!r} -> {cell(app.name)!r}{' — REFUSED: ' + why if why else ''}")
+
+    # ---------------------------------------------------------------- REJ
+    # 🔴 Raised by MG 2026-08-11, and it was a real defect. A submitted Leave
+    # Application is Approved or Rejected, and stock's update_attendance() opens
+    # with `if self.status != "Approved": return` — so a REJECTION touches no
+    # Attendance at all. FBR39 protects a submitted appraisal from an Attendance
+    # change; where there is none, refusing only stops a supervisor recording
+    # that they said no. The window is still shut from B3 above.
+    before_rej = cell(app.name)
+    rejected, rej_err = False, ""
+    try:
+        rej = file_leave(EMP_A, D_REJ, status="Rejected")
+        rejected = rej.docstatus == 1
+    except Exception as e:
+        rej_err = str(e)[:110]
+    check("REJ1", rejected,
+          f"a REJECTED leave past the closed window submits fine — FBR39 does not apply"
+          f"{' — WRONGLY REFUSED: ' + rej_err if rej_err else ''}")
+    check("REJ2", cell(app.name) == before_rej,
+          f"and it moves no appraisal cell: {before_rej!r} -> {cell(app.name)!r} "
+          f"(stock wrote no Attendance, so there is nothing to recompute)")
 
     cleanup()
     frappe.db.commit()
