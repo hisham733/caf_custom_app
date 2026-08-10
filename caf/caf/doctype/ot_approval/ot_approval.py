@@ -11,6 +11,8 @@ from frappe.model.document import Document
 from frappe.model.naming import getseries
 from datetime import datetime
 
+from caf.caf.shift_resolution import get_shift_for_date, get_shift_params
+
 class OTApproval(Document):
     def autoname(self):
         # note that self.work_date is a string. Example: '2021-01-01'
@@ -123,16 +125,17 @@ class OTApproval(Document):
         print("\n", "OTApproval.get_work_hours")
         print(self.work_date, VarEmpID)
 
-        # Dictionary for shift types and their corresponding work hours
-        shift_dict = {
-            "1": 8.5,
-            "2": 8.5,
-            "3": 8.5,
-            "4": 7,   # No OT for shift 4
-            "5": 8.5,
-            "7": 8.5,
-            "8": 9
-        }
+        # ⚠️ FIXED in Chunk 2b. This used to be a dict keyed on the OLD numeric
+        # shift names ("1".."8") with the hours written in by hand, plus a
+        # special case for shift "4" = "no OT". Chunk 0 renamed every Shift Type
+        # to its Ingress name, so the lookup missed on EVERY employee and no OT
+        # Approval could be created at all — which, via FBR11, made every Finger
+        # Log carrying OT unsubmittable.
+        #
+        # The hours now come from the shift itself (FDR7 — never encode intent
+        # as a magic number), and "no OT" is `caf_allow_ot`, the same flag
+        # det_ot_in_hour() reads. end - start reproduces the old table exactly
+        # where it mattered: 08:00-16:30 = 8.5, 08:00-17:00 = 9.
 
         # Convert work_date to a datetime object if it's not already
         work_date = self.work_date
@@ -146,19 +149,25 @@ class OTApproval(Document):
         if work_date.weekday() == 6:  # 6 represents Sunday
             return 1  # Treat as a holiday and return 1
 
-        # Get the employee document
-        empObject = frappe.get_doc("Employee", VarEmpID)
+        # The shift that applies on the OT date — a Shift Assignment covering it
+        # wins over the employee's default (OD-45), the same resolution the
+        # Finger Log uses. Approving OT against the wrong shift would gate it by
+        # the wrong rules.
+        shift = get_shift_for_date(VarEmpID, self.work_date)
+        if not shift:
+            frappe.throw(_("Employee {0} has no shift on {1}").format(VarEmpID, self.work_date))
 
-        # Ensure the employee has a valid default shift
-        if empObject.default_shift not in shift_dict:
-            frappe.throw(_("Employee {0} has no valid default shift").format(VarEmpID))
+        params = get_shift_params(shift)
 
-        # If the default shift is "4", throw an error as OT is not allowed
-        if empObject.default_shift == "4":
-            frappe.throw(_("Employee {0} cannot have OT").format(VarEmpID))
+        # FBR36 / FDR7 — eligibility is a flag on the shift, not a magic number
+        if not params.get("caf_allow_ot"):
+            frappe.throw(_("Employee {0} cannot have OT: shift {1} does not allow it").format(
+                VarEmpID, shift))
 
-        # Return the work hours for the employee's default shift
-        return shift_dict[empObject.default_shift]
+        if params.get("start_time") is None or params.get("end_time") is None:
+            frappe.throw(_("Shift {0} has no start or end time").format(shift))
+
+        return (params.end_time - params.start_time).total_seconds() / 3600
 
 
     def convert_to_seconds(self, time_str):

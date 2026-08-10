@@ -8,11 +8,50 @@ from frappe.model.document import Document
 from frappe.model.naming import getseries
 from datetime import datetime
 
-from frappe.utils import getdate
+from frappe.utils import getdate, cint
+from caf.caf.shift_resolution import get_shift_params, resolve_day_type
 # Employee Checkin generation is DORMANT — decision F16, analysis §12.8.
 # Finger Log writes Attendance directly and nothing reads Employee Checkin.
 # See the header of emp_checklist.py for why it is kept and how to re-enable.
 # from caf.caf.doctype.finger_log.emp_checklist import make_employee_checkin_from_finger_log
+
+def overtime_to_minutes(overtime):
+    # FBR2 — Finger Log.overtime is hour.minute, NOT decimal hours. 1.28 is
+    # 1 h 28 min, not 1.28 h. Measured: 0 of 13,243 rows carry a decimal >= 0.6.
+    if not overtime:
+        return 0
+    overtime = float(overtime)
+    hours = int(overtime)
+    minutes = int(round((overtime - hours) * 100))
+    return hours * 60 + minutes
+
+
+def apply_ot_rules(overtime, params):
+    # The three per-shift settings, in the order they apply. Kept a module-level
+    # function of plain values so it can be tested without a document.
+    #
+    #   caf_allow_ot        FBR36 / FDR7 — "no OT on this shift" is a flag, never
+    #                       a magic threshold. Replaces Ingress' minot = 200
+    #   caf_ot_gate_minutes FBR26 — OT below the gate does not count at all.
+    #                       Shift ending 17:00 with a 30 min gate: 17:29 -> 0
+    #   caf_ot_round_minutes FBR27 — what survives the gate rounds DOWN (FBR1)
+    #
+    # With gate 30 + rounding 30 this reproduces the old convert_ot_to_hour()
+    # exactly, which is the point: no shift changes behaviour on day one.
+    if not params or not params.get("caf_allow_ot"):
+        return 0.0
+
+    minutes = overtime_to_minutes(overtime)
+
+    if minutes < cint(params.get("caf_ot_gate_minutes")):
+        return 0.0
+
+    step = cint(params.get("caf_ot_round_minutes"))
+    if step > 0:
+        minutes -= minutes % step
+
+    return minutes / 60.0
+
 
 class FingerLog(Document):
     def on_submit(self):
@@ -44,7 +83,11 @@ class FingerLog(Document):
             if self.check_previous_submission():
                 frappe.throw(_("Employee {0} already submitted a Finger Log for this date").format(self.employee))
 
-            # convert FLog overtime to ot_in_hour (multiple of 0.5) if conditions are met
+            # what kind of day was this, and on which shift. MUST run before
+            # det_ot_in_hour() — the OT rules are read off the resolved shift.
+            self.resolve_shift_and_day_type()
+
+            # apply the resolved shift's OT rules to the clocked overtime
             self.det_ot_in_hour()
 
         if self.docstatus == 1:
@@ -53,73 +96,29 @@ class FingerLog(Document):
                 self.check_ot_approval()
 
 
+    def resolve_shift_and_day_type(self):
+        # OD-45 option A: the shift comes from a Shift Assignment covering the
+        # date, else Employee.default_shift. Ingress plays no part.
+        # OD-52: a Saturday swap files a Shift Assignment per employee, so the
+        # day type MUST come from the shift that applies on the date — reading
+        # the employee's own default would miss the swap entirely.
+        day_type, shift = resolve_day_type(self.employee, self.work_date)
+
+        # E1 — refuse loudly rather than guessing a shift. An employee with
+        # neither an assignment nor a default has no rules to be judged by.
+        if not shift:
+            frappe.throw(_("Employee {0} has no shift on {1}: no Shift Assignment covers the date and no default shift is set").format(
+                self.employee, self.work_date))
+
+        self.shift_type = shift
+        self.day_type = day_type
+
     def det_ot_in_hour(self):
-        # debug
-        # print("\n", "self.noOT_dept()", self.noOT_dept())
-        # print("self.noOT_shift()", self.noOT_shift())
+        # The OT rules are per-SHIFT (FBR36 / FDR7), never per-department. The
+        # retired FBR5 department list and the hardcoded noOT_shift() = ["4"]
+        # were deleted in Chunk 2b — framework §3.
+        self.ot_in_hour = apply_ot_rules(self.overtime, get_shift_params(self.shift_type))
 
-        # condition where althought FLog has overtime, but ot_in_hour will be set to 0
-        # condition 1 - if employee's department is in the list of departments
-        # condition 2 - if employee's shift is in the list of "no overtime" shifts
-        if self.noOT_dept() or self.noOT_shift():
-            self.ot_in_hour = 0
-        # if conditions not met, then convert FLog overtime to ot_in_hour
-        else:
-            self.ot_in_hour = self.convert_ot_to_hour()
-
-    def noOT_shift(self):
-        # define list of "no OT shifts"
-        skip_ot_approval_shift = ["4"]
-        # check employee's shift
-        emp_shift = frappe.get_value("Employee", self.employee, "default_shift")
-        # if emp_shift is undefined, then raise an exception
-        if not emp_shift:
-            frappe.throw(_("Employee {0} Shift is undefined").format(self.employee))
-        
-        # debug
-        # print(emp_shift)
-
-        # if employee's shift is in the list of "no OT shifts"
-        if emp_shift in skip_ot_approval_shift:
-            return True
-        return False
-
-    def noOT_dept(self):
-        # define list of departments that has "no OT"
-        skip_ot_approval_dept = ["Management - CAF", "Delivery - CAF"]
-        # check employee's department
-        emp_dept = frappe.get_value("Employee", self.employee, "department")
-        # if emp_dept is undefined, then raise an exception
-        if not emp_dept:
-            frappe.throw(_("Employee {0} Department is undefined").format(self.employee))
-
-        # debug
-        # print(emp_dept)
-        
-        # if employee's department is in the list of departments
-        if emp_dept in skip_ot_approval_dept:
-            return True
-        return False
-
-    def convert_ot_to_hour(self):
-        # this function converts FLog overtime (hour.min) to multiple of 0.5
-         # example 2: 1.28 = 1
-        # example 3: 1.31 = 1.5
-        # example 4: 1.59 = 1.5
-        # example 5: 2.01 = 2
-        # example 6: 2.30 = 2.5
-        # example 7: 2.59 = 2.5
-        decimal_part = round(self.overtime % 1, 3)  # round to 3 decimal places
-        if decimal_part < 0.3:
-            print("1", decimal_part)
-            return int(self.overtime)
-        elif decimal_part < 0.6:
-            print("2", decimal_part)
-            return int(self.overtime) + 0.5
-        else:
-            print("3", decimal_part)
-            return int(self.overtime) + 1
-    
 
     # check_previous_submission is a function that check if the employee has already submitted a Finger Log for the same date
     def check_previous_submission(self):
