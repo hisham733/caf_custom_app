@@ -35,7 +35,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 		console.log("this.state",this.state);
 		this.page = frappe.ui.make_app_page({
 			parent: wrapper,
-			title: __("Production Schedule"),
+			title: __("WDP"),
 			single_column: false,
 		});
 		this.make();
@@ -507,7 +507,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 		this.page.main
 			.find("#schedule-week-range")
 			.text(mn[mon.getMonth()] + " " + mon.getDate() + " – " + mn[sat.getMonth()] + " " + sat.getDate());
-		this.page.set_title(__("Production Schedule") + " — W" + this.state.week);
+		this.page.set_title(__("WDP") + " — W" + this.state.week);
 	}
 
 	// ══════════════════════════════════════════════════════════════
