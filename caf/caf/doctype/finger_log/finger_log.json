@@ -31,7 +31,9 @@
   "ot_in_hour",
   "short",
   "caf_not_full_day",
-  "leave_taken"
+  "caf_hr_review",
+  "leave_taken",
+  "caf_hr_review_note"
  ],
  "fields": [
   {
@@ -222,12 +224,29 @@
    "fieldtype": "Check",
    "label": "Not Full Day",
    "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "default": "0",
+   "description": "A re-resolve found something a human must settle - usually OT that is no longer covered by its approval (FBR11). Raised INSTEAD of throwing, because the re-resolve runs over a batch and one bad row must not abort the rest. Scenario S3.",
+   "fieldname": "caf_hr_review",
+   "fieldtype": "Check",
+   "label": "Needs HR Review",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "description": "Why caf_hr_review was raised. The audit trail is the Version log plus a comment; this is the at-a-glance reason on the form.",
+   "fieldname": "caf_hr_review_note",
+   "fieldtype": "Small Text",
+   "label": "HR Review Note",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-08-10 21:27:38.674887",
+ "modified": "2026-08-10 22:11:14.543171",
  "modified_by": "Administrator",
  "module": "Caf",
  "name": "Finger Log",

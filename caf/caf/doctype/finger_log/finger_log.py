@@ -90,15 +90,10 @@ class FingerLog(Document):
         date_str = getdate(self.work_date).strftime('%Y-%m-%d')
         key = date_str
         self.name = key + '-' + getseries(key, 3)
-        # debug
-        # print("\n", self.__dict__)
-        # print("\n", self.work_date)
-        # print(key)
-        print(self.name)
-        
 
     def validate(self):
-        print("\n", "Finger Log validate")
+        # (debug prints removed 2026-08-10 — the importer creates thousands of
+        # rows per run and three lines each buried the actual result)
         # if FingerLog record is NOT submitted, then execute the following
         if self.docstatus != 1:
             # print("\n", self.__dict__)
@@ -191,7 +186,6 @@ class FingerLog(Document):
                                   # order by creation date in descending order
                                   order_by='creation desc'
                                   )
-        print("flogList: ",flogList)
         if not flogList:
             # if no Finger Log records found, then return False
             return False

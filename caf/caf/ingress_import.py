@@ -111,8 +111,8 @@ def run(snapshot: str = SNAPSHOT, from_date=None, to_date=None, submit: bool = T
 
     stats = frappe._dict(read=0, skipped_no_employee=0, skipped_out_of_range=0,
                          already_present=0, created=0, submitted=0,
-                         not_full_day=0, failed=0)
-    errors, not_full = {}, []
+                         not_full_day=0, held_as_draft=0, failed=0)
+    errors, not_full, held = {}, [], {}
 
     with gzip.open(snapshot, "rt", encoding="utf-8", errors="replace") as fh:
         for row in csv.DictReader(fh):
@@ -158,8 +158,21 @@ def run(snapshot: str = SNAPSHOT, from_date=None, to_date=None, submit: bool = T
                     stats.not_full_day += 1
                     not_full.append(f"{emp.name} {day}")
                 elif submit:
-                    doc.submit()
-                    stats.submitted += 1
+                    # ⚠️ A REFUSED SUBMIT MUST NOT DISCARD THE OBSERVATION.
+                    # FBR11 refuses any log carrying OT with no approval, and
+                    # that is correct — but rolling back to the outer savepoint
+                    # would delete the imported row along with the failed submit,
+                    # losing what the clock saw. The draft IS the queue HR works
+                    # from. A second savepoint, taken after the insert, keeps it.
+                    sp2 = f"{sp}_sub"
+                    frappe.db.savepoint(sp2)
+                    try:
+                        doc.submit()
+                        stats.submitted += 1
+                    except Exception as e:
+                        frappe.db.rollback(save_point=sp2)
+                        stats.held_as_draft += 1
+                        held[f"{emp.name} {day}"] = str(e).splitlines()[0][:110]
             except Exception as e:
                 frappe.db.rollback(save_point=sp)
                 stats.failed += 1
@@ -173,11 +186,16 @@ def run(snapshot: str = SNAPSHOT, from_date=None, to_date=None, submit: bool = T
         print(f"\nNOT FULL DAY - left in draft for HR ({len(not_full)}):")
         for n in not_full[:10]:
             print(f"   {n}")
+    if held:
+        print(f"\nHELD AS DRAFT - imported, could not submit ({len(held)}):")
+        for k, v in list(held.items())[:10]:
+            print(f"   {k}: {v}")
     if errors:
         print(f"\nfailed ({len(errors)}):")
         for k, v in list(errors.items())[:10]:
             print(f"   {k}: {v}")
-    return {"stats": dict(stats), "errors": errors, "not_full_day": not_full}
+    return {"stats": dict(stats), "errors": errors,
+            "not_full_day": not_full, "held_as_draft": held}
 
 
 def import_month(year, month, snapshot: str = SNAPSHOT):

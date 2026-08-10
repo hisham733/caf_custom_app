@@ -503,6 +503,17 @@ doc_events = {
         # that measurement silently, because auto-fill matches rows by KRA name
         "validate": "caf.caf.overrides.appraisal_template.warn_on_missing_auto_fill_kras"
     },
+    # CAF Chunk 4 (2026-08-10) - OD-40. A swap filed AFTER the date has to reach
+    # back and correct what that day meant: day_type, shift_type and the OT that
+    # hangs off them. The punches are never touched (FDR10).
+    "Shift Assignment": {
+        "on_submit": "caf.caf.re_resolve.on_shift_assignment_submit",
+        # before_cancel clears stock's validate_attendance() guard, which refuses
+        # the cancel while any Attendance carries this shift - and does not even
+        # filter on docstatus. Without it a swap could be filed but never unfiled.
+        "before_cancel": "caf.caf.re_resolve.before_shift_assignment_cancel",
+        "on_cancel": "caf.caf.re_resolve.on_shift_assignment_cancel",
+    },
 }
 
 # CAF appraisal permission layer (D18/D55/D56). Both are module-level functions,
