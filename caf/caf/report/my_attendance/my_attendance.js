@@ -61,6 +61,21 @@ frappe.query_reports["My Attendance"] = {
 			)}</span>`;
 		}
 
+		// Absent is the one status with a consequence: FBR37 counts an unexplained
+		// absence toward the appraisal. If any row here is wrong, THIS is the row
+		// the employee needs to spot, so it is the only one coloured.
+		if (column.fieldname === "status" && value) {
+			const colour =
+				value === "Absent"
+					? "var(--text-danger, #c0392b)"
+					: value === "Present"
+					? "var(--text-muted)"
+					: "";
+			return colour
+				? `<span style="color: ${colour}">${frappe.utils.escape_html(value)}</span>`
+				: frappe.utils.escape_html(value);
+		}
+
 		return default_formatter(value, row, column, data);
 	},
 };

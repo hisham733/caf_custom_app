@@ -40,12 +40,24 @@ from frappe import _
 
 from caf.caf.overrides.appraisal import get_employee_for_user, is_hr_manager
 
-# MG's field list, 2026-08-11. `status` is deliberately absent — see the report's
-# entry in roadmap §9d.1 for the open question about putting it back.
+# MG's field list, 2026-08-11, plus `status` added on MG's instruction the same day.
+#
+# 🔴 WHY `status` HAD TO COME BACK. Without it the report was illegible on exactly
+# the days a person most wants to check. On a leave day the Finger Log is a DRAFT
+# with all-zero punches (assert_no_clash refuses to let a log overwrite a
+# leave-decided day, FDR4) — so the row rendered as a date with EVERY OTHER FIELD
+# BLANK and nothing to explain it. Same for a miss-punch (OD-58). 380 of 2,568
+# July rows looked like data loss.
+#
+# `status` says *what was recorded* — Present · Absent · On Leave · Half Day —
+# without disclosing WHY. `leave_type`, which names the illness, stays HR-only.
+# Placed next to `day_type` because the two answer the same question together:
+# what kind of day was this, and what went on the record.
 BASE_COLUMNS = [
     ("work_date", _("Work Date"), "Date", 100),
     ("shift_type", _("Shift"), "Data", 150),
     ("day_type", _("Day Type"), "Data", 100),
+    ("status", _("Status"), "Data", 100),
     ("time_in", _("In"), "Data", 80),
     ("lunch", _("Lunch"), "Data", 140),
     ("out", _("Out"), "Data", 80),
@@ -126,7 +138,7 @@ def execute(filters=None):
     rows = frappe.db.sql("""
         SELECT fl.work_date, fl.shift_type, fl.day_type, fl.time_in, fl.`break`,
                fl.resume, fl.`out`, fl.caf_work_hours, fl.short, fl.final_ot,
-               fl.ot_approval_id, att.leave_type
+               fl.ot_approval_id, att.leave_type, att.status
           FROM `tabFinger Log` fl
           -- 🔴 JOIN ON employee + date, NOT on `att.caf_finger_log`.
           -- A leave-created Attendance has NO Finger Log link: stock's
@@ -151,6 +163,10 @@ def execute(filters=None):
             "work_date": r.work_date,
             "shift_type": r.shift_type,
             "day_type": r.day_type,
+            # Empty when the day has no live Attendance at all — a rest day the
+            # person did not work, which is correctly NOT an absence, or a
+            # miss-punch still waiting on HR.
+            "status": r.status or "",
             "time_in": _hhmm(r.time_in),
             # One column, both halves — MG's list has a single "lunch". The raw
             # pair still shows, because verification needs the actual times.

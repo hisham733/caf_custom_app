@@ -160,6 +160,23 @@ def run():
                                  {"docstatus": 0,
                                   "work_date": ("between", [FLT["from_date"],
                                                             FLT["to_date"]])})
+        # ------------------------------------------------------------ C7-STATUS
+        # 🔴 Added on MG's instruction. Without it a leave day rendered as a date
+        # with every other field blank: the log is a DRAFT with all-zero punches,
+        # and leave_type is HR-only, so the employee had nothing at all to explain
+        # the row. `status` says WHAT was recorded without disclosing WHY.
+        statuses = {d.get("status") for d in (data or [])}
+        check("C7-STATUS", "status" in [c["fieldname"] for c in cols]
+              and statuses - {""},
+              f"the employee's own rows carry a status: {sorted(s for s in statuses if s)} "
+              f"— the blank-punch rows are now legible without exposing leave_type")
+
+        leave_rows = [d for d in (hdata or []) if d.get("leave_type")]
+        check("C7-STATUS2", leave_rows and all(d.get("status") for d in leave_rows),
+              f"and every leave row has one: "
+              f"{sorted({d['status'] for d in leave_rows})} across {len(leave_rows)} row(s) "
+              f"— previously these showed as an empty dated row")
+
         check("C7-DRAFT", drafts > 0 and len(hdata or []) > (
             frappe.db.count("Finger Log",
                             {"docstatus": 1,
