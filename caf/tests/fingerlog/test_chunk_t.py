@@ -310,13 +310,18 @@ def run_all():
 
     from caf.tests.fingerlog import (test_chunk3_decisions, test_chunk4_reresolve,
                                      test_chunk5_appraisal, test_chunk7_report,
-                                     test_chunk_r, test_od61_guard)
+                                     test_chunk7_whoisoff, test_chunk_r, test_od61_guard)
     # `__import__(__name__)` returns the top-level `caf` package, not this module.
     #
     # The imported July data is the canary: if a suite's cleanup is scoped wrongly
     # this count drops, and every run before 2026-08-11 dropped it silently.
     july = frappe.db.count("Finger Log", {"work_date": ("between",
                                                         ["2026-07-01", "2026-07-31"])})
+    # 🔴 SECOND CANARY, added with Chunk 7.4. The first one counts Finger Logs, so
+    # it would not have noticed a Leave Application purge at all — and several
+    # suites now create and delete leave. 775 rows spanning 2025-01 to 2027-03 are
+    # imported production data and no suite has any business reducing the total.
+    leave = frappe.db.count("Leave Application")
     out = []
     for name, mod in (("chunk 3 decisions", test_chunk3_decisions),
                       ("chunk 4 re-resolve", test_chunk4_reresolve),
@@ -324,6 +329,7 @@ def run_all():
                       ("OD-61/62 guard", test_od61_guard),
                       ("chunk R roles", test_chunk_r),
                       ("chunk 7.1 my attendance", test_chunk7_report),
+                      ("chunk 7.4 who is off", test_chunk7_whoisoff),
                       ("chunk T enriched", sys.modules[__name__])):
         mod.RESULTS.clear()
         ok = mod.run()
@@ -335,7 +341,11 @@ def run_all():
 
     after = frappe.db.count("Finger Log", {"work_date": ("between",
                                                          ["2026-07-01", "2026-07-31"])})
+    leave_after = frappe.db.count("Leave Application")
     intact = after == july
-    print(f"\n   imported July rows: {july} -> {after}  "
+    leave_intact = leave_after >= leave
+    print(f"\n   imported July rows:      {july} -> {after}  "
           f"{'INTACT' if intact else '🔴 THE SUITE ATE ' + str(july - after) + ' OF THEM'}")
-    return all(o for _, o, _, _ in out) and intact
+    print(f"   Leave Applications:     {leave} -> {leave_after}  "
+          f"{'INTACT' if leave_intact else '🔴 THE SUITE ATE ' + str(leave - leave_after) + ' OF THEM'}")
+    return all(o for _, o, _, _ in out) and intact and leave_intact
