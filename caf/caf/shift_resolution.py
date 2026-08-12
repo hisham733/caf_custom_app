@@ -32,6 +32,8 @@ CAF's own resolution never reads it for rest days, so the two cannot drift in a 
 that changes a day type.
 """
 
+import re
+
 import frappe
 from frappe.utils import getdate
 
@@ -93,21 +95,80 @@ def works_on(shift: str, work_date) -> bool:
     return bool(frappe.db.get_value("Shift Type", shift, field))
 
 
-def get_holiday_list(employee: str, shift: str | None) -> str | None:
+def _year_variant(name: str | None, year: int) -> str | None:
+    """`CAF Mon-Sat 2026` asked about a 2025 date -> `CAF Mon-Sat 2025`. OD-66.
+
+    🔴 A Holiday List is PER YEAR and an Employee or Shift Type points at exactly
+    one. Before R1 that only cost the odd public holiday; now the list is the
+    source of REST days too, so resolving a 2027 date against the 2026 list would
+    return no rest days at all — every Sunday and every rest Saturday becoming a
+    Workday, and every punchless one an Absent. Silently, because a missing
+    Holiday row is indistinguishable from an ordinary working day.
+
+    The generator owns these names (`CAF {label} {year}`), so the year is a
+    reliable suffix. If no sibling exists the original is returned unchanged and
+    `_list_covers()` then declines to use it.
+    """
+    if not name:
+        return name
+    m = re.search(r"(\d{4})\s*$", name)
+    if not m or int(m.group(1)) == year:
+        return name
+    sibling = f"{name[:m.start(1)]}{year}"
+    return sibling if frappe.db.exists("Holiday List", sibling) else name
+
+
+def _list_covers(holiday_list: str | None, work_date) -> bool:
+    """Does this list actually span the date? Guards the fallback below."""
+    if not holiday_list:
+        return False
+    span = frappe.db.get_value("Holiday List", holiday_list,
+                               ["from_date", "to_date"], as_dict=True)
+    if not span or not span.from_date or not span.to_date:
+        return False
+    return getdate(span.from_date) <= getdate(work_date) <= getdate(span.to_date)
+
+
+def is_rest_day(holiday_list: str | None, work_date, shift: str | None) -> bool:
+    """Is this a rest day? **R1 — the list decides, the flags are the fallback.**
+
+    A `weekly_off = 1` row means the employee was never scheduled. Reading it from
+    the list rather than from `caf_work_<dow>` is what makes an ALTERNATING
+    Saturday expressible at all: a mirror pair has identical weekday flags and
+    differs only in which Saturdays its list marks (OD-67).
+
+    ⚠️ The flags remain the fallback for any date the list does not span — a year
+    that was never generated, or a shift with no list. They are also what GENERATES
+    the list for a plain weekly pattern, so the two agree by construction and this
+    fallback changes no answer it is asked for.
+    """
+    if _list_covers(holiday_list, work_date):
+        return bool(frappe.db.exists("Holiday", {
+            "parent": holiday_list,
+            "holiday_date": getdate(work_date),
+            "weekly_off": 1,
+        }))
+    return bool(shift) and not works_on(shift, work_date)
+
+
+def get_holiday_list(employee: str, shift: str | None, work_date=None) -> str | None:
     """The shift's list wins, then the employee's, then the company's.
 
     The shift comes first because a per-date Shift Assignment is exactly how a swap is
     expressed (OD-52) — reading the employee's own list would ignore the swap.
     """
+    year = getdate(work_date).year if work_date else None
+
     if shift:
         hl = frappe.db.get_value("Shift Type", shift, "holiday_list")
         if hl:
-            return hl
+            return _year_variant(hl, year) if year else hl
     hl = frappe.db.get_value("Employee", employee, "holiday_list")
     if hl:
-        return hl
+        return _year_variant(hl, year) if year else hl
     company = frappe.db.get_value("Employee", employee, "company")
-    return frappe.db.get_value("Company", company, "default_holiday_list")
+    hl = frappe.db.get_value("Company", company, "default_holiday_list")
+    return _year_variant(hl, year) if (hl and year) else hl
 
 
 def is_public_holiday(holiday_list: str | None, work_date) -> bool:
@@ -124,18 +185,27 @@ def is_public_holiday(holiday_list: str | None, work_date) -> bool:
 def resolve_day_type(employee: str, work_date, shift: str | None = None) -> tuple:
     """Return (day_type, shift).
 
-    A public holiday outranks a rest day: if the shift does not work Saturdays and a
+    A rest day outranks a public holiday: if the shift does not work Saturdays and a
     public holiday lands on one, the day is reported as Restday, because the employee
     was never scheduled and a holiday cannot be "given" on a day already off. That
-    ordering matters for OT rates — Restday and Holiday OT are paid differently.
+    ordering matters for OT rates — Restday and Holiday OT are paid differently, and
+    it is preserved here by asking `weekly_off = 1` first. The generator writes such a
+    date **once**, as `weekly_off = 1`, so the two agree by construction.
+
+    **R1 (2026-08-12): both verdicts now come from the SAME list**, resolved for the
+    work date's own year (OD-66). Rest days used to come from `caf_work_<dow>` while
+    only holidays came from the list — two sources that could drift, and that could
+    not express an alternating Saturday at all, because a mirror pair has identical
+    weekday flags (OD-67).
     """
     work_date = getdate(work_date)
     shift = shift or get_shift_for_date(employee, work_date)
+    holiday_list = get_holiday_list(employee, shift, work_date)
 
-    if shift and not works_on(shift, work_date):
+    if is_rest_day(holiday_list, work_date, shift):
         return RESTDAY, shift
 
-    if is_public_holiday(get_holiday_list(employee, shift), work_date):
+    if is_public_holiday(holiday_list, work_date):
         return HOLIDAY, shift
 
     return WORKDAY, shift

@@ -305,6 +305,125 @@ def ensure_company_holidays() -> int:
     return added
 
 
+# ------------------------------------------------------------ the eight people
+#
+# HR confirmed the management six on 2026-08-12 (question 4 of
+# `ALT_SAT_FEB2026_for_HR_verification.html`). Derived from January 2026 and
+# checked against the April anchor: on 2026-04-11 group B rested and group A
+# worked, which is exactly how the two shifts are anchored.
+#
+# ⚠️ The production pair go on the SAME shift, by MG's decision. That reproduces
+# what they actually do — Ingress shows them off together or working together on
+# 24 of 32 Saturdays, mirroring only in June — so `8-5 Alt Sat 2nd-4th` is not a
+# covering pair for them. Its mirror exists so a COVER can be expressed: moving
+# one of them to the other shift for a date makes him work while the other rests.
+ASSIGNMENTS = {
+    # management six — 8:30am Schedule
+    "HR-EMP-00003": ("8:30am Alt Sat 1st-3rd", "Too Poh Chin"),
+    "HR-EMP-00005": ("8:30am Alt Sat 1st-3rd", "Nur Najwa Farhana"),
+    "HR-EMP-00009": ("8:30am Alt Sat 1st-3rd", "Seow Zi Ying"),
+    "HR-EMP-00004": ("8:30am Alt Sat 2nd-4th", "Afiza binti Mustafa"),
+    "HR-EMP-00007": ("8:30am Alt Sat 2nd-4th", "Nurfarahayu Binti Ahmad"),
+    "HR-EMP-00010": ("8:30am Alt Sat 2nd-4th", "Hazwani Farhana"),
+    # production pair — Special 8-5, both on the same side
+    "HR-EMP-00042": ("8-5 Alt Sat 2nd-4th", "Nur Ezzatul Allieya"),
+    "HR-EMP-00096": ("8-5 Alt Sat 2nd-4th", "Noor Arifah Binti Ibrahim"),
+}
+
+
+def assign_employees():
+    """Point the eight at their alternate-Saturday shift, and copy the list down.
+
+    ⚠️ `Employee.default_shift` has NO date dimension, so this changes how their
+    whole history resolves, not just the future. That is acceptable here and only
+    here: **D-NEW-1** — pre-implementation data is not used for appraisal or OT —
+    and the four shifts carry no rest Saturdays before the April anchor anyway.
+    Stored `day_type` values are untouched; only a re-resolve would rewrite them.
+    """
+    changed = []
+    for emp, (shift, who) in ASSIGNMENTS.items():
+        before = frappe.db.get_value("Employee", emp,
+                                     ["default_shift", "holiday_list"], as_dict=True)
+        if not before:
+            print(f"    🔴 {emp} {who} NOT FOUND")
+            continue
+        want_list = frappe.db.get_value("Shift Type", shift, "holiday_list")
+        frappe.db.set_value("Employee", emp, "default_shift", shift)
+        # FDR6 — every stock function (leave day counting, `is_holiday`) reads the
+        # EMPLOYEE's list and knows nothing about shifts, so it is copied down.
+        frappe.db.set_value("Employee", emp, "holiday_list", want_list)
+        changed.append((emp, who, before.default_shift, shift, want_list))
+
+    frappe.db.commit()
+    print(f"  assigned {len(changed)} employee(s)")
+    for emp, who, was, now, lst in changed:
+        print(f"    {emp} {who[:26]:26s} {was:18s} -> {now:24s} list={lst}")
+    return changed
+
+
+def clear_seeded_assignments(dry_run: bool = True):
+    """Remove the eight's seeded rest-Saturday assignments. **They are now wrong.**
+
+    Each one points at a no-Saturday shift for a single date, and a Shift
+    Assignment BEATS `default_shift` — so every one of them overrides the
+    alternation the new shift now carries. 46 dates, measured.
+
+    They existed because the pattern had nowhere else to live. It has somewhere
+    now, and that is the whole point of OD-67: a Shift Assignment goes back to
+    meaning **an exception** — a swap or a cover — rather than routine bookkeeping.
+
+    ⚠️ Cancelling fires `on_cancel`, so Chunk 4 re-resolves each affected Finger
+    Log and Chunk 5 refreshes any appraisal downstream of it. That is intended —
+    it is what makes the stored data agree with the new design — but it does
+    rewrite stored `day_type` values, so the dry run reports first.
+    """
+    rows = []
+    for emp in ASSIGNMENTS:
+        for sa in frappe.get_all("Shift Assignment",
+                                 filters={"employee": emp, "docstatus": 1},
+                                 fields=["name", "start_date", "end_date", "shift_type"],
+                                 order_by="start_date"):
+            # single-day only: a seeded row is always one date. Anything spanning
+            # a range was filed by a person and is not ours to remove.
+            if sa.start_date == sa.end_date:
+                rows.append((emp, sa))
+
+    print(f"  {'WOULD REMOVE' if dry_run else 'REMOVING'} {len(rows)} seeded assignment(s)")
+    if dry_run:
+        for emp, sa in rows[:6]:
+            print(f"    {emp} {sa.start_date} {sa.shift_type}")
+        print("    ... run with dry_run=0 to apply")
+        return len(rows)
+
+    removed, failed = 0, {}
+    for emp, sa in rows:
+        sp = f"sa_{sa.name.replace('-', '_')}"[:60]
+        frappe.db.savepoint(sp)          # per row — a bare rollback once cost 5,600 rows
+        try:
+            doc = frappe.get_doc("Shift Assignment", sa.name)
+            doc.flags.ignore_permissions = True
+            doc.cancel()
+            frappe.delete_doc("Shift Assignment", sa.name,
+                              ignore_permissions=True, force=True)
+            removed += 1
+        except Exception as e:
+            frappe.db.rollback(save_point=sp)
+            failed[f"{emp} {sa.start_date}"] = str(e).split("\n")[0][:110]
+
+    frappe.db.commit()
+    print(f"  removed {removed}, failed {len(failed)}")
+    for k, v in list(failed.items())[:8]:
+        print(f"    🔴 {k}: {v}")
+    return removed
+
+
+def apply_clear_seeded_assignments():
+    """`clear_seeded_assignments` for real. Separate entry point because
+    `bench execute --args` does not survive PowerShell (PROTOCOL §A3), so the
+    argument lives in the module instead."""
+    return clear_seeded_assignments(dry_run=False)
+
+
 def setup():
     """Phase 1 — schema, shifts, lists. Touches no employee."""
     from caf.caf import holiday_lists
