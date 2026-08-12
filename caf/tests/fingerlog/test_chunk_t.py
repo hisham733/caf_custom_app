@@ -308,9 +308,10 @@ def run_all():
     """The whole matrix, in dependency order. Chunk T's other job."""
     import sys
 
-    from caf.tests.fingerlog import (test_chunk3_decisions, test_chunk4_reresolve,
-                                     test_chunk5_appraisal, test_chunk7_report,
-                                     test_chunk7_whoisoff, test_chunk_r, test_od61_guard)
+    from caf.tests.fingerlog import (test_alt_saturday, test_chunk3_decisions,
+                                     test_chunk4_reresolve, test_chunk5_appraisal,
+                                     test_chunk7_report, test_chunk7_whoisoff,
+                                     test_chunk_r, test_od61_guard)
     # `__import__(__name__)` returns the top-level `caf` package, not this module.
     #
     # The imported July data is the canary: if a suite's cleanup is scoped wrongly
@@ -330,6 +331,7 @@ def run_all():
                       ("chunk R roles", test_chunk_r),
                       ("chunk 7.1 my attendance", test_chunk7_report),
                       ("chunk 7.4 who is off", test_chunk7_whoisoff),
+                      ("alternate Saturdays", test_alt_saturday),
                       ("chunk T enriched", sys.modules[__name__])):
         mod.RESULTS.clear()
         ok = mod.run()

@@ -120,13 +120,26 @@ def collect(snapshot: str = SNAPSHOT, since=None) -> dict:
         if e.attendance_device_id:
             by_device[str(e.attendance_device_id).strip()] = e
 
+    # 🔴 FUTURE DATES ARE NOT OBSERVATIONS — bug found 2026-08-12.
+    #
+    # Ingress carries PLANNED roster months ahead, and for some employees those
+    # future rows default to `daytype = 'R'`. This function read them as fact.
+    # Measured: 20 of Dina Laila's 20 rows, and 20 of 33 each for Rajaindran and
+    # Chen Xiao Natalie, came from dates that had not happened — and HR confirmed
+    # none of the three has alternate Saturdays at all. **86 assignments asserted a
+    # rest day nobody had taken.**
+    #
+    # Dina Laila is the clean proof: her past Saturdays are 0 of 4 rested, her
+    # future ones 20 of 20.
+    today = getdate(nowdate())
+
     wanted = defaultdict(dict)
     with gzip.open(snapshot, "rt", encoding="utf-8", errors="replace") as fh:
         for row in csv.DictReader(fh):
             if (row.get("daytype") or "").strip().upper() != "R":
                 continue
             day = _date(row.get("date"))
-            if not day or day.weekday() != 5 or day < since:
+            if not day or day.weekday() != 5 or day < since or day > today:
                 continue
             emp = by_device.get((row.get("userid") or "").strip())
             if not emp or not emp.default_shift:

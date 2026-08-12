@@ -52,6 +52,26 @@ def get_shift_for_date(employee: str, work_date) -> str | None:
     A submitted Shift Assignment covering the date wins; otherwise the employee's
     default shift. Returns None if neither exists — the caller must decide what that
     means rather than having a silent fallback invented here.
+
+    🔴 R5 (2026-08-12): `status = "Active"` REMOVED from this filter, and it was a
+    live defect, not a tidy-up.
+
+    Stock runs `mark_expired_shift_assignments_as_inactive()` **daily**: every
+    submitted assignment whose `end_date` is before yesterday is flipped to
+    `Inactive` with a raw `frappe.db.set_value` — no hook, no Version. Measured on
+    this site: the job is registered, not stopped, last ran 2026-08-01, and would
+    have flipped **73 of 136** rows. It has not bitten only because the scheduler
+    is inactive on dev.
+
+    With the filter in place, an expired assignment stopped being visible here, so
+    re-resolving a historical date fell back to `default_shift` and returned
+    **Workday** where the truth was **Restday** — silently, on any amend, re-import
+    or Chunk 4 re-resolve. A punchless day that becomes a Workday is an **Absent**,
+    and FBR37 counts it.
+
+    A **cancelled** assignment is still excluded, by `docstatus`. An **expired** one
+    is still telling the truth about its own past date, which is the only thing this
+    function asks it. Pairs with locking the field (R3) so nothing else can set it.
     """
     work_date = getdate(work_date)
 
@@ -60,7 +80,6 @@ def get_shift_for_date(employee: str, work_date) -> str | None:
         filters={
             "employee": employee,
             "docstatus": 1,
-            "status": "Active",
             "start_date": ("<=", work_date),
         },
         or_filters=[

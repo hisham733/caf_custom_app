@@ -417,6 +417,89 @@ def clear_seeded_assignments(dry_run: bool = True):
     return removed
 
 
+# ------------------------------------------------------------------------- R7
+#
+# HR's answer, 2026-08-12: **only the eight in `AltSat_swap.csv` have alternate
+# Saturdays.** These four do not, and their seeded assignments came from the
+# seeder trusting Ingress rows for dates that had not happened yet.
+#
+#   Rajaindran   works Mon–Sat  (the rejoiner of OD-55 — two Ingress users, two
+#                                Employee records, and a shift change this year)
+#   Dina Laila   works Mon–Sat  (all 20 of her rows are FUTURE-dated; her past
+#                                Saturdays are 0 of 4 rested)
+#   Chen         works Mon–FRI  (53 of 54 past Saturdays rested — her default
+#                                shift is simply wrong, and one no-Sat shift
+#                                replaces 33 assignments)
+#   Hisham       not in HR's list, 2 of 54 past Saturdays rested
+NOT_ALT_SAT = {
+    "HR-EMP-00109": (None, "Rajaindran — Mon-Sat, keeps 8-4.30 no OT"),
+    "HR-EMP-00186": (None, "Dina Laila — Mon-Sat, keeps 8.30am Roster"),
+    "HR-EMP-00094": (None, "Hisham — Mon-Sat, keeps 8.30am Roster"),
+    # 🔴 the only one whose DEFAULT SHIFT is wrong. `8am no OT no Sat` matches her
+    # `6am Schedule` on OT eligibility (both caf_allow_ot = 0), which is the trap
+    # `pick_rest_shift()` documents: two of the three no-Saturday shifts revoke OT,
+    # and all rest-day work is OT (FBR4).
+    "HR-EMP-00006": ("8am no OT no Sat", "Chen Xiao Natalie — Mon-Fri"),
+}
+
+
+def fix_non_alt_employees(dry_run: bool = True):
+    """R7 — correct the three shifts and drop assignments that assert nothing true."""
+    plan = []
+    for emp, (new_shift, why) in NOT_ALT_SAT.items():
+        cur = frappe.db.get_value("Employee", emp,
+                                  ["employee_name", "default_shift"], as_dict=True)
+        if not cur:
+            continue
+        rows = frappe.get_all("Shift Assignment",
+                              filters={"employee": emp, "docstatus": 1},
+                              fields=["name", "start_date", "end_date", "shift_type"])
+        single = [r for r in rows if r.start_date == r.end_date]
+        plan.append((emp, cur, new_shift, why, single))
+
+    total = sum(len(p[4]) for p in plan)
+    print(f"  {'WOULD FIX' if dry_run else 'FIXING'} {len(plan)} employee(s), "
+          f"{total} assignment(s)")
+    for emp, cur, new_shift, why, single in plan:
+        move = f"{cur.default_shift} -> {new_shift}" if new_shift else "shift unchanged"
+        print(f"    {emp} {str(cur.employee_name)[:26]:26s} {len(single):3d} rows  "
+              f"{move:36s} {why}")
+    if dry_run:
+        print("    ... run apply_fix_non_alt_employees to apply")
+        return total
+
+    removed, failed = 0, {}
+    for emp, cur, new_shift, why, single in plan:
+        if new_shift:
+            want_list = frappe.db.get_value("Shift Type", new_shift, "holiday_list")
+            frappe.db.set_value("Employee", emp, "default_shift", new_shift)
+            if want_list:
+                frappe.db.set_value("Employee", emp, "holiday_list", want_list)
+        for sa in single:
+            sp = f"r7_{sa.name.replace('-', '_')}"[:60]
+            frappe.db.savepoint(sp)
+            try:
+                doc = frappe.get_doc("Shift Assignment", sa.name)
+                doc.flags.ignore_permissions = True
+                doc.cancel()
+                frappe.delete_doc("Shift Assignment", sa.name,
+                                  ignore_permissions=True, force=True)
+                removed += 1
+            except Exception as e:
+                frappe.db.rollback(save_point=sp)
+                failed[f"{emp} {sa.start_date}"] = str(e).split("\n")[0][:110]
+
+    frappe.db.commit()
+    print(f"  removed {removed}, failed {len(failed)}")
+    for k, v in list(failed.items())[:8]:
+        print(f"    🔴 {k}: {v}")
+    return removed
+
+
+def apply_fix_non_alt_employees():
+    return fix_non_alt_employees(dry_run=False)
+
+
 def apply_clear_seeded_assignments():
     """`clear_seeded_assignments` for real. Separate entry point because
     `bench execute --args` does not survive PowerShell (PROTOCOL §A3), so the
