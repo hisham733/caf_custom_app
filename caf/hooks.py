@@ -58,7 +58,15 @@ override_whitelisted_methods = {
 
 # include js, css files in header of desk.html
 app_include_css = ["/assets/caf/css/ai_assistant.css"]
-app_include_js = ["/assets/caf/js/ai_assistant_widget.js"]
+app_include_js = [
+    "/assets/caf/js/ai_assistant_widget.js",
+    # Chunk 7.5 — the "Trade a Saturday" dialog, shared by the Shift Assignment
+    # list view (7.3) and the roster page (7.5). It has to be global because
+    # `doctype_list_js` takes one file per doctype and `page_js` one per page,
+    # so neither can serve both callers. Two copies of a dialog that FILES
+    # DOCUMENTS drift apart silently, which is the worse trade.
+    "/assets/caf/js/shift_trade.js",
+]
 
 # include js, css files in header of web template
 # web_include_css = "/assets/caf/css/caf.css"
@@ -470,7 +478,12 @@ override_doctype_dashboards = {
     "Work Order": "caf.caf.overrides.work_order_dashboard.get_data",
     "Task": "caf.caf.overrides.task_dashboard.get_data",
     "Item": "caf.caf.overrides.item_dashboard.get_data",
-    "Material Request": "caf.caf.overrides.material_request_dashboard.get_data"
+    "Material Request": "caf.caf.overrides.material_request_dashboard.get_data",
+    # Chunk 7.5 (OD-72, placement a). hrms' own Shift Type dashboard links
+    # Shift Assignment but not Employee, so the standing population — the
+    # larger, more stable answer to "who is on this shift" — was invisible from
+    # the shift itself.
+    "Shift Type": "caf.caf.overrides.shift_type_dashboard.get_data",
 }
 
 # exempt linked doctypes from being automatically cancelled

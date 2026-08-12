@@ -311,8 +311,9 @@ def run_all():
     from caf.tests.fingerlog import (test_alt_saturday, test_chunk3_decisions,
                                      test_chunk4_reresolve, test_chunk5_appraisal,
                                      test_chunk7_dashboard, test_chunk7_report,
-                                     test_chunk7_swap, test_chunk7_whoisoff,
-                                     test_chunk_r, test_od61_guard)
+                                     test_chunk7_roster, test_chunk7_swap,
+                                     test_chunk7_whoisoff, test_chunk_r,
+                                     test_od61_guard)
     # `__import__(__name__)` returns the top-level `caf` package, not this module.
     #
     # The imported July data is the canary: if a suite's cleanup is scoped wrongly
@@ -324,6 +325,13 @@ def run_all():
     # suites now create and delete leave. 775 rows spanning 2025-01 to 2027-03 are
     # imported production data and no suite has any business reducing the total.
     leave = frappe.db.count("Leave Application")
+    # 🔴 THIRD CANARY, added with Chunk 7.5 — §F4e's rule applied rather than
+    # re-learned: *every doctype a suite writes needs its own count*. Four suites
+    # now create and cancel Shift Assignments, and since 7.5 the site holds a
+    # small number of REAL ones (the July trade that is visible in the imported
+    # punches). A mis-scoped cleanup would take them and the roster screen would
+    # simply look empty again — indistinguishable from working correctly.
+    assignments = frappe.db.count("Shift Assignment", {"docstatus": 1})
     out = []
     for name, mod in (("chunk 3 decisions", test_chunk3_decisions),
                       ("chunk 4 re-resolve", test_chunk4_reresolve),
@@ -334,6 +342,7 @@ def run_all():
                       ("chunk 7.2 dashboard", test_chunk7_dashboard),
                       ("chunk 7.3 swap and cover", test_chunk7_swap),
                       ("chunk 7.4 who is off", test_chunk7_whoisoff),
+                      ("chunk 7.5 shift roster", test_chunk7_roster),
                       ("alternate Saturdays", test_alt_saturday),
                       ("chunk T enriched", sys.modules[__name__])):
         mod.RESULTS.clear()
@@ -347,10 +356,15 @@ def run_all():
     after = frappe.db.count("Finger Log", {"work_date": ("between",
                                                          ["2026-07-01", "2026-07-31"])})
     leave_after = frappe.db.count("Leave Application")
+    assign_after = frappe.db.count("Shift Assignment", {"docstatus": 1})
     intact = after == july
     leave_intact = leave_after >= leave
+    assign_intact = assign_after >= assignments
     print(f"\n   imported July rows:      {july} -> {after}  "
           f"{'INTACT' if intact else '🔴 THE SUITE ATE ' + str(july - after) + ' OF THEM'}")
     print(f"   Leave Applications:     {leave} -> {leave_after}  "
           f"{'INTACT' if leave_intact else '🔴 THE SUITE ATE ' + str(leave - leave_after) + ' OF THEM'}")
-    return all(o for _, o, _, _ in out) and intact and leave_intact
+    print(f"   Shift Assignments:      {assignments} -> {assign_after}  "
+          f"{'INTACT' if assign_intact else '🔴 THE SUITE ATE ' + str(assignments - assign_after) + ' OF THEM'}")
+    return (all(o for _, o, _, _ in out)
+            and intact and leave_intact and assign_intact)
