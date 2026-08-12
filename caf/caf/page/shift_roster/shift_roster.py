@@ -34,7 +34,18 @@ from frappe.utils import add_days, get_first_day, get_last_day, getdate, nowdate
 from caf.caf.shift_resolution import get_shift_for_date, resolve_day_type
 from caf.caf.shift_swap import half_done_swaps
 
-ROLES = ["HR Manager", "System Manager"]
+# ⚠️ READ and MANAGE are different populations, and the split is deliberate
+# (MG, 2026-08-12: *"HR user can see only"*).
+#
+#   READ    HR Manager · HR User · System Manager   — the whole screen
+#   MANAGE  HR Manager · System Manager             — filing a trade
+#
+# HR User already holds `read` on Shift Assignment through the Custom DocPerm, so
+# withholding the roster from them told them nothing the list view would not.
+# Filing stays HR Manager's: `shift_swap.create/plan/cancel_both` carry their own
+# `frappe.only_for`, and the button is hidden from HR User for tidiness only —
+# hiding a button is not a lock (PROTOCOL §C4).
+ROLES = ["HR Manager", "HR User", "System Manager"]
 
 # ── OD-71's detector ────────────────────────────────────────────────────────
 # A working day on which an implausible share of the workforce has no punch AT

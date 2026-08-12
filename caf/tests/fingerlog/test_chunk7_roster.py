@@ -318,10 +318,21 @@ def run():
         # (§C4). `frappe.only_for` is the lock, and this is what proves it.
         emp_try = as_user(EMP_USER, shift_roster.get_roster, MONTH)
         hru_try = as_user(HR_USER, shift_roster.get_roster, MONTH)
-        check("C75-ROLE", refused(emp_try) and refused(hru_try),
+        check("C75-ROLE", refused(emp_try) and not refused(hru_try),
               f"Employee ➜ {emp_try[1] if refused(emp_try) else '🔴 GOT THE ROSTER'}; "
-              f"HR User ➜ {hru_try[1] if refused(hru_try) else '🔴 GOT THE ROSTER'}. "
-              f"Neither may read the roster; only HR Manager manages it")
+              f"HR User ➜ {'🔴 REFUSED' if refused(hru_try) else str(len(hru_try.get('rows', []))) + ' rows'}. "
+              f"MG, 2026-08-12: HR User can SEE. They already hold `read` on Shift "
+              f"Assignment, so withholding the roster told them nothing the list view "
+              f"would not")
+
+        # 🔴 The other half of "see only", and the one that would fail silently.
+        # Reading the roster must not carry the right to change it.
+        file_try = as_user(HR_USER, file_trade, D_SAT, ALT_A, ALT_B)
+        check("C75-READONLY", refused(file_try),
+              f"...but HR User may NOT file: "
+              f"{file_try[1] if refused(file_try) else '🔴 HR USER FILED A TRADE'}. "
+              f"Read and manage are different populations — the hidden button is "
+              f"tidiness, `frappe.only_for` is the lock (§C4)")
 
         hrm_try = as_user(HRM, shift_roster.get_roster, MONTH)
         check("C75-HR", not refused(hrm_try) and hrm_try.get("rows"),
