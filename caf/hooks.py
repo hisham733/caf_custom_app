@@ -26,6 +26,10 @@ doctype_js = {
     "Stock Entry": "public/js/stock_entry.js",
     "Quality Review": "public/js/quality_review.js",
     "Leave Application": "public/js/leave_application.js",
+    # Chunk 7.3 — warn before half-cancelling a trade. The database can no longer
+    # refuse it (see the before_cancel hook), so this warning is what stops a
+    # silent half-cancel.
+    "Shift Assignment": "public/js/shift_assignment.js",
     "BOM":"public/js/bom.js",
     "Purchase Receipt":"public/js/purchase_receipt.js",
     "Material Request":"public/js/material_request.js",
@@ -82,6 +86,9 @@ doctype_list_js = {
     # Draft and Pending HR Review are docstatus 0, so the stock indicator cannot
     # distinguish them.
     "Appraisal": "public/js/appraisal_list.js",
+    # Chunk 7.3 — hosts "Trade a Saturday" (OD-65). Filing a trade is an action,
+    # and the list is where HR already goes to look at assignments.
+    "Shift Assignment": "public/js/shift_assignment_list.js",
 }
 page_js = {"ai-assistant" : "public/js/ai_assistant.js"}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
@@ -538,7 +545,17 @@ doc_events = {
         # before_cancel clears stock's validate_attendance() guard, which refuses
         # the cancel while any Attendance carries this shift - and does not even
         # filter on docstatus. Without it a swap could be filed but never unfiled.
-        "before_cancel": "caf.caf.re_resolve.before_shift_assignment_cancel",
+        # 🔴 `unlink_pair` must run here too, and for a different reason:
+        # `caf_swap_partner` is a real Link, and Frappe's link check fires on
+        # CANCEL, not only on delete. Without it, one half of a swap can never be
+        # cancelled alone — LinkExistsError, naming two document IDs and
+        # explaining nothing — which makes MG's "inform HR, then let them cancel
+        # one or both" impossible. The warning belongs in the dialog; the database
+        # should not be the thing refusing.
+        "before_cancel": [
+            "caf.caf.re_resolve.before_shift_assignment_cancel",
+            "caf.caf.shift_swap.unlink_pair",
+        ],
         # Same ordering contract as on_submit: the day reverts, then the
         # appraisal reads it (OD-60).
         "on_cancel": [

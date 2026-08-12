@@ -68,6 +68,34 @@ def lock_status_field() -> bool:
     return not now
 
 
+def require_end_date() -> bool:
+    """MG: "if date is empty = refuse to allow the doc to be submitted."
+
+    Stock leaves `end_date` optional so an assignment can run open-ended. On this
+    design that is a trap: an open-ended row silently owns **every later date**,
+    beating `default_shift` forever, and `get_shift_for_date()` treats a null
+    `end_date` as "still applies". Nobody would notice until a Saturday resolved
+    wrongly months later.
+
+    Measured before changing it: **0 open-ended rows exist**, so nothing breaks.
+    """
+    frappe.make_property_setter({
+        "doctype": "Shift Assignment",
+        "fieldname": "end_date",
+        "property": "reqd",
+        "value": 1,
+        "property_type": "Check",
+    }, is_system_generated=False)
+    frappe.clear_cache(doctype="Shift Assignment")
+    frappe.db.commit()
+
+    now = frappe.get_meta("Shift Assignment").get_field("end_date").reqd
+    open_ended = frappe.db.count("Shift Assignment", {"end_date": ("is", "not set")})
+    print(f"  end_date.reqd = {now}  {'ok' if now else '🔴 STILL OPTIONAL'}  "
+          f"(open-ended rows on this site: {open_ended})")
+    return bool(now)
+
+
 def restrict_permissions() -> int:
     """MG's rule, as Custom DocPerm — which replaces DocPerm wholesale."""
     for row in frappe.get_all("Custom DocPerm", filters={"parent": DOCTYPE},
@@ -105,4 +133,5 @@ def restrict_permissions() -> int:
 
 def setup():
     lock_status_field()
+    require_end_date()
     restrict_permissions()
