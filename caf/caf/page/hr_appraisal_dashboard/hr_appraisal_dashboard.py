@@ -28,7 +28,7 @@ Changelog
 
 import frappe
 from frappe import _
-from frappe.utils import cint
+from frappe.utils import cint, strip_html
 
 from caf.caf.overrides.appraisal import (
     get_employee_for_user,
@@ -250,6 +250,102 @@ def get_action_queue():
 
 
 @frappe.whitelist()
+def get_refreshed_after_submit(limit=25):
+    """Panel 3 — appraisals whose numbers MOVED after they were submitted. OD-64.
+
+    🔴 WHY THIS PANEL EXISTS
+    ------------------------
+    The monthly-progress panel counts a submitted appraisal as **done**, and since
+    OD-44 and OD-60 that is no longer true: a late Leave Application or a late
+    Shift Assignment rewrites the auto-filled cells of a SUBMITTED appraisal, in
+    either direction. So a number can move on a document HR considers closed, and
+    without this nobody is told.
+
+    The data already exists — `refresh_submitted_appraisal()` writes an
+    `add_comment` trail on every change (OD-26), because `db_set` writes no
+    Version and a silent edit to a document that feeds pay is an audit hole. This
+    panel reads that trail rather than adding a field.
+
+    ⚠️ It keys on the string `OD-44`, which sits inside a translatable message. On
+    a translated site the marker could move; the code reference is the most stable
+    part of it, and `Version` rows are the fallback if that ever bites.
+    """
+    is_hr, employees = _scope()
+
+    conditions = ["a.docstatus = 1", "c.reference_doctype = 'Appraisal'",
+                  "c.comment_type = 'Comment'", "c.content LIKE '%%OD-44%%'"]
+    params = {"limit": cint(limit) or 25}
+
+    if not is_hr:
+        if not employees:
+            return {"rows": [], "scope": "subtree"}
+        conditions.append("a.employee IN %(employees)s")
+        params["employees"] = employees
+
+    rows = frappe.db.sql(
+        """
+        SELECT a.name, a.employee, a.employee_name, a.appraisal_cycle,
+               a.workflow_state,
+               COUNT(c.name) AS refresh_count,
+               MAX(c.creation) AS last_refreshed
+        FROM `tabAppraisal` a
+        INNER JOIN `tabComment` c ON c.reference_name = a.name
+        WHERE {conditions}
+        GROUP BY a.name, a.employee, a.employee_name, a.appraisal_cycle,
+                 a.workflow_state
+        ORDER BY last_refreshed DESC
+        LIMIT %(limit)s
+        """.format(conditions=" AND ".join(conditions)),
+        params,
+        as_dict=True,
+    )
+
+    # The newest comment for each, so the panel can say WHAT moved and WHY without
+    # a second round trip. Read per row rather than joined — one appraisal may
+    # carry many, and picking the latest in SQL costs more than it saves at this
+    # size.
+    for r in rows:
+        latest = frappe.get_all(
+            "Comment",
+            filters={"reference_doctype": "Appraisal", "reference_name": r.name,
+                     "comment_type": "Comment", "content": ("like", "%OD-44%")},
+            fields=["content", "creation", "owner"],
+            order_by="creation desc", limit=1,
+        )
+        r["detail"] = strip_html(latest[0].content or "").strip() if latest else ""
+        r["last_by"] = latest[0].owner if latest else None
+
+    return {"rows": rows, "scope": "all" if is_hr else "subtree"}
+
+
+@frappe.whitelist()
+def get_hr_review_flags(limit=50):
+    """Panel 4 — Finger Logs Chunk 4 flagged for a human. OD-64.
+
+    `caf_hr_review` is raised when a re-resolve leaves OT that its approval no
+    longer covers — the background job must not throw (scenario S3, one bad row
+    would abort the whole batch), so it flags instead. Nothing surfaced those
+    flags, which made the flag a place data went to be forgotten.
+
+    ⚠️ HR Manager only, like `get_data_health`: Finger Log is restricted to
+    HR Manager and System Manager (D40), and these rows carry OT figures.
+    """
+    frappe.only_for(["HR Manager", "System Manager"])
+
+    rows = frappe.get_all(
+        "Finger Log",
+        filters={"caf_hr_review": 1, "docstatus": ("<", 2)},
+        fields=["name", "employee", "employee_name", "work_date", "shift_type",
+                "day_type", "final_ot", "ot_approval_id", "caf_hr_review_note",
+                "docstatus"],
+        order_by="work_date desc",
+        limit_page_length=cint(limit) or 50,
+    )
+    total = frappe.db.count("Finger Log", {"caf_hr_review": 1, "docstatus": ("<", 2)})
+    return {"rows": rows, "total": total, "shown": len(rows)}
+
+
+@frappe.whitelist()
 def get_dashboard():
     """One round trip for the whole page."""
     payload = {
@@ -257,7 +353,12 @@ def get_dashboard():
         "employee": get_employee_for_user(),
         "monthly": get_monthly_progress(),
         "queue": get_action_queue(),
+        # OD-64. Visible to a supervisor too, scoped to their own subtree — if a
+        # number moved on an appraisal they wrote, they are the person who would
+        # notice it is wrong.
+        "refreshed": get_refreshed_after_submit(),
     }
     if payload["is_hr_manager"]:
         payload["health"] = get_data_health()
+        payload["hr_review"] = get_hr_review_flags()
     return payload

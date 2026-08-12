@@ -76,6 +76,10 @@ caf.appraisal_dashboard.Dashboard = class Dashboard {
 
 			this.render_queue(data.queue, data.is_hr_manager);
 			this.render_monthly(data.monthly, data.is_hr_manager);
+			// OD-64. Directly under monthly progress on purpose: that panel counts
+			// a submitted appraisal as done, and this is the correction to it.
+			this.render_refreshed(data.refreshed);
+			this.render_hr_review(data.hr_review);
 		});
 	}
 
@@ -200,6 +204,95 @@ caf.appraisal_dashboard.Dashboard = class Dashboard {
 							${frappe.utils.escape_html(r.workflow_state || "")}</span></td>
 						<td>${r.comment_count ? `<span class="indicator red">${r.comment_count}</span>` : ""}</td>
 						<td><a href="/app/appraisal/${encodeURIComponent(r.name)}">${__("Open")}</a></td>
+					</tr>`).join("")}
+				</tbody>
+			</table>`;
+		this.$body.append(this.panel(title, body));
+	}
+
+	// --- Panel 3: refreshed after submit (OD-64) ------------------------
+	//
+	// The panel above counts a SUBMITTED appraisal as done. Since OD-44 and OD-60
+	// that is no longer true: a late leave or a late shift assignment rewrites the
+	// auto-filled cells of a submitted appraisal, in either direction. Without
+	// this, a number moves on a document HR considers closed and nobody is told.
+	//
+	// Empty is the normal state, and it is worth SAYING so — a panel that renders
+	// nothing is indistinguishable from one that is broken.
+	render_refreshed(refreshed) {
+		const rows = (refreshed && refreshed.rows) || [];
+		const title = __("Changed after submission");
+
+		if (!rows.length) {
+			this.$body.append(this.panel(title,
+				`<p class="text-muted">${__("No submitted appraisal has been recalculated. This panel fills when a late leave or shift assignment moves a number on a closed appraisal.")}</p>`));
+			return;
+		}
+
+		const body = `
+			<p class="text-muted small mb-2">${__("These are counted as complete above, but their figures moved afterwards.")}</p>
+			<table class="table table-sm">
+				<thead><tr>
+					<th>${__("Cycle")}</th><th>${__("Employee")}</th>
+					<th>${__("Times")}</th><th>${__("Last change")}</th>
+					<th>${__("What changed")}</th><th></th>
+				</tr></thead>
+				<tbody>
+				${rows.map((r) => `
+					<tr>
+						<td>${frappe.utils.escape_html(r.appraisal_cycle || "")}</td>
+						<td>${frappe.utils.escape_html(r.employee_name || r.employee || "")}</td>
+						<td><span class="indicator ${r.refresh_count > 1 ? "orange" : "blue"}">${r.refresh_count}</span></td>
+						<td>${frappe.datetime.str_to_user(r.last_refreshed)}</td>
+						<td class="small text-muted">${frappe.utils.escape_html((r.detail || "").slice(0, 160))}</td>
+						<td><a href="/app/appraisal/${encodeURIComponent(r.name)}">${__("Open")}</a></td>
+					</tr>`).join("")}
+				</tbody>
+			</table>`;
+		this.$body.append(this.panel(title, body));
+	}
+
+	// --- Panel 4: Finger Logs flagged for HR (OD-64) --------------------
+	//
+	// `caf_hr_review` is raised by Chunk 4 when a re-resolve leaves OT its
+	// approval no longer covers. The job flags rather than throwing, because one
+	// bad row must not abort the batch (scenario S3) — which meant the flag had
+	// nowhere to go. HR Manager only: these carry OT figures.
+	render_hr_review(hr_review) {
+		if (!hr_review) return;          // not an HR Manager; the key is absent
+		const rows = hr_review.rows || [];
+		const title = __("Attendance needing review");
+
+		if (!rows.length) {
+			this.$body.append(this.panel(title,
+				`<p class="text-muted">${__("No flagged attendance. This fills when a re-resolve leaves overtime its approval no longer covers.")}</p>`));
+			return;
+		}
+
+		const more = hr_review.total > hr_review.shown
+			? `<p class="text-muted small">${__("Showing {0} of {1}.", [hr_review.shown, hr_review.total])}</p>`
+			: "";
+
+		const body = `
+			${more}
+			<table class="table table-sm">
+				<thead><tr>
+					<th>${__("Date")}</th><th>${__("Employee")}</th>
+					<th>${__("Day")}</th><th>${__("Final OT")}</th>
+					<th>${__("OT Approval")}</th><th>${__("Why")}</th><th></th>
+				</tr></thead>
+				<tbody>
+				${rows.map((r) => `
+					<tr>
+						<td>${frappe.datetime.str_to_user(r.work_date)}</td>
+						<td>${frappe.utils.escape_html(r.employee_name || r.employee || "")}</td>
+						<td>${frappe.utils.escape_html(r.day_type || "")}</td>
+						<td>${r.final_ot || 0}</td>
+						<td>${r.ot_approval_id
+							? `<a href="/app/ot-approval/${encodeURIComponent(r.ot_approval_id)}" target="_blank" rel="noopener">${frappe.utils.escape_html(r.ot_approval_id)}</a>`
+							: `<span class="indicator red">${__("none")}</span>`}</td>
+						<td class="small text-muted">${frappe.utils.escape_html((r.caf_hr_review_note || "").slice(0, 90))}</td>
+						<td><a href="/app/finger-log/${encodeURIComponent(r.name)}">${__("Open")}</a></td>
 					</tr>`).join("")}
 				</tbody>
 			</table>`;
