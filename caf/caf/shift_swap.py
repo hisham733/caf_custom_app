@@ -241,6 +241,86 @@ def create(work_date, employee_a, employee_b=None, shift=None):
     return {"kind": detail["kind"], "created": created, "detail": detail}
 
 
+def approved_leave_over(employee, start_date, end_date):
+    """Approved leave overlapping this assignment's dates. Overlap, not
+    containment — a 52-day leave that starts in the previous month still owns
+    these days, and two such spans exist in the imported data."""
+    return frappe.get_all(
+        "Leave Application",
+        filters={
+            "employee": employee,
+            # 🔴 BOTH conditions, and the simulation is why. A DRAFT leave must
+            # not block (measured 2026-08-13: it does not, and should not — it
+            # is a request, not a fact). And a submitted leave that was
+            # REJECTED must not block either: `docstatus = 1` alone would catch
+            # it, which is the REJ1 trap Chunk 5b already paid for once.
+            "docstatus": 1,
+            "status": "Approved",
+            "from_date": ("<=", getdate(end_date)),
+            "to_date": (">=", getdate(start_date)),
+        },
+        fields=["name", "leave_type", "from_date", "to_date"],
+    )
+
+
+def _leave_guard(doc, verb):
+    rows = approved_leave_over(doc.employee, doc.start_date, doc.end_date)
+    if not rows:
+        return
+    r = rows[0]
+    frappe.throw(
+        _("{0} has approved leave from {1} to {2} ({3}), which covers this date. "
+          "A shift assignment cannot be {4} over approved leave — the leave's day "
+          "count was fixed when it was approved and nothing recomputes it. "
+          "Cancel the leave first, or choose another date.").format(
+              _employee_name(doc.employee), r.from_date, r.to_date,
+              r.leave_type, verb),
+        title=_("On approved leave"),
+    )
+
+
+def block_swap_on_leave(doc, method=None):
+    """MG's rule, 2026-08-13 — and it is cheaper than the alternative.
+
+    🔴 SIMULATED FIRST, on the bench, because the scenario space needed pruning
+    rather than guessing. Four orderings of (leave submit/cancel) x (assignment
+    submit/cancel) can leave a wrong day count standing:
+
+        (1) swap -> leave              count wrong AT FILING, both directions:
+                                       one employee gets a free day, the other
+                                       is overcharged one.  NOT covered here —
+                                       it is E7, fixed at filing time in Chunk 6
+        (2) leave -> swap              count goes STALE. Measured: the swap was
+                                       accepted and the leave still read 4.0
+        (3) leave -> swap -> cancel    stale, then back
+        (4) swap -> leave -> cancel    wrong at filing, right again by accident
+
+    This guard closes (2), (3) and (4) permanently, at the only two moments they
+    can begin — submit and cancel.
+
+    ⚠️ WIDER THAN MG'S WORDING, deliberately. MG said "any swap"; this blocks
+    **any Shift Assignment**, including a standalone single. The mechanism is
+    identical — a standalone assignment can move somebody onto a no-Saturday
+    shift and change the day type just as a swap can — and a rule that fires for
+    one shape and not the other would be a rule nobody can predict.
+
+    The business reading is the same as the technical one: an employee with
+    approved leave over that Saturday cannot cover for anybody, because they are
+    not there.
+
+    ⚠️ NO BYPASS FLAG. If a legitimate case appears, the message names the leave
+    and says what to do; a silent override would put the wrong count back.
+    """
+    _leave_guard(doc, _("filed"))
+
+
+def block_cancel_on_leave(doc, method=None):
+    """The other half. Cancelling an assignment moves the day type back, and the
+    leave that was approved in between is just as stale as it would have been
+    going the other way — ordering (4)."""
+    _leave_guard(doc, _("cancelled"))
+
+
 def unlink_pair(doc, method=None):
     """`before_cancel` — break the pairing so the cancel can proceed.
 

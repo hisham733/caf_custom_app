@@ -551,6 +551,12 @@ doc_events = {
         # A list, and the order is the contract: re_resolve fixes Attendance
         # first, then the appraisal reads it. Reversed, the appraisal would
         # recompute from the stale verdict.
+        # 🔴 MG's guard, 2026-08-13, simulated before it was written. A leave's
+        # day count is fixed when it is approved and NOTHING recomputes it, so an
+        # assignment filed over approved leave leaves a stale number standing.
+        # before_submit, not on_submit: refusing in on_submit leaves the document
+        # submitted AND rejected (the Chunk 3 trap, noted above).
+        "before_submit": "caf.caf.shift_swap.block_swap_on_leave",
         "on_submit": [
             "caf.caf.re_resolve.on_shift_assignment_submit",
             "caf.caf.appraisal_refresh.on_shift_assignment_refresh",
@@ -565,7 +571,13 @@ doc_events = {
         # explaining nothing — which makes MG's "inform HR, then let them cancel
         # one or both" impossible. The warning belongs in the dialog; the database
         # should not be the thing refusing.
+        # ⚠️ `block_cancel_on_leave` runs FIRST, before anything mutates. The two
+        # handlers after it clear links and references, and a refusal that fired
+        # after them would leave the document uncancelled with its pairing
+        # already broken - the half-configured state half_done_swaps() exists to
+        # find.
         "before_cancel": [
+            "caf.caf.shift_swap.block_cancel_on_leave",
             "caf.caf.re_resolve.before_shift_assignment_cancel",
             "caf.caf.shift_swap.unlink_pair",
         ],
