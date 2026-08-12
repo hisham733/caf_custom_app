@@ -626,6 +626,13 @@ fixtures = [
                     "Finger Log",
                     "HR Settings",
                     "KRA",
+                    # Added 2026-08-12 with R3. Without it MG's "restrict write,
+                    # keep read" rule lived ONLY in the site database — the exact
+                    # drift D71 records, where CAF's Leave Application workflow
+                    # existed nowhere else and no one knew until it was looked for.
+                    # ⚠️ Custom DocPerm REPLACES DocPerm per doctype, so this
+                    # fixture must stay complete: dropping a role here removes it.
+                    "Shift Assignment",
                 ],
             ]
         ],
