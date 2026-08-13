@@ -308,7 +308,8 @@ def run_all():
     """The whole matrix, in dependency order. Chunk T's other job."""
     import sys
 
-    from caf.tests.fingerlog import (test_alt_saturday, test_chunk3_decisions,
+    from caf.tests.fingerlog import (test_amend, test_alt_saturday,
+                                     test_chunk3_decisions,
                                      test_chunk4_reresolve, test_chunk5_appraisal,
                                      test_chunk7_dashboard, test_chunk7_report,
                                      test_chunk7_roster, test_chunk7_swap,
@@ -385,6 +386,13 @@ def run_all():
                       # runs late, so a failure there cannot poison the suites
                       # that read those detectors for real.
                       ("N1/N2 scheduled jobs", test_scheduled),
+                      # ⚠️ Bends `HR Settings.caf_roster_gate_from` for AM5, and
+                      # so does the monthly-roster suite. Each restores inside
+                      # its own run and ASSERTS the restore (AM5-RESTORE /
+                      # ROSTER-RESTORE); the sequencing is what keeps them from
+                      # overlapping. Runs late for the same reason as the
+                      # scheduled-jobs suite.
+                      ("AM amendment as a role", test_amend),
                       ("readiness audit", test_readiness),
                       ("chunk T enriched", sys.modules[__name__])):
         mod.RESULTS.clear()
