@@ -316,7 +316,7 @@ def run_all():
                                      test_e7_leave_count, test_leave_allocation,
                                      test_leave_policy, test_monthly_roster,
                                      test_od61_guard, test_readiness,
-                                     test_swap_leave_guard)
+                                     test_scheduled, test_swap_leave_guard)
     from caf.scripts.naming_series_audit import _gaps
     # ✅ `test_e7_leave_count` JOINED THE MATRIX 2026-08-13 with the Chunk 6c fix.
     # It was held out while it stood at 2/4 — a matrix that is red on purpose is
@@ -379,6 +379,12 @@ def run_all():
                       # June. It creates a real SWAP and real leave, so it must
                       # run after the suites that count Shift Assignments.
                       ("chunk 6c E7 leave count", test_e7_leave_count),
+                      # ⚠️ MONKEYPATCHES the three roster detectors to prove the
+                      # notification path fires. It restores them in a `finally`
+                      # and asserts the restore (SCHED-RESTORE) — but it still
+                      # runs late, so a failure there cannot poison the suites
+                      # that read those detectors for real.
+                      ("N1/N2 scheduled jobs", test_scheduled),
                       ("readiness audit", test_readiness),
                       ("chunk T enriched", sys.modules[__name__])):
         mod.RESULTS.clear()

@@ -201,6 +201,24 @@ scheduler_events = {
       "cron": {
         "0 9 * * *": [
             "caf.caf.overrides.work_order.send_work_order_daly_report"
+        ],
+        # CAF N1 (2026-08-13) - plan §4378. 1 November, 08:00. Builds next
+        # year's skeleton (the public-holiday list HR fills in, the Leave Period
+        # and 12 Appraisal Cycles) and notifies every HR Manager that the gazette
+        # dates are missing. Was specced, promised to HR in writing, and until
+        # today `scheduler_events` held exactly one unrelated job.
+        # ⚠️ The month is ALSO guarded in Python (`november_rollover_job`), because
+        # a cron expression is easy to edit and hard to test.
+        "0 8 1 11 *": [
+            "caf.caf.scheduled.november_rollover_job"
+        ],
+        # CAF N2 (2026-08-13) - MG: "notify anyone with HR Manager role". Monday
+        # 07:00. The three roster detectors already existed and the roster page
+        # already shows them; what did not exist was anybody being TOLD. Silent
+        # when nothing is found (SCHED-QUIET) - a weekly ping every week is one
+        # HR learns to filter.
+        "0 7 * * 1": [
+            "caf.caf.scheduled.weekly_roster_check"
         ]
     }
 }
