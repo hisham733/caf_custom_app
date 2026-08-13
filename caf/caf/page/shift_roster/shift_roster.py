@@ -31,7 +31,7 @@ import frappe
 from frappe import _
 from frappe.utils import add_days, get_first_day, get_last_day, getdate, nowdate
 
-from caf.caf.shift_resolution import get_shift_for_date, resolve_day_type
+from caf.caf.shift_resolution import RESTDAY, get_shift_for_date, resolve_day_type
 from caf.caf.shift_swap import half_done_swaps
 
 # ⚠️ READ and MANAGE are different populations, and the split is deliberate
@@ -265,6 +265,122 @@ def holiday_gap(first=None, last=None):
     return {"rows": rows, "count": len(rows)}
 
 
+# ── OD-69(b)'s detector ─────────────────────────────────────────────────────
+# The mirror image of `holiday_gap`. That one finds a day the roster called WORK
+# where nobody came; this finds a day the roster called REST where the whole
+# group came in.
+#
+# 🔴 FLAG, NEVER BLOCK — MG's decision, and the reason is the group size. Working
+# a rest day is legitimate: FBR4 makes all of it OT, and that is a paid, wanted
+# path. Refusing the Finger Log would stop an employee's attendance, OT and
+# appraisal figures over a roster error that is not their fault.
+#
+# ⚠️ And MG's own objection is what settles the shape: the `8-5` family has only
+# TWO members, so "both worked a rest Saturday" is barely evidence — it could as
+# easily be two people who simply came in. The `8:30am` family has six, where
+# "all six" is a strong signal. So the finding CARRIES ITS GROUP SIZE, and HR
+# reads 6-of-6 as urgent and 2-of-2 as worth a glance. The system does not
+# pretend to know which.
+GROUP_MIN = 2
+
+# Saturdays only. A Sunday is a rest day for everybody, so a group working one is
+# ordinary rest-day overtime, not a sign the alternation has slipped. The
+# alternation lives entirely in Saturdays (measured 2026-08-13: a public holiday
+# on any other weekday does not move the sequence at all).
+
+
+def _punched(employee, work_date):
+    row = frappe.db.get_value(
+        "Finger Log", {"employee": employee, "work_date": getdate(work_date),
+                       "docstatus": ("<", 2)}, ["name", "time_in"], as_dict=True)
+    if not row:
+        return None
+    return row.name if str(row.time_in) not in NO_PUNCH else None
+
+
+@frappe.whitelist()
+def group_worked_rest_day(first=None, last=None):
+    """OD-69(b) — a whole alternate-Saturday group worked a day their list rests.
+
+    One person working a rest Saturday is overtime. **Every** member of the group
+    working it is a roster error — and the difference lives in the count, not in
+    any one document, which is exactly why this cannot be a rule at the log.
+    February 2026 would have raised it three times.
+    """
+    frappe.only_for(ROLES)
+    if not first or not last:
+        first, last = _month_bounds()
+    first, last = getdate(first), getdate(last)
+
+    shifts = alt_shifts()
+    alt_names = [s.name for s in shifts]
+    _rows, by_day = _assignments_between(first, last)
+    employees = roster_population(first, last, alt_names, by_day)
+
+    out = []
+    for d in _saturdays(first, last):
+        if d > getdate(nowdate()):
+            continue                     # nobody has punched yet — see holiday_gap
+        groups = {}
+        for e in employees:
+            day_type, shift = resolve_day_type(e.name, d)
+            if shift in alt_names and day_type == RESTDAY:
+                groups.setdefault(shift, []).append(e)
+
+        for shift, members in groups.items():
+            if len(members) < GROUP_MIN:
+                continue
+            worked = [(e, _punched(e.name, d)) for e in members]
+            worked = [(e, log) for e, log in worked if log]
+            if len(worked) != len(members):
+                continue
+            out.append({
+                "date": str(d),
+                "shift": shift,
+                "group_size": len(members),
+                "worked": len(worked),
+                "employees": [e.employee_name for e, _ in worked],
+                "logs": [log for _, log in worked],
+                # MG's point, carried to the screen rather than hidden in a
+                # threshold: 6 of 6 is evidence, 2 of 2 is a coincidence away.
+                "strength": "strong" if len(members) >= 3 else "weak",
+            })
+    return {"rows": out, "count": len(out)}
+
+
+@frappe.whitelist()
+def flag_group_rest_day_work(first=None, last=None):
+    """Write `caf_hr_review` onto the logs the detector found. Same field and
+    worklist Chunk 4 already uses, so HR has one queue and not two.
+
+    ⚠️ `caf_hr_review` is deliberately OUTSIDE OD-62's guard — it exists for a
+    human to act on, so HR keeps a route to clear a flag they have dealt with.
+    """
+    frappe.only_for(["HR Manager", "System Manager"])
+    found = group_worked_rest_day(first, last)
+    flagged = []
+    for r in found["rows"]:
+        note = _("All {0} of {1} on {2} worked {3}, which their Holiday List calls "
+                 "a rest day. Either the roster is wrong, or a holiday is missing "
+                 "from the list.").format(
+                     r["worked"], r["group_size"], r["shift"], r["date"])
+        for name in r["logs"]:
+            doc = frappe.get_doc("Finger Log", name)
+            if doc.get("caf_hr_review"):
+                continue
+            doc.caf_hr_review = 1
+            doc.caf_hr_review_note = note
+            doc.flags.ignore_permissions = True
+            doc.flags.caf_system_write = True
+            doc.save()
+            # OD-26 — the trail, because a flag with no explanation is one HR
+            # clears without understanding it.
+            doc.add_comment("Comment", note)
+            flagged.append(name)
+    frappe.db.commit()
+    return {"flagged": flagged, "count": len(flagged), "found": found["count"]}
+
+
 @frappe.whitelist()
 def get_roster(month=None):
     """Everything the page draws, in one round trip."""
@@ -290,6 +406,7 @@ def get_roster(month=None):
         "overrides": overrides(assignment_rows),
         "half_done": half_done_swaps(),
         "holiday_gap": holiday_gap(first, last),
+        "group_rest_work": group_worked_rest_day(first, last),
         # Stated on the screen rather than left to be inferred: the grid covers
         # alternating shifts only, so a standalone assignment for anyone else
         # appears in the table below it and NOWHERE in the grid.

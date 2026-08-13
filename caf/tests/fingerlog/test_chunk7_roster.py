@@ -30,6 +30,7 @@ import frappe
 
 from caf.caf.overrides import shift_type_dashboard
 from caf.caf.page.shift_roster import shift_roster
+from caf.caf.shift_resolution import resolve_day_type
 from caf.caf.shift_swap import create as file_trade
 
 # Deliberately NOT the employees the other alt-Saturday suites use (00003 /
@@ -46,6 +47,11 @@ MONTH = "2026-06"
 D_SAT = "2026-06-27"         # free June Saturday
 D_SINGLE = "2026-06-26"      # Friday — the standalone case, no Saturday meaning
 D_QUIET = "2026-06-24"       # Wednesday — the detector fixture lands here
+# 🔴 OD-69(b)'s fixture. A PAST Saturday, because the detector deliberately
+# ignores future days. Shared with test_chunk7_swap, which is safe only because
+# the suites run sequentially and each cleans up in its own `finally` — if this
+# suite is ever run concurrently, give it a date of its own.
+D_GROUP = "2026-06-20"
 
 RESULTS = []
 
@@ -76,6 +82,42 @@ def quiet_day_employees(n=8):
     return [e.name for e in frappe.get_all(
         "Employee", filters={"default_shift": "8am Schedule", "status": "Active"},
         fields=["name"], order_by="name", limit_page_length=n)]
+
+
+def rest_groups_on(day):
+    """Which alt-Sat groups rest on `day`, derived — never hardcoded.
+
+    §F4d's lesson generalised: moving a fixture date turned every hardcoded
+    expected value into a lie at once. The groups are read from the live
+    configuration, so this survives HR moving anybody.
+    """
+    alt = [s.name for s in shift_roster.alt_shifts()]
+    emps = frappe.get_all("Employee",
+                          filters={"default_shift": ("in", alt), "status": "Active"},
+                          fields=["name", "employee_name", "default_shift"])
+    groups = {}
+    for e in emps:
+        day_type, shift = resolve_day_type(e.name, day)
+        if day_type == "Restday" and shift in alt:
+            groups.setdefault(shift, []).append(e)
+    return groups
+
+
+def make_worked_log(emp, day):
+    """A PUNCHED log on a day the roster calls rest — the OD-69(b) shape."""
+    doc = frappe.new_doc("Finger Log")
+    doc.employee = emp
+    doc.employee_name = frappe.db.get_value("Employee", emp, "employee_name")
+    doc.work_date = day
+    doc.time_in, doc.out = "08:30:00", "17:30:00"
+    doc.set("break", "12:00:00")
+    doc.resume = "13:00:00"
+    doc.overtime = 0
+    doc.flags.ignore_permissions = True
+    doc.insert()
+    if doc.docstatus == 0 and not doc.get("caf_not_full_day"):
+        doc.submit()
+    return doc
 
 
 def make_quiet_log(emp):
@@ -120,9 +162,13 @@ def cleanup():
             doc.cancel()
         frappe.delete_doc("Shift Assignment", r.name, ignore_permissions=True, force=True)
 
+    alt_emps = [e.name for e in frappe.get_all(
+        "Employee",
+        filters={"default_shift": ("in", [s.name for s in shift_roster.alt_shifts()])},
+        fields=["name"])]
     for r in frappe.get_all("Finger Log",
-                            filters={"work_date": D_QUIET,
-                                     "employee": ("in", quiet_day_employees())},
+                            filters={"work_date": ("in", [D_QUIET, D_GROUP]),
+                                     "employee": ("in", quiet_day_employees() + alt_emps)},
                             fields=["name", "docstatus"]):
         # ⚠️ The quiet logs each produce an Attendance, and it is SUBMITTED — a
         # submitted document cannot be deleted, and `force=True` does not
@@ -356,6 +402,68 @@ def run():
               f"Shift Type Connections now carries Employee on `default_shift` "
               f"alongside stock's {len(items) - 1} others — without the non-standard "
               f"fieldname it would resolve against `shift` and silently show nothing")
+
+        # ------------------------------------------------------------- C75-GROUP 🔴
+        # OD-69(b). The mirror image of the missing-holiday detector: a REST
+        # Saturday the whole group came in for.
+        groups = rest_groups_on(D_GROUP)
+        strong = next((s for s, m in groups.items() if len(m) >= 3), None)
+        weak = next((s for s, m in groups.items() if len(m) == 2), None)
+
+        # ONE person working a rest Saturday is overtime, not a roster error.
+        # This must NOT fire — it is the assertion that stops the detector
+        # becoming an alarm on every legitimate rest-day OT row.
+        make_worked_log(groups[strong][0].name, D_GROUP)
+        frappe.db.commit()
+        one = shift_roster.group_worked_rest_day(D_GROUP, D_GROUP)
+        check("C75-GROUP1", one["count"] == 0,
+              f"one member of {strong} working {D_GROUP} raises NOTHING "
+              f"({one['count']} rows) — that is rest-day overtime, which FBR4 pays "
+              f"and nobody should be alarmed about")
+
+        # Now the rest of the group. The signal is the COUNT, not any one log.
+        for e in groups[strong][1:]:
+            make_worked_log(e.name, D_GROUP)
+        frappe.db.commit()
+        allg = shift_roster.group_worked_rest_day(D_GROUP, D_GROUP)
+        hit = next((r for r in allg["rows"] if r["shift"] == strong), None)
+        check("C75-GROUP", hit is not None
+              and hit["worked"] == hit["group_size"] == len(groups[strong])
+              and hit["strength"] == "strong",
+              f"but ALL {len(groups[strong])} of {strong} working it is found: "
+              f"{hit['worked'] if hit else 0} of {hit['group_size'] if hit else 0}, "
+              f"marked '{hit['strength'] if hit else '-'}'. February 2026 would "
+              f"have raised this three times")
+
+        # ⚠️ MG's own objection, made testable: a 2-person group is weak evidence.
+        if weak:
+            for e in groups[weak]:
+                make_worked_log(e.name, D_GROUP)
+            frappe.db.commit()
+            both = shift_roster.group_worked_rest_day(D_GROUP, D_GROUP)
+            w = next((r for r in both["rows"] if r["shift"] == weak), None)
+            check("C75-WEAK", w is not None and w["strength"] == "weak",
+                  f"and a 2-person group is carried but marked '"
+                  f"{w['strength'] if w else '-'}' — MG's point: with two people "
+                  f"'both worked' could as easily be two people who came in. HR "
+                  f"reads 6-of-6 as urgent and 2-of-2 as worth a glance")
+        else:
+            check("C75-WEAK", False, "no 2-person group rests on " + D_GROUP)
+
+        # -------------------------------------------------------------- C75-FLAG
+        # It FLAGS, it never blocks. Every log above submitted normally.
+        res_flag = shift_roster.flag_group_rest_day_work(D_GROUP, D_GROUP)
+        flagged = frappe.get_all(
+            "Finger Log",
+            filters={"work_date": D_GROUP, "caf_hr_review": 1},
+            fields=["name", "caf_hr_review_note", "docstatus"])
+        check("C75-FLAG", res_flag["count"] > 0 and flagged
+              and all(f.docstatus == 1 for f in flagged)
+              and "rest day" in (flagged[0].caf_hr_review_note or ""),
+              f"{res_flag['count']} log(s) flagged with `caf_hr_review` — the same "
+              f"field and worklist Chunk 4 uses, so HR has one queue. Every one is "
+              f"still SUBMITTED (docstatus 1): the detector flags and never blocks, "
+              f"because rest-day work is legitimate and FBR4 pays it")
 
         # -------------------------------------------------------------- C75-SEED
         # The real July trade the seeder filed, guarded so a later cleanup cannot

@@ -151,6 +151,45 @@ caf.shift_roster.Roster = class Roster {
 		}
 		this.$body.append(this.panel(
 			`${half.count ? "⚠️ " : ""}${__("Half-done trades")}`, half_body));
+
+		this.render_group_rest(data);
+	}
+
+	// OD-69(b) — the mirror image of the missing-holiday detector. That one finds
+	// a WORK day nobody came to; this finds a REST day the whole group came to.
+	//
+	// The group size is shown because it IS the evidence: 6 of 6 is a roster
+	// error, 2 of 2 could be two people who simply came in. The screen says
+	// which, and never blocks anything — working a rest day is legitimate and
+	// FBR4 pays it as OT.
+	render_group_rest(data) {
+		const g = data.group_rest_work || { rows: [], count: 0 };
+
+		let body;
+		if (!g.count) {
+			body = `<p class="text-muted mb-0">${__("No alternating group worked a Saturday its Holiday List calls a rest day.")}</p>`;
+		} else {
+			body = `
+				<p class="mb-2">${__("Every member of these groups worked a Saturday their list calls rest. One person doing that is overtime; the whole group is a roster error — or a holiday missing from the list.")}</p>
+				<table class="table table-sm mb-0">
+					<thead><tr>
+						<th>${__("Date")}</th><th>${__("Shift")}</th>
+						<th>${__("Worked")}</th><th>${__("Signal")}</th><th>${__("Who")}</th>
+					</tr></thead>
+					<tbody>${g.rows.map((r) => `
+						<tr>
+							<td><b>${this.esc(r.date)}</b></td>
+							<td>${this.esc(r.shift)}</td>
+							<td>${r.worked} ${__("of")} ${r.group_size}</td>
+							<td>${r.strength === "strong"
+								? `<span class="text-danger">${__("strong")}</span>`
+								: `<span class="text-muted">${__("weak — small group")}</span>`}</td>
+							<td class="text-muted small">${r.employees.map((n) => this.esc(n)).join(", ")}</td>
+						</tr>`).join("")}</tbody>
+				</table>`;
+		}
+		this.$body.append(this.panel(
+			`${g.count ? "⚠️ " : ""}${__("Group worked a rest Saturday")}`, body));
 	}
 
 	// ── 2. the grid ──────────────────────────────────────────────────────────
