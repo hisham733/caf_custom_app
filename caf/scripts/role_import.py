@@ -64,6 +64,23 @@ import frappe
 CSV = "/tmp/has_role.csv"
 SKIP_USERS = {"administrator", "guest"}
 
+# 🔴 Assignments this import REFUSES, whatever the export says. MG, 2026-08-13.
+#
+# `telegram_bot@caffood.com` holds HR Manager in production, which resolves to
+# **write + submit on Finger Log** — so a bot account can rewrite `final_ot`,
+# and `final_ot` drives overtime pay. MG: *"only the 2 I mentioned are the real
+# HR Manager … the rest are IT personnel + wrong role assignment at prod … if
+# necessary then remove HR manager from BOT."*
+#
+# ⚠️ It lives here rather than being deleted by hand because this script is
+# ADDITIVE: a hand-deleted row is silently restored by the next `apply()`, and
+# nothing would say so. Refusing the assignment is the only form of the fix that
+# survives a re-run.
+#
+# ⚠️ NOT a fix for production. MG is correcting the real server separately;
+# that is outside this project. See OD-80.
+REFUSE = {("telegram_bot@caffood.com", "HR Manager")}
+
 
 def rows():
     try:
@@ -84,8 +101,34 @@ def wanted():
         role = (r.get("Role") or "").strip()
         if not u or not role or u.lower() in SKIP_USERS:
             continue
+        if (u.lower(), role) in {(a.lower(), b) for a, b in REFUSE}:
+            continue
         out.setdefault(u, set()).add(role)
     return out
+
+
+def strip_refused():
+    """Remove the REFUSE assignments that are already on this server.
+
+    Separate from `apply()` on purpose: `apply()` only ever adds, and a function
+    that removes a permission should be one you have to call by name.
+    """
+    gone = []
+    for user, role in REFUSE:
+        for r in frappe.get_all("Has Role",
+                                filters={"parent": user, "parenttype": "User",
+                                         "role": role}, pluck="name"):
+            frappe.delete_doc("Has Role", r, ignore_permissions=True, force=True)
+            gone.append((user, role))
+    frappe.db.commit()
+    for user, role in gone:
+        frappe.get_doc("User", user).add_comment(
+            "Comment",
+            f"`{role}` removed by caf.scripts.role_import.strip_refused — a bot "
+            f"account resolving to write+submit on Finger Log can rewrite "
+            f"final_ot, which drives overtime pay. MG, 2026-08-13. OD-80.")
+    print(f"removed {len(gone)}: {gone or '(nothing to remove)'}")
+    return gone
 
 
 def current(user):
