@@ -314,7 +314,8 @@ def run_all():
                                      test_chunk7_roster, test_chunk7_swap,
                                      test_chunk7_whoisoff, test_chunk_r,
                                      test_leave_policy, test_monthly_roster,
-                                     test_od61_guard, test_swap_leave_guard)
+                                     test_od61_guard, test_readiness,
+                                     test_swap_leave_guard)
     from caf.scripts.naming_series_audit import _gaps
     # ⚠️ `test_e7_leave_count` is DELIBERATELY absent and must stay absent until
     # the Chunk 6 fix lands. It asserts the correct leave-day counts, which the
@@ -357,6 +358,7 @@ def run_all():
                       # sequencing is what keeps them from overlapping.
                       ("monthly roster + gate", test_monthly_roster),
                       ("leave policy + OD-38", test_leave_policy),
+                      ("readiness audit", test_readiness),
                       ("chunk T enriched", sys.modules[__name__])):
         mod.RESULTS.clear()
         ok = mod.run()
