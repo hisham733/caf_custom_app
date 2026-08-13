@@ -51,6 +51,142 @@ def e(v):
     return html.escape("" if v is None else str(v))
 
 
+def actual_for(employee, cycle_year=CYCLE):
+    """🔴 WHAT 'RECORDED' MEANS, since MG asked and the page must say so:
+    `Leave Allocation.new_leaves_allocated`, submitted, for a cycle starting in
+    that year. It is the entitlement GRANTED — not leave taken, not a count of
+    Leave Applications, and not a balance on any particular date. Carry-forward
+    is zero on every row, so granted and total are the same number here."""
+    return {r.leave_type: float(r.days) for r in frappe.db.sql("""
+        SELECT leave_type, new_leaves_allocated AS days
+          FROM `tabLeave Allocation`
+         WHERE docstatus = 1 AND employee = %s AND YEAR(from_date) = %s""",
+                                                              (employee, int(cycle_year)),
+                                                              as_dict=True)}
+
+
+# ── the timelines ───────────────────────────────────────────────────────────
+# MG: *"big ask, but helpful for old ppl"* — three worked examples drawn rather
+# than described. The point each one makes is different:
+#
+#   Syamim       joined in January, so the two windows almost coincide — the
+#                simplest case, and the one that shows the <1-year AL block
+#   Nurul Hazirah  MG's own worked example, and the case where the service
+#                window (17 months) is much longer than the cycle
+#   Noor Arifah  crosses TWO years mid-cycle, which is why the flat band
+#                applies to her whole 2026 — and why her recorded 8 looks wrong
+ILLUSTRATE = [
+    ("Muhammad Syamim Bin Aziz", 2026, 2027),
+    ("Nurul Hazirah Binti Mohamed Fikri", 2025, 2027),
+    ("Noor Arifah Binti Ibrahim", 2025, 2027),
+]
+
+PX_PER_MONTH = 26
+LEFT = 150
+TOP = 34
+LANE_H = 26
+
+
+def _months_between(a, b):
+    a, b = getdate(a), getdate(b)
+    return (b.year - a.year) * 12 + (b.month - a.month) + (b.day - a.day) / 30.0
+
+
+def _svg(name, join_date, y0, y1):
+    """One timeline. x is months from 1 Jan of y0."""
+    join = getdate(join_date)
+    origin = date(y0, 1, 1)
+    span = (y1 - y0 + 1) * 12
+    W = LEFT + span * PX_PER_MONTH + 210
+    H = TOP + LANE_H * 5 + 96
+
+    def x(d):
+        return LEFT + _months_between(origin, d) * PX_PER_MONTH
+
+    p = [f'<svg viewBox="0 0 {W:.0f} {H:.0f}" width="100%" '
+         f'style="max-width:{W:.0f}px" xmlns="http://www.w3.org/2000/svg" '
+         f'font-family="inherit" font-size="12">']
+    p.append(f'<text x="0" y="16" font-size="14" font-weight="700" '
+             f'fill="var(--fg)">{e(name)} — joined {join}</text>')
+
+    # HR cycles as alternating bands
+    for i, yr in enumerate(range(y0, y1 + 1)):
+        x0, x1 = x(date(yr, 1, 1)), x(date(yr, 12, 31))
+        fill = "var(--cyc-a)" if i % 2 == 0 else "var(--cyc-b)"
+        p.append(f'<rect x="{x0:.0f}" y="{TOP}" width="{x1 - x0:.0f}" '
+                 f'height="{LANE_H * 5:.0f}" fill="{fill}"/>')
+        p.append(f'<text x="{(x0 + x1) / 2:.0f}" y="{TOP + LANE_H * 5 + 30:.0f}" '
+                 f'text-anchor="middle" font-weight="700" fill="var(--muted)">'
+                 f'HR cycle {yr}</text>')
+        p.append(f'<text x="{x0 + 3:.0f}" y="{TOP + LANE_H * 5 + 15:.0f}" '
+                 f'fill="var(--muted)" font-size="10">Jan</text>')
+        p.append(f'<text x="{x1 - 3:.0f}" y="{TOP + LANE_H * 5 + 15:.0f}" '
+                 f'text-anchor="end" fill="var(--muted)" font-size="10">Dec</text>')
+        p.append(f'<line x1="{x1:.0f}" y1="{TOP}" x2="{x1:.0f}" '
+                 f'y2="{TOP + LANE_H * 5 + 18:.0f}" stroke="var(--line)"/>')
+
+    # joining date
+    p.append(f'<line x1="{x(join):.0f}" y1="{TOP - 6}" x2="{x(join):.0f}" '
+             f'y2="{TOP + LANE_H * 5 + 18:.0f}" stroke="var(--accent)" '
+             f'stroke-width="2"/>')
+    p.append(f'<text x="{x(join) + 4:.0f}" y="{TOP - 10}" fill="var(--accent)" '
+             f'font-weight="700">joined</text>')
+
+    def bar(lane, x0, x1, label, colour):
+        y = TOP + lane * LANE_H + 5
+        p.append(f'<rect x="{x0:.0f}" y="{y:.0f}" width="{max(x1 - x0, 2):.0f}" '
+                 f'height="14" rx="3" fill="{colour}" opacity=".85"/>')
+        p.append(f'<text x="{LEFT - 8}" y="{y + 11:.0f}" text-anchor="end" '
+                 f'fill="var(--muted)">{label}</text>')
+
+    # service anniversaries
+    for n, lane in ((1, 0), (2, 1)):
+        end = date(join.year + n, join.month, min(join.day, 28))
+        if end.year <= y1:
+            bar(lane, x(join), x(end), f"{n} year{'s' if n > 1 else ''} of service",
+                "var(--svc)")
+            p.append(f'<text x="{x(end) + 5:.0f}" y="{TOP + lane * LANE_H + 16:.0f}" '
+                     f'fill="var(--svc)" font-weight="700">{end}</text>')
+
+    # the service window used for each cycle: join -> 31 Dec of that cycle
+    lane = 2
+    notes = []
+    for yr in range(y0, y1 + 1):
+        cend = date(yr, 12, 31)
+        if cend < join:
+            continue
+        ent = entitlement(join, yr)
+        bar(lane, x(join), x(cend), f"window for {yr}", "var(--win)")
+        p.append(f'<text x="{x(cend) + 5:.0f}" y="{TOP + lane * LANE_H + 16:.0f}" '
+                 f'fill="var(--win)" font-weight="700">'
+                 f'{ent["months"]} months &#8594; AL {ent["al"]} / MC {ent["mc"]}</text>')
+        notes.append((yr, ent))
+        lane += 1
+
+    p.append('</svg>')
+    return "".join(p), notes
+
+
+def _checkpoints(join, notes):
+    """What the employee would be TOLD on a few dates — allocation vs usable."""
+    join = getdate(join)
+    one_year = date(join.year + 1, join.month, min(join.day, 28))
+    out = []
+    for yr, ent in notes:
+        for label, when in ((f"mid {yr}", date(yr, 6, 15)),
+                            (f"end {yr}", date(yr, 12, 15))):
+            if when < join:
+                continue
+            usable_al = ent["al"] if when >= one_year else 0
+            out.append({
+                "when": f"{label} ({when})", "al_alloc": ent["al"],
+                "al_usable": usable_al, "mc": ent["mc"],
+                "why": "" if when >= one_year
+                       else f"under 1 year of service until {one_year}",
+            })
+    return out
+
+
 def join_rows():
     ing = _ingress()
     out = []
@@ -127,6 +263,13 @@ def write():
     t2 = []
     for r in sorted(jr, key=lambda x: (order[x["bucket"]], x["name"])):
         extra = ""
+        diff = ""
+        if r["erp"] and r["ingress"]:
+            # MG's request: the gap itself, signed. Positive = Ingress is LATER
+            # than ERPNext, i.e. ERPNext credits service the person did not have.
+            d = (getdate(r["ingress"]) - getdate(r["erp"])).days
+            if d:
+                diff = f'{"+" if d > 0 else ""}{d} d'
         if r["bucket"] == "differ" and r["erp"] and r["ingress"]:
             a, b = _recalc(r["erp"], r["ingress"])
             if a and b and (a["al"] != b["al"] or a["mc"] != b["mc"]):
@@ -138,14 +281,46 @@ def write():
             f'<td>{e(r["name"])}</td><td class="n">{e(r["device"])}</td>'
             f'<td>{e(r["erp"]) or "&mdash;"}</td>'
             f'<td>{e(r["ingress"]) or "&mdash;"}</td>'
+            f'<td class="n">{diff}</td>'
             f'<td>{label[r["bucket"]]}</td><td class="small">{extra}</td>'
             f'<td class="ansbox"></td></tr>')
+
+    # ── the three worked examples ───────────────────────────────────────
+    charts = []
+    for want, y0, y1 in ILLUSTRATE:
+        emp = frappe.db.get_value("Employee", {"employee_name": want},
+                                  ["name", "employee_name", "date_of_joining"],
+                                  as_dict=True)
+        if not emp or not emp.date_of_joining:
+            continue
+        svg, notes = _svg(emp.employee_name, emp.date_of_joining, y0, y1)
+        got = actual_for(emp.name)
+        cps = "".join(
+            f'<tr><td>{e(c["when"])}</td>'
+            f'<td class="n">{c["al_alloc"]}</td>'
+            f'<td class="n {"bad" if c["al_usable"] != c["al_alloc"] else ""}">'
+            f'{c["al_usable"]}</td>'
+            f'<td class="n">{c["mc"]}</td>'
+            f'<td class="small">{e(c["why"])}</td></tr>'
+            for c in _checkpoints(emp.date_of_joining, notes))
+        rec = (f'recorded in the system for 2026: '
+               f'annual <b>{got.get("Annual", "none")}</b>, '
+               f'medical <b>{got.get("MC", "none")}</b>')
+        charts.append(
+            f'<div class="chart"><div class="scroll">{svg}</div>'
+            f'<table class="cp"><thead><tr><th>If asked on…</th>'
+            f'<th class="n">Annual allocated</th><th class="n">Annual he/she may TAKE</th>'
+            f'<th class="n">Medical</th><th>Why</th></tr></thead>'
+            f'<tbody>{cps}</tbody></table>'
+            f'<p class="small">{rec}</p></div>')
 
     doc = TEMPLATE.format(
         generated=date.today().strftime("%d %B %Y"),
         al_ok=al_ok, al_n=al_n, mc_ok=mc_ok, mc_n=mc_n,
+        combined=round((al_ok + mc_ok) / max(al_n + mc_n, 1) * 100),
         n_agree=n_agree, n_diff=n_diff, n_inst=n_inst, n_nolink=n_nolink,
-        n_total=len(jr), rows1="\n".join(t1), rows2="\n".join(t2))
+        n_total=len(jr), rows1="\n".join(t1), rows2="\n".join(t2),
+        charts="\n".join(charts))
 
     with open(OUT, "w", encoding="utf-8") as fh:
         fh.write(doc)
@@ -197,6 +372,18 @@ TEMPLATE = """<!DOCTYPE html>
  .formula{{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.9rem;
            background:var(--bg);border:1px solid var(--line);border-radius:6px;
            padding:.9rem 1.1rem;white-space:pre;overflow-x:auto}}
+ :root{{--cyc-a:#eef3f7;--cyc-b:#f7f3ee;--svc:#2a6fb0;--win:#8a3b00}}
+ @media (prefers-color-scheme:dark){{
+   :root{{--cyc-a:#1c2126;--cyc-b:#241f1a;--svc:#7ab6ea;--win:#e0a06a}}}}
+ .chart{{border:1px solid var(--line);border-radius:8px;padding:1rem;margin:1.4rem 0;
+         background:var(--card)}}
+ .chart svg{{display:block;margin:.2rem 0 .8rem}}
+ table.cp{{font-size:.85rem;margin:.4rem 0}}
+ table.cp th{{position:static}}
+ .legend{{display:flex;gap:1.4rem;flex-wrap:wrap;font-size:.85rem;color:var(--muted);
+          margin:.6rem 0 0}}
+ .legend i{{display:inline-block;width:1.6rem;height:.7rem;border-radius:2px;
+            margin-right:.35rem;vertical-align:.02em}}
  @media print{{body{{padding:0;font-size:10pt}} th{{position:static}}
    :root{{--bg:#fff;--fg:#000;--card:#f4f4f4;--redbg:#fbeaea;--box:#fffdf0}}}}
 </style></head><body><div class="wrap">
@@ -236,10 +423,57 @@ Counting the extra 18 days gives 10. His record says 9, so part months appear to
 22 months, and 22/12 &times; 8 = 14.67. Rounded down to a whole day that is 14; to a half day it is
 <b>14.5</b> — and both of them have exactly 14.5.</li>
 </ul>
-<p class="small">If either is wrong, say so — every figure in the next table depends on them.</p>
+<p><b>We tested the alternative you described</b> — exact number of days, rounded down to a whole
+day — against the same records:</p>
+<table style="max-width:38rem">
+<thead><tr><th>Method</th><th class="n">Annual</th><th class="n">Medical</th><th class="n">Fit</th></tr></thead>
+<tbody>
+<tr><td><b>Whole months, down to the nearest half day</b></td><td class="n">{al_ok}/{al_n}</td>
+    <td class="n">{mc_ok}/{mc_n}</td><td class="n"><b>{combined}%</b></td></tr>
+<tr><td>Exact days, down to a whole day</td><td class="n">21/25</td><td class="n">25/31</td>
+    <td class="n">82%</td></tr>
+</tbody></table>
+<p class="small">The whole-month version fits better, and <b>Kavithaa and Tanisha decide it</b>: exact
+days gives them 14 and 15, whole months gives 14.5 for both — and 14.5 is what they have. That
+suggests the sum is done in months by hand rather than in days by calculator. <b>Please confirm which
+you actually do</b>, because the two disagree for seven people.</p>
 </div>
 
-<h2>2 · Every 2026 entitlement, calculated against actual</h2>
+<h2>2 · Three worked examples</h2>
+<p>The same rule, drawn. Each chart shows the two time windows that decide the answer —
+<b>how long the person has worked</b>, and <b>how long they will have worked by 31 December</b> of
+the cycle being granted. The second is the one the calculation uses.</p>
+<div class="legend">
+  <span><i style="background:var(--svc)"></i>length of service</span>
+  <span><i style="background:var(--win)"></i>joining date &rarr; 31 December (what the sum uses)</span>
+  <span><i style="background:var(--accent);width:.25rem"></i>joining date</span>
+  <span><i style="background:var(--cyc-a);border:1px solid var(--line)"></i>alternating HR cycles</span>
+</div>
+
+{charts}
+
+<div class="box">
+<p><span class="pill p-amb">Please confirm</span><b>The column that surprises people.</b>
+&ldquo;Annual allocated&rdquo; and &ldquo;annual he/she may take&rdquo; are different numbers in the
+first year — the days are being counted up, but the employee is not allowed to spend them until they
+have completed one year. Is that right?</p>
+<p class="small">If it is, it also explains why the figure looks large just before the two-year mark:
+it is not one year's leave, it is <b>everything accrued since joining and never taken</b>. At two
+years it changes to a normal yearly grant of 12, which looks like a cut but is not.</p>
+</div>
+
+<h2>3 · Every 2026 entitlement, calculated against actual</h2>
+
+<div class="box">
+<p><span class="pill p-ok">What these numbers are</span>
+&ldquo;Recorded&rdquo; is the <b>entitlement granted</b> for the 2026 cycle — the allocation document
+in the system. <b>It is not leave taken</b>, not a count of leave applications, and not a balance on
+any particular date. Nobody has any carried-forward leave, so granted and total are the same figure.</p>
+<p class="small"><b>Joining dates in this table come from ERPNext</b>, not Ingress — so any row whose
+joining date is wrong in section 4 will also have the wrong calculation here. That is deliberate: fix
+the dates first, then this table can be regenerated against them.</p>
+</div>
+
 <p class="small">Highlighted rows are where the calculation and the record disagree.
 &ldquo;&mdash;&rdquo; means no entitlement of that type is recorded at all.</p>
 
@@ -269,7 +503,7 @@ anyone joining early in the year, or should these be pro-rated like Nafiz's?</li
 </ul>
 </div>
 
-<h2>3 · Joining dates — Ingress against ERPNext</h2>
+<h2>4 · Joining dates — Ingress against ERPNext</h2>
 <p>You said the joining date in Ingress is the reliable one. Comparing every active employee's
 Ingress card-issue date against the date in ERPNext:</p>
 
@@ -295,7 +529,7 @@ The right-hand column is for your correction.</p>
 
 <div class="scroll"><table>
 <thead><tr><th>Employee</th><th class="n">Ingress ID</th><th>ERPNext says</th><th>Ingress says</th>
-<th>Status</th><th>Effect on 2026 leave</th><th>Correct date</th></tr></thead>
+<th class="n">Gap</th><th>Status</th><th>Effect on 2026 leave</th><th>Correct date</th></tr></thead>
 <tbody>
 {rows2}
 </tbody></table></div>

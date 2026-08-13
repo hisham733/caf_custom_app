@@ -105,6 +105,79 @@ def entitlement(join_date, cycle_year):
             "mc_uncapped": mc, "rule": "pro-rated"}
 
 
+def entitlement_exact_days(join_date, cycle_year):
+    """MG's literal reading of HR: exact days, then round DOWN to a whole day.
+
+    Kept alongside `entitlement()` so the two can be scored against the same
+    records rather than argued about. HR describes exact dates; MG doubts the
+    arithmetic is done that precisely by hand. `compare_methods()` settles it.
+    """
+    cycle_end = date(int(cycle_year), 12, 31)
+    days = (cycle_end - getdate(join_date)).days
+    if days < 0:
+        days = 0
+    months_equiv = days / 365 * 12
+
+    if months_equiv >= 60:
+        al, mc = BANDS["5+"]
+        return {"al": al, "mc": mc, "days": days, "rule": ">5y band"}
+    if months_equiv >= 24:
+        al, mc = BANDS["2-5"]
+        return {"al": al, "mc": mc, "days": days, "rule": "2-5y band"}
+
+    al = math.floor(days / 365 * AL_CONSTANT)
+    mc = math.floor(days / 365 * MC_CONSTANT)
+    return {"al": al, "mc": min(mc, MC_BAND_CAP), "days": days, "rule": "pro-rated"}
+
+
+def compare_methods(cycle_year=2026):
+    """Score both readings against what is actually recorded.
+
+    MG: *"your month + round to 0.5 approach produces 85% fit, right?"* — close;
+    the exact number is printed here, next to the alternative, so the choice is
+    made on evidence rather than on which description sounds more official.
+    """
+    got = actual(cycle_year)
+    score = {"months_half": [0, 0, 0, 0], "exact_days": [0, 0, 0, 0]}   # al_ok, al_n, mc_ok, mc_n
+    detail = []
+    for emp, days in got.items():
+        e = frappe.db.get_value("Employee", emp,
+                                ["employee_name", "date_of_joining"], as_dict=True)
+        if not e or not e.date_of_joining:
+            continue
+        a = entitlement(e.date_of_joining, cycle_year)
+        b = entitlement_exact_days(e.date_of_joining, cycle_year)
+        row = {"name": e.employee_name, "joined": str(e.date_of_joining),
+               "al_actual": days.get("Annual"), "mc_actual": days.get("MC"),
+               "al_m": a["al"], "mc_m": a["mc"], "al_d": b["al"], "mc_d": b["mc"]}
+        for key, al, mc in (("months_half", a["al"], a["mc"]),
+                            ("exact_days", b["al"], b["mc"])):
+            if row["al_actual"] is not None:
+                score[key][1] += 1
+                if abs(row["al_actual"] - al) < .01:
+                    score[key][0] += 1
+            if row["mc_actual"] is not None:
+                score[key][3] += 1
+                if abs(row["mc_actual"] - mc) < .01:
+                    score[key][2] += 1
+        detail.append(row)
+
+    print(f"{'method':14s} {'annual':>12s} {'medical':>12s} {'combined':>12s}")
+    for key, label in (("months_half", "whole months, floor to 1/2 day"),
+                       ("exact_days", "exact days, floor to 1 day")):
+        a_ok, a_n, m_ok, m_n = score[key]
+        pct = (a_ok + m_ok) / max(a_n + m_n, 1) * 100
+        print(f"{label:34s} {a_ok:>3}/{a_n:<3} {m_ok:>7}/{m_n:<3} {pct:>10.0f}%")
+
+    print("\nwhere the two methods DISAGREE with each other:")
+    for r in detail:
+        if r["al_m"] != r["al_d"] or r["mc_m"] != r["mc_d"]:
+            print(f"  {r['name'][:32]:32s} joined {r['joined']}  "
+                  f"months={r['al_m']}/{r['mc_m']}  days={r['al_d']}/{r['mc_d']}  "
+                  f"recorded={r['al_actual']}/{r['mc_actual']}")
+    return score
+
+
 def actual(cycle_year):
     """{employee: {leave_type: days}} from the submitted allocations."""
     out = {}
