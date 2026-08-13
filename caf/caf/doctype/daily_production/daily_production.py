@@ -117,7 +117,46 @@ class DailyProduction(Document):
                     _("Row {0}: Size can't be 0 or Empty for Recipe: <strong>{1}</strong>")
                     .format(item.idx, item.recipe_name)
                 )
+        self._recompute_yield_fields()
         self.validate_table_fields()
+
+    def _recompute_yield_fields(self):
+        """Persist yield/total_input/total_output from BOM data on every save.
+
+        These fields are computed client-side from async BOM lookups, which can
+        race the save (the dialog's frm.save() serializes the row before the
+        lookup callback writes the values), leaving 0 in the database. Recomputing
+        here makes the DB authoritative so reloads after processing ("run raw",
+        Create WO, Recipe Change) show correct values.
+
+        Rows with no default active BOM are left untouched (never zeroed) so a
+        missing BOM never blocks or corrupts a save.
+        """
+        recipe_cache = {}
+
+        for row in self.production_table:
+            if not row.recipe_name or row.recipe_name == NO_COOKING:
+                continue
+
+            if row.recipe_name not in recipe_cache:
+                recipe_cache[row.recipe_name] = frappe.db.get_value(
+                    "BOM",
+                    {"item": row.recipe_name, "is_default": 1, "is_active": 1, "docstatus": 1},
+                    ["custom_yield", "custom_raw_materails"],
+                    as_dict=True,
+                )
+
+            bom = recipe_cache[row.recipe_name]
+            if not bom:
+                continue
+
+            yield_kg = frappe.utils.flt(bom.custom_yield)
+            raw_kg = frappe.utils.flt(bom.custom_raw_materails)
+            total_input = raw_kg * frappe.utils.flt(row.size)
+
+            row.custom_yield = yield_kg
+            row.total_input = total_input
+            row.total_output = total_input * yield_kg
 
     def onload(self):
         """Ensure workflow_state is never falsy when form loads."""
@@ -374,6 +413,8 @@ class DailyProduction(Document):
                 "parent", "parentfield", "parenttype", "doctype", "idx",
                 "link_id", "rq_status", "custom_pair_id", "workflow_state",
                 "wo_list", "wo_list_with_type", "mr_reference", "production_plane",
+                # Derived fields recomputed server-side on every save — not user edits.
+                "custom_yield", "total_input", "total_output",
             }
 
             for row_name, new_row in current_rows.items():
