@@ -313,9 +313,9 @@ def run_all():
                                      test_chunk7_dashboard, test_chunk7_report,
                                      test_chunk7_roster, test_chunk7_swap,
                                      test_chunk7_whoisoff, test_chunk_r,
-                                     test_leave_policy, test_monthly_roster,
-                                     test_od61_guard, test_readiness,
-                                     test_swap_leave_guard)
+                                     test_leave_allocation, test_leave_policy,
+                                     test_monthly_roster, test_od61_guard,
+                                     test_readiness, test_swap_leave_guard)
     from caf.scripts.naming_series_audit import _gaps
     # ⚠️ `test_e7_leave_count` is DELIBERATELY absent and must stay absent until
     # the Chunk 6 fix lands. It asserts the correct leave-day counts, which the
@@ -339,6 +339,13 @@ def run_all():
     # punches). A mis-scoped cleanup would take them and the roster screen would
     # simply look empty again — indistinguishable from working correctly.
     assignments = frappe.db.count("Shift Assignment", {"docstatus": 1})
+    # 🔴 FOURTH CANARY, added with Chunk 6a — and §F4e says it should have been
+    # here since the Leave Policy suite landed. TWO suites now create Leave
+    # Allocations (LP-ASSIGN, LA-WRITE), and an allocation is a leave BALANCE:
+    # a mis-scoped cleanup does not just lose a test row, it silently takes days
+    # off somebody's entitlement, where nothing reads wrong until they try to
+    # book leave in December. 64 rows are real.
+    allocations = frappe.db.count("Leave Allocation", {"docstatus": 1})
     out = []
     for name, mod in (("chunk 3 decisions", test_chunk3_decisions),
                       ("chunk 4 re-resolve", test_chunk4_reresolve),
@@ -358,6 +365,13 @@ def run_all():
                       # sequencing is what keeps them from overlapping.
                       ("monthly roster + gate", test_monthly_roster),
                       ("leave policy + OD-38", test_leave_policy),
+                      # ⚠️ AFTER the policy suite: LA-GROUP-A picks the first
+                      # active long-service employee holding no allocation, and
+                      # LP-ASSIGN temporarily gives one an allocation. Running
+                      # LA first would be fine, but running it DURING would not
+                      # — the order is what keeps the two fixture pickers from
+                      # selecting the same person.
+                      ("chunk 6a leave allocation", test_leave_allocation),
                       ("readiness audit", test_readiness),
                       ("chunk T enriched", sys.modules[__name__])):
         mod.RESULTS.clear()
@@ -381,6 +395,10 @@ def run_all():
           f"{'INTACT' if leave_intact else '🔴 THE SUITE ATE ' + str(leave - leave_after) + ' OF THEM'}")
     print(f"   Shift Assignments:      {assignments} -> {assign_after}  "
           f"{'INTACT' if assign_intact else '🔴 THE SUITE ATE ' + str(assignments - assign_after) + ' OF THEM'}")
+    alloc_after = frappe.db.count("Leave Allocation", {"docstatus": 1})
+    alloc_intact = alloc_after == allocations
+    print(f"   Leave Allocations:      {allocations} -> {alloc_after}  "
+          f"{'INTACT' if alloc_intact else '🔴 THE SUITE MOVED ' + str(allocations - alloc_after) + ' — THAT IS SOMEBODY BALANCE'}")
 
     # 🔴 FOURTH CHECK, and it is not a canary — it is PROTOCOL §D1 as a standing
     # assertion. A naming counter left behind by a bulk import does not corrupt
@@ -393,4 +411,5 @@ def run_all():
     print(f"   Naming counters:        {len(gaps)} behind  "
           f"{'OK' if not gaps else '🔴 ' + ', '.join(g[1] for g in gaps[:4])}")
     return (all(o for _, o, _, _ in out)
-            and intact and leave_intact and assign_intact and not gaps)
+            and intact and leave_intact and assign_intact and alloc_intact
+            and not gaps)
