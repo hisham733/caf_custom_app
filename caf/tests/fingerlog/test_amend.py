@@ -261,13 +261,47 @@ def run():
         la.submit()
         days_before = la.total_leave_days
 
-        new_la, err = as_user(HRM, amend, "Leave Application", la.name)
+        # ⚠️ AM4-WORKFLOW's finding GENERALISES, and Chunk 6b proved it the hard
+        # way: the moment a workflow was attached to Leave Application, this
+        # assertion went red with `WorkflowPermissionError: Draft to Approved`.
+        # `copy_doc` carries `workflow_state` into the new draft on EVERY
+        # workflow-driven doctype, not just Appraisal. Reset it, exactly as the
+        # desk's own Amend button does.
+        def amend_la():
+            d = frappe.get_doc("Leave Application", la.name)
+            if d.docstatus == 1:
+                d.reload()
+                d.cancel()
+            n = frappe.copy_doc(d)
+            n.amended_from = d.name
+            n.workflow_state = "Draft"
+            n.insert()
+            return n
+
+        new_la, err = as_user(HRM, amend_la)
         ledger = 0
         if new_la:
-            new_la.reload()
-            new_la.status = "Approved"
-            _s, serr = as_user(HRM, lambda: new_la.submit())
+            # 🔴 The amended copy must be WALKED through the workflow, not jumped.
+            # Setting `workflow_state = "Approved"` and submitting is refused —
+            # `WorkflowPermissionError: transition not allowed from Draft to
+            # Approved`, because Frappe validates the EDGE, and Draft's only edge
+            # is "Submit for Approval". This is the first test to walk the whole
+            # Chunk 6b chain, and it is also how `status` gets set: each state's
+            # Update Field writes it, which is the thing production never
+            # configured (spec §4).
+            from frappe.model.workflow import apply_workflow
+
+            def walk():
+                d = frappe.get_doc("Leave Application", new_la.name)
+                for action in ("Submit for Approval", "Approve", "Approve",
+                               "Approve"):
+                    d = apply_workflow(d, action)
+                return d
+
+            walked, serr = as_user(HRM, walk)
             err = err or serr
+            if walked:
+                new_la = frappe.get_doc("Leave Application", new_la.name)
             ledger = sum(float(r.leaves or 0) for r in frappe.get_all(
                 "Leave Ledger Entry",
                 filters={"transaction_name": new_la.name, "docstatus": 1},
@@ -276,10 +310,14 @@ def run():
         check("AM2", bool(new_la) and not err
               and float(new_la.total_leave_days) == float(days_before)
               and abs(ledger + float(days_before)) < 0.01,
-              f"HR Manager amended a submitted Leave Application as themselves: "
-              f"{days_before} day(s) carried across and the ledger followed "
-              f"({ledger}). Chunk 6c's recount runs in `validate`, so the "
-              f"amended copy is recounted against the roster too"
+              f"HR Manager amended a submitted Leave Application and walked the "
+              f"WHOLE Chunk 6b chain as themselves — Draft ➜ Supervisor ➜ HR "
+              f"Manager ➜ Final ➜ Approved. {days_before} day(s) carried across "
+              f"and the ledger followed ({ledger}). ✅ And `status` reads "
+              f"{frappe.db.get_value('Leave Application', new_la.name, 'status')!r} "
+              f"— **set by the workflow's Update Field, not by hand**, which is "
+              f"the thing production never configured (spec §4) and the reason "
+              f"the ledger moved at all"
               if new_la else f"🔴 amend failed: {err}")
 
         cleanup()

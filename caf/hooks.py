@@ -644,10 +644,19 @@ doc_events = {
 #   has_permission              -> write layer / per-document check
 permission_query_conditions = {
     "Appraisal": "caf.caf.overrides.appraisal.get_permission_query_conditions",
+    # CAF Chunk 6b (2026-08-13) - OD-82. The `Leave Approver` role is BLANKET:
+    # measured, a Leave Approver who was NOT the employee's approver read, wrote
+    # and SUBMITTED their leave. Role = the door, hook = the lock — the same
+    # shape the Appraisal already uses, pointed at `leave_approver` instead of
+    # `reports_to`. A Workflow Transition's "Allowed" column takes a ROLE and
+    # never a person, so the workflow cannot do this by itself.
+    "Leave Application":
+        "caf.caf.overrides.leave_application.get_permission_query_conditions",
 }
 
 has_permission = {
     "Appraisal": "caf.caf.overrides.appraisal.has_permission",
+    "Leave Application": "caf.caf.overrides.leave_application.has_permission",
 }
 # User Data Protection
 # --------------------

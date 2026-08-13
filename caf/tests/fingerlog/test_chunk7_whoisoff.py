@@ -172,13 +172,23 @@ def run():
               f"user with no employee row still gets the HR view")
 
         # ----------------------------------------------------------- C74-STAGE
+        # ⚠️ UPDATED 2026-08-13 (Chunk 6b). This used to assert that ALL rows came
+        # from the status FALLBACK, and said why: *"correct today, because no
+        # Workflow is attached to Leave Application yet (Chunk 6)."* Chunk 6b
+        # attached one, so Frappe now stamps `workflow_state` on insert and the
+        # fallback is no longer universal — 30 of 30 flipped to the real thing.
+        # **The test predicted its own obsolescence and then detected it**, which
+        # is the whole reason the flag exists. What must stay true is that the
+        # column is never EMPTY — that was 7.1's failure with `status`.
         blank = [r for r in (data or []) if not r.get("stage")]
         fallback = [r for r in (data or []) if r.get("stage_from_status")]
-        check("C74-STAGE", data and not blank and len(fallback) == len(data),
+        real = len(data or []) - len(fallback)
+        check("C74-STAGE", data and not blank and real > 0,
               f"every row carries a Stage: {len(blank)} blank of {len(data or [])}. "
-              f"All {len(fallback)} are flagged as coming FROM STATUS — correct today, "
-              f"because no Workflow is attached to Leave Application yet (Chunk 6). "
-              f"Without the fallback this column would be empty on every row, which is "
+              f"{real} now come from the WORKFLOW and {len(fallback)} from the "
+              f"status fallback — before Chunk 6b every one was the fallback. The "
+              f"fallback stays for legacy rows carrying no `workflow_state`; "
+              f"without it the column would be empty on those, which is exactly "
               f"the failure 7.1 hit with `status`")
 
         # -------------------------------------------------------- C74-WF 🔴
@@ -252,8 +262,11 @@ def run():
         # --------------------------------------------------------- C74-PENDING
         pres = as_user(EMP_USER, who_is_off.execute, dict(WIN, pending_only=1))
         _, pdata = pres if isinstance(pres, tuple) and len(pres) == 2 else (None, None)
+        # ⚠️ "Draft" joined the allowed set with Chunk 6b: the workflow stamps it
+        # on insert, and a Draft is undecided — which is precisely what this
+        # assertion means by pending.
         check("C74-PENDING", pdata is not None and 0 < len(pdata) < len(data)
-              and all(r["stage"] in ("Open", WF_STATE) for r in pdata),
+              and all(r["stage"] in ("Open", "Draft", WF_STATE) for r in pdata),
               f"'Pending only' narrows {len(data)} -> {len(pdata) if pdata is not None else 'ERROR'} "
               f"rows and every one is still undecided: "
               f"{sorted({r['stage'] for r in (pdata or [])})}")
