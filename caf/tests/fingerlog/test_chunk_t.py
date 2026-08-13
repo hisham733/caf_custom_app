@@ -313,8 +313,9 @@ def run_all():
                                      test_chunk7_dashboard, test_chunk7_report,
                                      test_chunk7_roster, test_chunk7_swap,
                                      test_chunk7_whoisoff, test_chunk_r,
-                                     test_monthly_roster, test_od61_guard,
-                                     test_swap_leave_guard)
+                                     test_leave_policy, test_monthly_roster,
+                                     test_od61_guard, test_swap_leave_guard)
+    from caf.scripts.naming_series_audit import _gaps
     # ⚠️ `test_e7_leave_count` is DELIBERATELY absent and must stay absent until
     # the Chunk 6 fix lands. It asserts the correct leave-day counts, which the
     # code does not yet produce — a matrix that is red on purpose is one nobody
@@ -355,6 +356,7 @@ def run_all():
                       # asserts it (ALT-HOOK-RESTORE / ROSTER-RESTORE), so the
                       # sequencing is what keeps them from overlapping.
                       ("monthly roster + gate", test_monthly_roster),
+                      ("leave policy + OD-38", test_leave_policy),
                       ("chunk T enriched", sys.modules[__name__])):
         mod.RESULTS.clear()
         ok = mod.run()
@@ -377,5 +379,16 @@ def run_all():
           f"{'INTACT' if leave_intact else '🔴 THE SUITE ATE ' + str(leave - leave_after) + ' OF THEM'}")
     print(f"   Shift Assignments:      {assignments} -> {assign_after}  "
           f"{'INTACT' if assign_intact else '🔴 THE SUITE ATE ' + str(assignments - assign_after) + ' OF THEM'}")
+
+    # 🔴 FOURTH CHECK, and it is not a canary — it is PROTOCOL §D1 as a standing
+    # assertion. A naming counter left behind by a bulk import does not corrupt
+    # anything; it makes the NEXT insert collide, from the desk as much as from
+    # a test, and nothing says so until somebody tries. Found live 2026-08-13:
+    # `HR-LAL-2026-` read 1 while 55 rows existed, so nobody could have been
+    # granted leave at all. Nine counters were behind, including `HR-EMP-` at 7
+    # against 214 employees.
+    gaps = _gaps()
+    print(f"   Naming counters:        {len(gaps)} behind  "
+          f"{'OK' if not gaps else '🔴 ' + ', '.join(g[1] for g in gaps[:4])}")
     return (all(o for _, o, _, _ in out)
-            and intact and leave_intact and assign_intact)
+            and intact and leave_intact and assign_intact and not gaps)
