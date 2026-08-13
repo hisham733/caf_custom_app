@@ -309,14 +309,25 @@ def run():
         hru_all = all(frappe.has_permission("Appraisal", p, user=HRU)
                       for p in ("read", "write", "create", "submit", "cancel",
                                 "amend"))
-        check("AM4-GUARD", hru_all and bool(err4) and not new_ap,
-              f"🔴 HR User holds EVERY permission on Appraisal ({hru_all}) and "
-              f"is still refused: {err4}. The block is CAF's own controller "
-              f"(the supervisor check), not the permission model — which means "
-              f"**HR cannot amend an appraisal at all** without the internal "
-              f"`caf_skip_supervisor_check` flag. Amend is the sanctioned "
-              f"correction route (OD-48), so this is a business gap, not a "
-              f"permission one. OD-81")
+        # 🔴 TWO DIFFERENT GATES BLOCK TWO DIFFERENT ROLES, and that is the point.
+        #   HR Manager  passes CAF's has_permission hook (is_hr_manager -> True)
+        #               and is stopped by DocPerm  (cancel = 0, amend = 0)
+        #   HR User     passes DocPerm (cancel = 1, amend = 1)
+        #               and is stopped by CAF's hook (may_appraise: not the
+        #               employee's supervisor)
+        # ⚠️ `has_permission(dt, ptype)` WITHOUT a doc checks only the doctype
+        # level, which is why HR User reads True on all six and still fails —
+        # the hook only runs when a document is passed.
+        doc_lvl = frappe.has_permission("Appraisal", "cancel", doc=ap.name,
+                                        user=HRU)
+        check("AM4-GUARD", hru_all and not doc_lvl and bool(err4) and not new_ap,
+              f"🔴 HR User reads True on all six at DOCTYPE level ({hru_all}) "
+              f"but False at DOCUMENT level ({doc_lvl}), and is refused: "
+              f"{err4}. **Two gates, one per role**: HR Manager is stopped by "
+              f"DocPerm, HR User by CAF's `has_permission` hook — which returns "
+              f"False rather than raising, so it leaves no traceback frame. "
+              f"✅ Granting HR Manager `cancel` + `amend` is therefore SUFFICIENT: "
+              f"CAF's hook already lets `is_hr_manager` through. OD-81")
 
         cleanup()
 
