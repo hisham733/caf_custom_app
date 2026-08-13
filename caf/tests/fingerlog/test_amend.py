@@ -194,6 +194,60 @@ def run():
               f"permitted, and anyone holding `create` + `cancel` can do it. "
               f"OD-81")
 
+        # ── AM1-CASCADE 🔴 MG's question, and the one that matters most ──────
+        # *"After finger_log.doc is amended, does save or submission after the
+        # amendment trigger hooks or verification so that other linked doctypes
+        # act accordingly?"*
+        #
+        # An amend is THREE lifecycle events, not one, and each fires its own
+        # hooks:
+        #     original.cancel()   -> on_cancel  -> cancels the Attendance
+        #     amended.insert()    -> validate   -> (draft; nothing downstream)
+        #     amended.submit()    -> before_submit (the roster gate)
+        #                         -> on_submit  -> create_attendance()
+        #
+        # So the day must end up with exactly ONE live Attendance again — the
+        # cancelled one plus a fresh one. If `create_attendance` collided with
+        # the cancelled row instead, the day would end up with NO live verdict,
+        # which is OD-60's failure shape on a different path.
+        cleanup()
+        log_c = make_log(D_LOG)
+        att_before = frappe.get_all("Attendance",
+                                    filters={"employee": EMP,
+                                             "attendance_date": D_LOG},
+                                    fields=["name", "docstatus", "status"])
+        amended, err_c = as_user(HRM, amend, "Finger Log", log_c.name)
+        att_mid = frappe.get_all("Attendance",
+                                 filters={"employee": EMP,
+                                          "attendance_date": D_LOG, "docstatus": 1},
+                                 fields=["name"])
+        sub_err = None
+        if amended:
+            amended.reload()
+            _s, sub_err = as_user(HRM, lambda: amended.submit())
+        att_after = frappe.get_all("Attendance",
+                                   filters={"employee": EMP,
+                                            "attendance_date": D_LOG, "docstatus": 1},
+                                   fields=["name", "status"])
+        live_before = [a for a in att_before if a.docstatus == 1]
+
+        check("AM1-CASCADE",
+              len(live_before) == 1 and len(att_mid) == 0
+              and len(att_after) == 1 and not sub_err
+              and att_after[0].name != live_before[0].name,
+              f"the amend cascades end to end, and it is THREE lifecycle events: "
+              f"cancelling the original ran `on_cancel` and took the Attendance "
+              f"down ({len(live_before)} live ➜ {len(att_mid)}); submitting the "
+              f"amended copy ran `on_submit` ➜ `create_attendance()` and put a "
+              f"NEW one up ({len(att_after)}, {att_after[0].status if att_after else '—'}). "
+              f"The day is never left without a verdict, and the row is a "
+              f"different document — not the cancelled one revived"
+              if att_after else
+              f"🔴 the day has NO live Attendance after the amend "
+              f"({len(live_before)} ➜ {len(att_mid)} ➜ {len(att_after)}). "
+              f"submit error: {sub_err}. That is OD-60's failure shape on the "
+              f"amend path")
+
         cleanup()
 
         # ═══════════════════════════════════════════════ AM2 — Leave Application
@@ -275,31 +329,84 @@ def run():
         ap.flags.caf_skip_supervisor_check = True
         ap.submit()
 
+        # ✅ FIXED 2026-08-13 (OD-81b, MG chose B1): HR Manager was granted
+        # `cancel` + `amend`. That alone is sufficient, because CAF's own
+        # `has_permission` hook already returns True for `is_hr_manager` — the
+        # DocPerm row was the only thing in the way.
+        # ⚠️ Applied through `update_permission_property`, NOT by hand: a Custom
+        # DocPerm REPLACES DocPerm for the whole doctype (§C-bis), so a hand-made
+        # row would have deleted Employee, HR User and System Manager along with
+        # it. `scripts/appraisal_amend_perm.py` asserts nobody lost anything.
         hrm_amend = can(HRM, "Appraisal", "amend")
-        hru_amend = can(HRU, "Appraisal", "amend")
-        _r, err_hrm = as_user(HRM, amend, "Appraisal", ap.name)
+        hrm_doc = frappe.has_permission("Appraisal", "amend", doc=ap.name,
+                                        user=HRM)
+        naive, err_hrm = as_user(HRM, amend, "Appraisal", ap.name)
 
-        check("AM4-PERM", not hrm_amend and hru_amend and bool(err_hrm),
-              f"🔴 an HR MANAGER cannot amend an Appraisal (`cancel = 0`, "
-              f"`amend = 0`) while an HR USER can. Measured, not assumed — and "
-              f"it is the opposite way round from every other doctype here. "
-              f"{err_hrm}. OD-81")
+        check("AM4-PERM",
+              hrm_amend and hrm_doc and not naive
+              and not str(err_hrm).startswith("PermissionError"),
+              f"✅ OD-81b worked: `amend` is now True at doctype level "
+              f"({hrm_amend}) AND at document level ({hrm_doc}), and the "
+              f"refusal is **no longer a PermissionError** — it is "
+              f"{err_hrm}. Both permission gates are open")
 
-        new_ap, err4 = as_user(HRU, amend, "Appraisal", ap.name)
+        # ── AM4-WORKFLOW 🔴 the THIRD gate, revealed only once the first two opened
+        # `frappe.copy_doc` carries `workflow_state = "Completed"` from the
+        # original into the new DRAFT, and Frappe then refuses the implied
+        # Draft ➜ Completed transition. The desk's own Amend button resets the
+        # state; a server-side amend must do it too, or every appraisal
+        # correction dies here.
+        wf_field = frappe.get_meta("Appraisal").get_field("workflow_state")
+        wf = frappe.db.get_value("Workflow", {"document_type": "Appraisal",
+                                              "is_active": 1}, "name")
+        first_state = frappe.db.get_value(
+            "Workflow Document State", {"parent": wf}, "state",
+            order_by="idx asc") if wf else None
+
+        def amend_reset():
+            d = frappe.get_doc("Appraisal", ap.name)
+            if d.docstatus == 1:
+                d.reload()
+                d.cancel()
+            n = frappe.copy_doc(d)
+            n.amended_from = d.name
+            n.workflow_state = first_state          # <- the missing step
+            n.flags.caf_skip_supervisor_check = True
+            n.insert()
+            return n
+
+        new_ap, err4 = as_user(HRM, amend_reset)
+        check("AM4-WORKFLOW",
+              bool(err_hrm) and "Workflow" in str(err_hrm)
+              and bool(new_ap) and not err4,
+              f"🔴 a THIRD gate, and it only became visible once the permission "
+              f"gates opened: `copy_doc` copies `workflow_state = 'Completed'` "
+              f"into a DRAFT (`no_copy` on that field is "
+              f"{getattr(wf_field, 'no_copy', '?')}), so Frappe refuses the "
+              f"implied transition — {err_hrm}. Resetting it to the workflow's "
+              f"first state ({first_state!r}) lets the amend through: "
+              f"{new_ap.name if new_ap else '— ' + str(err4)}. **A server-side "
+              f"amend of any workflow-driven doctype must reset the state**, or "
+              f"every correction dies here")
+
         guard_err = ""
         if new_ap:
+            # ⚠️ The value written AFTER submit must DIFFER from the stored one.
+            # The first version wrote "TAMPERED" both before and after, so the
+            # post-submit write was a no-op: `before_update_after_submit`
+            # compares old against new, saw no change, and refused nothing. The
+            # test then read that silence as "the guard held". Submit clean,
+            # then change it — the difference is the whole test.
             def tamper():
                 d = frappe.get_doc("Appraisal", new_ap.name)
-                for row in d.appraisal_kra:
-                    row.caf_date_cell = "TAMPERED"
-                    break
+                d.flags.caf_skip_supervisor_check = True
                 d.submit()
                 d.reload()
                 for row in d.appraisal_kra:
                     row.caf_date_cell = "TAMPERED"
                     break
                 d.save()
-            _t, guard_err = as_user(HRU, tamper)
+            _t, guard_err = as_user(HRM, tamper)
 
         # 🔴 HR User HOLDS `amend` on Appraisal (DocPerm r1 w1 c1 s1 x1 a1, and
         # has_permission returns True for all six). The refusal therefore does
@@ -318,16 +425,30 @@ def run():
         # ⚠️ `has_permission(dt, ptype)` WITHOUT a doc checks only the doctype
         # level, which is why HR User reads True on all six and still fails —
         # the hook only runs when a document is passed.
-        doc_lvl = frappe.has_permission("Appraisal", "cancel", doc=ap.name,
+        doc_lvl = frappe.has_permission("Appraisal", "amend", doc=ap.name,
                                         user=HRU)
-        check("AM4-GUARD", hru_all and not doc_lvl and bool(err4) and not new_ap,
-              f"🔴 HR User reads True on all six at DOCTYPE level ({hru_all}) "
-              f"but False at DOCUMENT level ({doc_lvl}), and is refused: "
-              f"{err4}. **Two gates, one per role**: HR Manager is stopped by "
-              f"DocPerm, HR User by CAF's `has_permission` hook — which returns "
-              f"False rather than raising, so it leaves no traceback frame. "
-              f"✅ Granting HR Manager `cancel` + `amend` is therefore SUFFICIENT: "
-              f"CAF's hook already lets `is_hr_manager` through. OD-81")
+        # 🔴 §F1 / §E2 — the tamper above CANNOT have proved anything, and saying
+        # so is the point. An API-created Appraisal has **zero KRA rows**: stock's
+        # `set_kras_and_rating_criteria()` is whitelisted and form-called, so it
+        # never runs on a server-side insert. The tamper loop therefore iterates
+        # nothing and `save()` succeeds trivially — a green light for a guard that
+        # was never touched, which is the W3 trap exactly. The KRA count is
+        # asserted so the vacuum is visible instead of silent.
+        kra_rows = len(frappe.get_all("Appraisal KRA",
+                                      filters={"parent": new_ap.name}) or []) \
+            if new_ap else 0
+        check("AM4-GUARD",
+              hru_all and not doc_lvl and kra_rows > 0 and bool(guard_err),
+              f"⚠️ HR User still reads True on all six at DOCTYPE level "
+              f"({hru_all}) and False at DOCUMENT level ({doc_lvl}) — CAF's "
+              f"`has_permission` hook still refuses anyone who is not that "
+              f"employee's supervisor, correct and deliberately unchanged by "
+              f"OD-81b. ✅ And **OD-61's guard SURVIVES the amend**: the amended "
+              f"copy carries {kra_rows} KRA rows (copy_doc brings them across), "
+              f"and a typed change to an auto-filled cell on it is still "
+              f"refused — {guard_err}. The guard follows the document, not the "
+              f"original. ⚠️ The row count is asserted because a copy with zero "
+              f"rows would make this pass vacuously — the W3 trap")
 
         cleanup()
 
@@ -385,17 +506,21 @@ def run():
                     as_user(HRM, lambda: new_conf.submit())
                 _c, e_after = as_user(HRM, mrc.require_confirmed_month, stub)
 
+                # ✅ FIXED 2026-08-13 (OD-81c): the gate keys on `month_start`,
+                # not on the document name. The three states are asserted in
+                # order, and the middle one is the control — without it, a gate
+                # that simply never refused would also pass.
                 check("AM5",
-                      not e_ok and bool(e_window) and bool(e_after)
+                      not e_ok and bool(e_window) and not e_after
                       and new_conf and new_conf.name.endswith("-1"),
-                      f"🔴 the gate NEVER REOPENS after an amend. Confirmed ➜ "
-                      f"passes ({e_ok}); cancelled ➜ refuses ({e_window}, "
-                      f"correct — that is the amend window); amended and "
-                      f"RE-SUBMITTED as {new_conf.name if new_conf else '?'} ➜ "
-                      f"still refuses ({e_after}). The gate matches on the exact "
-                      f"name `ROSTER-2026-10`, and Frappe names the amendment "
-                      f"`...-1`, so a month HR corrects can never have attendance "
-                      f"submitted against it again. OD-81")
+                      f"the gate follows the MONTH through an amend. Confirmed "
+                      f"➜ passes ({e_ok}); cancelled ➜ refuses ({e_window}) — "
+                      f"the control, and correct, that is the amend window; "
+                      f"amended and re-submitted as "
+                      f"{new_conf.name if new_conf else '?'} ➜ passes again "
+                      f"({e_after}). 🔴 Before OD-81c it matched the exact name "
+                      f"`ROSTER-2026-10` while Frappe names the amendment "
+                      f"`...-1`, so a month HR corrected was blocked for good")
         finally:
             # Trap #2 from the Single-doctype register: restore through the same
             # normalising accessor, so MEANING round-trips rather than storage.

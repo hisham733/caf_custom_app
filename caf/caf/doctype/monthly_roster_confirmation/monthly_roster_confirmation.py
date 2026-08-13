@@ -281,8 +281,21 @@ def require_confirmed_month(doc, method=None):
 
     month = get_first_day(work_date)
     name = f"ROSTER-{month.year}-{month.month:02d}"
+    # 🔴 KEYED ON `month_start`, NOT ON THE NAME. Corrected 2026-08-13 (OD-81c).
+    #
+    # The lookup used to be `{"name": name, "docstatus": 1}`. Frappe names an
+    # amendment `ROSTER-2026-11-**1**`, so once HR corrected a month by the
+    # sanctioned cancel-and-amend route, the exact-name match could never find
+    # the replacement again and **attendance for that month was blocked
+    # permanently**. Measured across all three states (test AM5): confirmed ➜
+    # passes · cancelled ➜ refuses, correctly, that is the amend window ·
+    # amended and re-submitted ➜ still refused.
+    #
+    # The month is the identity; the name is a label. `month_start` survives the
+    # amend unchanged, so this finds the replacement and keeps refusing while
+    # only a cancelled original exists.
     if frappe.db.exists("Monthly Roster Confirmation",
-                        {"name": name, "docstatus": 1}):
+                        {"month_start": month, "docstatus": 1}):
         return
 
     # ⚠️ The message carries the way out. A refusal that only says "blocked" is
