@@ -194,6 +194,8 @@ def run():
               f"and a PERSON can no longer set it: status.allow_on_submit="
               f"{df.allow_on_submit} (R3). Stock still writes it through db_set, "
               f"which is what the expiry job and on_cancel use")
+
+        hook_tests()
     finally:
         cleanup()
         frappe.db.commit()
@@ -205,6 +207,126 @@ def run():
     print(f"\n{len(RESULTS) - len(failed)}/{len(RESULTS)} passed"
           + (f" — FAILED: {failed}" if failed else ""))
     return not failed
+
+
+# ── OD-71's other half: does editing the holiday list move the calendars? ────
+# 🔴 THESE TESTS MUTATE THE LIVE HOLIDAY LISTS, which is why they are written the
+# way they are:
+#
+#   · the fixture Saturday is DECEMBER, deliberately. A holiday flips every
+#     Saturday AFTER it, so 12 Dec moves 2-3 of them; a January one would move
+#     ~45 and every later assertion in the matrix would be running against a
+#     calendar this suite bent.
+#   · the restore is not trusted, it is ASSERTED. `ALT-HOOK-RESTORE` compares
+#     against a snapshot taken before anything was touched. If it ever goes red
+#     the run says so loudly, instead of leaving every following suite resolving
+#     day types against a flipped calendar.
+PH_2026 = "CAF Public Holidays 2026"
+D_HOOK_SAT = "2026-12-12"        # a Saturday, late in the year: small blast radius
+D_HOOK_MON = "2026-12-14"        # the Monday after it
+
+
+def _ph_row(day):
+    return frappe.db.get_value("Holiday", {"parent": PH_2026,
+                                           "holiday_date": getdate(day)})
+
+
+def _add_ph(day, desc):
+    doc = frappe.get_doc("Holiday List", PH_2026)
+    doc.append("holidays", {"holiday_date": getdate(day), "weekly_off": 0,
+                            "description": desc})
+    doc.flags.ignore_permissions = True
+    doc.save()
+    frappe.db.commit()
+
+
+def _drop_ph(day):
+    doc = frappe.get_doc("Holiday List", PH_2026)
+    doc.holidays = [h for h in doc.holidays if getdate(h.holiday_date) != getdate(day)]
+    doc.flags.ignore_permissions = True
+    doc.save()
+    frappe.db.commit()
+
+
+def _snapshot():
+    from caf.caf.holiday_lists import _alt_lists, rest_saturdays_in
+    lists = {n: rest_saturdays_in(n) for n in _alt_lists(2026)}
+    pointers = {s.name: s.holiday_list for s in frappe.get_all(
+        "Shift Type", filters={"caf_alt_sat": 1},
+        fields=["name", "holiday_list"])}
+    return lists, pointers
+
+
+def hook_tests():
+    base_lists, base_pointers = _snapshot()
+    try:
+        # -------------------------------------------------------- ALT-HOOK-MON
+        # Measured 2026-08-13: only SATURDAYS enter the walk. Prove the hook
+        # does not thrash the calendars on every ordinary holiday.
+        _add_ph(D_HOOK_MON, "TEST — alt-sat hook, Monday")
+        mon_lists, _p = _snapshot()
+        check("ALT-HOOK-MON", mon_lists == base_lists,
+              f"a MONDAY holiday ({D_HOOK_MON}) moves NOTHING — the walk steps "
+              f"Saturday to Saturday and never sees it. Without this the hook "
+              f"would rewrite every calendar on every ordinary holiday")
+        _drop_ph(D_HOOK_MON)
+
+        # -------------------------------------------------------- ALT-HOOK 🔴
+        _add_ph(D_HOOK_SAT, "TEST — alt-sat hook, Saturday")
+        sat_lists, sat_pointers = _snapshot()
+        moved = {n: sorted(base_lists[n] ^ sat_lists.get(n, set()))
+                 for n in base_lists}
+        total = sum(len(v) for v in moved.values())
+        first = min((v[0] for v in moved.values() if v), default=None)
+        # ⚠️ `>=`, not `>`, and the first version of this assertion had `>` and
+        # went RED against a working feature — §F1d again. The holiday's OWN
+        # Saturday moves too: it was a rest day for one pattern and becomes a
+        # public holiday (`weekly_off = 0`), so it leaves that pattern's rest
+        # set. What must never happen is a change BEFORE it.
+        check("ALT-HOOK", total > 0 and first and str(first) >= D_HOOK_SAT,
+              f"a SATURDAY holiday ({D_HOOK_SAT}) regenerated the calendars "
+              f"WITHOUT anyone calling the generator: {total} Saturdays moved, "
+              f"the first on {first} — on or after the holiday, never before it")
+
+        # -------------------------------------------------- ALT-HOOK-POINT 🔴
+        # The trap. `alt_label()` names the list from the first rest Saturday, so
+        # a flip can swing it 1st-3rd <-> 2nd-4th. A shift left on the old name
+        # would silently receive its MIRROR's calendar — work and rest inverted
+        # for every employee on it, for the rest of the year, raising nothing.
+        stale = [s for s, lst in sat_pointers.items()
+                 if not frappe.db.exists("Holiday List", lst)]
+        emp_bad = frappe.get_all(
+            "Employee",
+            filters={"status": "Active",
+                     "default_shift": ("in", list(sat_pointers))},
+            fields=["name", "default_shift", "holiday_list"])
+        mismatched = [e.name for e in emp_bad
+                      if e.holiday_list != sat_pointers.get(e.default_shift)]
+        check("ALT-HOOK-POINT", not stale and not mismatched,
+              f"every alternating shift still points at a list that EXISTS "
+              f"({len(stale)} stale) and every employee's list still matches "
+              f"their shift's ({len(mismatched)} mismatched) — FDR6 flowed down "
+              f"with the regeneration")
+
+        # ------------------------------------------------------- ALT-HOOK-BACK
+        _drop_ph(D_HOOK_SAT)
+        back_lists, back_pointers = _snapshot()
+        check("ALT-HOOK-BACK", back_lists == base_lists,
+              f"and removing it restores the calendars EXACTLY — the operation is "
+              f"symmetric, so a holiday entered by mistake can be taken out "
+              f"without hand-repairing the year")
+    finally:
+        # Belt and braces: whatever happened above, the fixture holidays go.
+        for d in (D_HOOK_SAT, D_HOOK_MON):
+            if _ph_row(d):
+                _drop_ph(d)
+
+    # --------------------------------------------------- ALT-HOOK-RESTORE 🔴
+    end_lists, end_pointers = _snapshot()
+    check("ALT-HOOK-RESTORE", end_lists == base_lists and end_pointers == base_pointers,
+          f"the live calendars are back exactly as found. This suite BENDS the "
+          f"real Holiday Lists, so leaving them flipped would silently corrupt "
+          f"every day_type every later suite resolves")
 
 
 def cleanup():

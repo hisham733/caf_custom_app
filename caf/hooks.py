@@ -539,6 +539,16 @@ doc_events = {
     #                   Finger Log first, THEN the appraisal reads it. No FBR39
     #                   gate here by decision - cancelling corrects the record,
     #                   it does not ask for something new.
+    # 🔴 MG's requirement, 2026-08-13. Editing the public-holiday list has to move
+    # the alternate-Saturday calendars with it, or the sequence "runs away" —
+    # OD-71's hazard. Measured (§6.13a): only a SATURDAY holiday moves the
+    # sequence, and it flips every Saturday after it to year end, reversibly.
+    # ⚠️ The handler repoints Shift Types deliberately: a flip can swing the
+    # list's own NAME between `1st-3rd` and `2nd-4th`, and a shift left on the old
+    # name would silently receive its MIRROR's calendar.
+    "Holiday List": {
+        "on_update": "caf.caf.holiday_lists.on_public_holidays_changed",
+    },
     "Leave Application": {
         "before_submit": "caf.caf.appraisal_refresh.check_leave_window",
         "on_submit": "caf.caf.appraisal_refresh.on_leave_application_submit",

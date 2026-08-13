@@ -45,7 +45,10 @@ Re-runnable: an existing generated list is rebuilt in place, so its name — and
 therefore every Employee and Shift Type pointing at it — survives.
 """
 
+import re
+
 import frappe
+from frappe import _
 from frappe.utils import getdate, strip_html
 from datetime import date, timedelta
 
@@ -234,17 +237,24 @@ def _write_list(name: str, year: int, rows: list):
     return doc.name
 
 
-def generate_holiday_lists(year: int, repoint: bool = True) -> dict:
+def generate_holiday_lists(year: int, repoint: bool = True,
+                           rewrite_public: bool = True) -> dict:
     """One Holiday List per distinct working week for `year`.
 
     Returns {pattern_label: list_name}. With `repoint`, every Shift Type is
     pointed at the list for its own pattern.
+
+    ⚠️ `rewrite_public=False` is for the `on_update` hook: it runs *inside* the
+    save of `CAF Public Holidays <year>`, and rewriting the document currently
+    being saved is how you earn a `TimestampMismatchError`. The content would be
+    identical anyway — that list is the source, not a product.
     """
     year = int(year)
     public = collect_public_holidays(year)
     ph_dates = {r["holiday_date"] for r in public}
 
-    _write_list(PH_LIST.format(year=year), year, list(public))
+    if rewrite_public:
+        _write_list(PH_LIST.format(year=year), year, list(public))
 
     ph_desc = {r["holiday_date"]: r["description"] for r in public}
 
@@ -313,6 +323,93 @@ def generate_holiday_lists(year: int, repoint: bool = True) -> dict:
                 frappe.db.set_value("Shift Type", shift, "holiday_list", name)
 
     return made
+
+
+def rest_saturdays_in(list_name) -> set:
+    """The Saturdays this list calls a rest day. Used to diff a regeneration."""
+    return {d for d in frappe.get_all(
+        "Holiday", filters={"parent": list_name, "weekly_off": 1},
+        pluck="holiday_date") if getdate(d).weekday() == 5}
+
+
+def _alt_lists(year: int) -> list:
+    return frappe.get_all(
+        "Holiday List",
+        filters={"name": ("like", f"CAF Alt Sat%{year}")}, pluck="name")
+
+
+def on_public_holidays_changed(doc, method=None):
+    """`Holiday List.on_update` — MG's requirement, 2026-08-13.
+
+        *"submission of holiday list change needs to trigger code to change the
+        alt-sat workday and restday sequence in the holiday list for
+        shift_type.altSat = 1"*
+
+    🔴 THE MECHANISM, MEASURED 2026-08-13 (§6.13a), not assumed:
+
+        · only a Saturday holiday moves the sequence. A Monday one changes
+          NOTHING — the walk steps Saturday to Saturday and never sees it.
+        · a Saturday holiday flips EVERY Saturday after it, to year end.
+          Measured: inserting one moved 33 of them.
+        · and it is SYMMETRIC — removing it restores the calendar exactly.
+
+    ⚠️ **`repoint` must stay True, and this is the trap.** The list's NAME comes
+    from `alt_label()`, which reads the first Saturday the pattern rests on. A
+    flip moves that Saturday, so the label can swing `1st-3rd` ⇄ `2nd-4th` — and
+    a Shift Type left pointing at its old name would silently receive its
+    MIRROR's calendar. Every employee on it would have work and rest inverted for
+    the rest of the year, with nothing raised anywhere.
+
+    ⚠️ **It does NOT re-resolve anything.** Regenerating can move hundreds of
+    past Saturdays; rewriting that many submitted Finger Logs from a `Holiday
+    List` save would be an enormous silent side effect of a small edit. The diff
+    is REPORTED instead, which is MG's own procedure: *"identify the diff between
+    the new list and the old, then for each diff and each employee check swap ➜
+    leave ➜ Finger Log + Attendance, and amend."*
+    """
+    if frappe.flags.get("caf_regenerating"):
+        return                                   # our own writes, coming back round
+
+    m = re.match(r"^CAF Public Holidays (\d{4})$", doc.name or "")
+    if not m:
+        return                                   # a generated list, or somebody else's
+    year = int(m.group(1))
+
+    before = {n: rest_saturdays_in(n) for n in _alt_lists(year)}
+
+    frappe.flags.caf_regenerating = True
+    try:
+        # repoint=True — see the trap above. rewrite_public=False — we are inside
+        # that document's own save.
+        generate_holiday_lists(year, repoint=True, rewrite_public=False)
+        sync_employee_holiday_lists(year)        # FDR6: the shift's list flows down
+    finally:
+        frappe.flags.caf_regenerating = False
+
+    after = {n: rest_saturdays_in(n) for n in _alt_lists(year)}
+
+    moved = {}
+    for name in set(before) | set(after):
+        diff = before.get(name, set()) ^ after.get(name, set())
+        if diff:
+            moved[name] = sorted(diff)
+
+    if not moved:
+        return {"changed": {}, "count": 0}
+
+    total = sum(len(v) for v in moved.values())
+    lines = "".join(
+        f"<li><b>{frappe.utils.escape_html(n)}</b>: {len(v)} Saturdays, "
+        f"{v[0]} to {v[-1]}</li>" for n, v in sorted(moved.items()))
+    frappe.msgprint(
+        _("<p>The alternate-Saturday calendars were regenerated: "
+          "<b>{0} Saturdays moved</b>.</p><ul>{1}</ul>"
+          "<p>Work and rest have changed on those dates. Any Finger Log, "
+          "Attendance, Leave Application or Shift Assignment already filed "
+          "against them needs checking and amending.</p>").format(total, lines),
+        title=_("Alternate-Saturday calendar changed"), indicator="orange")
+
+    return {"changed": moved, "count": total}
 
 
 def sync_employee_holiday_lists(year: int) -> int:
