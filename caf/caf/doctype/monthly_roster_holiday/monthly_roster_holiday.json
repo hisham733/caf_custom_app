@@ -1,0 +1,70 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-08-13 00:00:00",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "holiday_name",
+  "holiday_date",
+  "day_of_week",
+  "column_break_1",
+  "already_in_list",
+  "added_to_list"
+ ],
+ "fields": [
+  {
+   "fieldname": "holiday_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Holiday",
+   "reqd": 1
+  },
+  {
+   "fieldname": "holiday_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Date",
+   "reqd": 1
+  },
+  {
+   "description": "Stated independently of the date, on purpose. If the two disagree the form refuses to save and says so — the same checksum idea as work + short = net.",
+   "fieldname": "day_of_week",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Day",
+   "options": "\nMonday\nTuesday\nWednesday\nThursday\nFriday\nSaturday\nSunday",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Already present in CAF Public Holidays for that year when this form was saved.",
+   "fieldname": "already_in_list",
+   "fieldtype": "Check",
+   "label": "Already in the list",
+   "read_only": 1
+  },
+  {
+   "description": "Appended to CAF Public Holidays on submit, which regenerates the alternate-Saturday calendars (OD-74).",
+   "fieldname": "added_to_list",
+   "fieldtype": "Check",
+   "label": "Added on submit",
+   "read_only": 1
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-08-13 00:00:00",
+ "modified_by": "Administrator",
+ "module": "Caf",
+ "name": "Monthly Roster Holiday",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "holiday_date",
+ "sort_order": "ASC",
+ "states": []
+}

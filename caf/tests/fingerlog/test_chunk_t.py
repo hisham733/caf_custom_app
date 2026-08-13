@@ -313,7 +313,8 @@ def run_all():
                                      test_chunk7_dashboard, test_chunk7_report,
                                      test_chunk7_roster, test_chunk7_swap,
                                      test_chunk7_whoisoff, test_chunk_r,
-                                     test_od61_guard, test_swap_leave_guard)
+                                     test_monthly_roster, test_od61_guard,
+                                     test_swap_leave_guard)
     # ⚠️ `test_e7_leave_count` is DELIBERATELY absent and must stay absent until
     # the Chunk 6 fix lands. It asserts the correct leave-day counts, which the
     # code does not yet produce — a matrix that is red on purpose is one nobody
@@ -349,6 +350,11 @@ def run_all():
                       ("chunk 7.5 shift roster", test_chunk7_roster),
                       ("S5/S6 leave guard", test_swap_leave_guard),
                       ("alternate Saturdays", test_alt_saturday),
+                      # ⚠️ Runs AFTER the alt-Saturday suite, and both bend the
+                      # live Holiday Lists. Each restores inside its own run and
+                      # asserts it (ALT-HOOK-RESTORE / ROSTER-RESTORE), so the
+                      # sequencing is what keeps them from overlapping.
+                      ("monthly roster + gate", test_monthly_roster),
                       ("chunk T enriched", sys.modules[__name__])):
         mod.RESULTS.clear()
         ok = mod.run()

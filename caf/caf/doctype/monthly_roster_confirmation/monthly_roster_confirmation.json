@@ -1,0 +1,133 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-08-13 00:00:00",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "month_start",
+  "month_label",
+  "column_break_head",
+  "no_new_holidays",
+  "section_holidays",
+  "holidays",
+  "section_saturdays",
+  "saturdays",
+  "section_amended",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "description": "Any date in the month being confirmed; it is normalised to the 1st.",
+   "fieldname": "month_start",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Month",
+   "reqd": 1
+  },
+  {
+   "fieldname": "month_label",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Cycle",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_head",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The answer 11 months out of 12. Tick it and leave the table empty.",
+   "fieldname": "no_new_holidays",
+   "fieldtype": "Check",
+   "label": "No new holidays this month"
+  },
+  {
+   "fieldname": "section_holidays",
+   "fieldtype": "Section Break",
+   "label": "New public or company holidays"
+  },
+  {
+   "description": "On submit these are appended to CAF Public Holidays, which regenerates the alternate-Saturday calendars.",
+   "fieldname": "holidays",
+   "fieldtype": "Table",
+   "label": "Holidays",
+   "options": "Monthly Roster Holiday"
+  },
+  {
+   "fieldname": "section_saturdays",
+   "fieldtype": "Section Break",
+   "label": "Alternate-Saturday roster — confirm, do not re-enter"
+  },
+  {
+   "description": "Generated from the shift's Holiday List. Untick any row that is wrong and say so in a comment; the roster screen shows the same thing in a grid.",
+   "fieldname": "saturdays",
+   "fieldtype": "Table",
+   "label": "Saturdays",
+   "options": "Monthly Roster Saturday",
+   "read_only": 0
+  },
+  {
+   "fieldname": "section_amended",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Monthly Roster Confirmation",
+   "print_hide": 1,
+   "read_only": 1
+  }
+ ],
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-08-13 00:00:00",
+ "modified_by": "Administrator",
+ "module": "Caf",
+ "name": "Monthly Roster Confirmation",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "amend": 1,
+   "cancel": 1,
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "HR Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "HR User"
+  },
+  {
+   "amend": 1,
+   "cancel": 1,
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "month_start",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "month_label",
+ "track_changes": 1
+}

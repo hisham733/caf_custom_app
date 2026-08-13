@@ -549,6 +549,17 @@ doc_events = {
     "Holiday List": {
         "on_update": "caf.caf.holiday_lists.on_public_holidays_changed",
     },
+    # 🔴 MG's "make it costly" gate, OD-71. Ingress can still be downloaded and
+    # the log can still be SAVED - only submit waits, so the draft is HR's queue,
+    # the same shape as OD-58's Not Full Day.
+    # ⚠️ OFF until `HR Settings.caf_roster_gate_from` is set. Every imported July
+    # row and every test fixture predates the form, so an ungated version would
+    # refuse the whole existing dataset. It is keyed on the WORK DATE's month,
+    # never on today.
+    "Finger Log": {
+        "before_submit": "caf.caf.doctype.monthly_roster_confirmation"
+                         ".monthly_roster_confirmation.require_confirmed_month",
+    },
     "Leave Application": {
         "before_submit": "caf.caf.appraisal_refresh.check_leave_window",
         "on_submit": "caf.caf.appraisal_refresh.on_leave_application_submit",
