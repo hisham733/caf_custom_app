@@ -234,19 +234,57 @@ def run():
               f"({sum(counts.values())} rows) rather than the rows themselves, "
               f"so `bench execute` does not bury the report in its own output")
 
-        # -------------------------------------------------------- LA-CLIFF
-        # Found by running the rule over EVERYBODY instead of over the eight
-        # people it was fitted to.
-        cliff = la.band_discontinuity(YEAR)
-        c19 = entitlement(date(2025, 5, 31), YEAR)       # 19 months
-        c24 = entitlement(date(2024, 12, 31), YEAR)      # 24 months
-        check("LA-CLIFF",
-              len(cliff) > 0 and c19["al"] > c24["al"]
-              and all(19 <= c["months"] <= 23 for c in cliff),
-              f"🔴 the rule has a cliff: 19 months gives {c19['al']} annual "
-              f"days, 24 months gives {c24['al']}. {len(cliff)} employees sit "
-              f"in the 19–23 month window and are entitled to MORE annual "
-              f"leave than a colleague with two full years")
+        # ---------------------------------------------------- LA-CUMULATIVE 🔴
+        # 🔴 THIS REPLACES A TEST THAT ASSERTED A DEFECT THAT DOES NOT EXIST.
+        # LA-CLIFF compared SINGLE-CYCLE annual figures across two people and
+        # concluded that 23 months earns more than 24 — §F1d, a red assertion
+        # about the wrong thing. It is meaningless: the 23-month employee's 15
+        # days is his FIRST annual grant ever, the 27-month employee's 12 is
+        # her SECOND. Measured across every cycle since joining, 15 vs 22.
+        # MG's question is what caught it: *"how do you get 15 at 23 months?"*
+        c23 = la.cumulative_annual(date(2025, 1, 1), YEAR)   # 23 mo at cycle end
+        c27 = la.cumulative_annual(date(2024, 9, 1), YEAR)   # 27 mo at cycle end
+        check("LA-CUMULATIVE",
+              c27 > c23,
+              f"more service earns more annual leave when both cycles are "
+              f"counted: 27 months ➜ {c27:g} days vs 23 months ➜ {c23:g}. The "
+              f"single-cycle numbers (12 vs 15) say the opposite and are the "
+              f"wrong comparison — one is a second grant, the other a first")
+
+        # ------------------------------------------------------ LA-MONOTONIC
+        # The honest version of the cliff check: sweep EVERY joining month, not
+        # the employees who happen to exist, and count where less service earns
+        # more. The answer is ZERO — the rule is monotonic.
+        #
+        # 🔴 §F2: a zero is a red flag until the check has been watched finding
+        # something. The positive control is the TRUNCATED window that produced
+        # my own wrong answer — counting only the last two cycles resurrects the
+        # phantom inversion, so the detector is provably able to report one.
+        inv = la.cumulative_inversions(YEAR)
+        phantom = la.cumulative_inversions(YEAR, since=YEAR - 1)
+        check("LA-MONOTONIC",
+              len(inv) == 0 and len(phantom) > 0,
+              f"the rule is MONOTONIC — {len(inv)} inversions across a 4-year "
+              f"sweep of joining dates: no extra month of service ever earns "
+              f"less annual leave. Positive control: truncating the count to "
+              f"the last two cycles reports {len(phantom)} phantom inversion(s)"
+              + (f" (+{phantom[0]['gap']:g} days at "
+                 f"{phantom[0]['less_service']['months']}mo)" if phantom else "")
+              + ", which is the error that produced the withdrawn OD-77")
+
+        # --------------------------------------------------------- LA-LATE 🔴
+        # The real consequence of no-carry-over + the anniversary start, and it
+        # only appears when the two rules are applied TOGETHER.
+        late = la.late_opening_grants(YEAR)
+        unusable = [r for r in late if r["unusable"]]
+        check("LA-LATE",
+              len(unusable) > 0 and all(r["open_days"] < 60 for r in unusable)
+              and min(r["open_days"] for r in late) < 40,
+              f"🔴 {len(unusable)} first annual grants open too late to be "
+              f"taken. Worst: {unusable[0]['name'][:24]} — "
+              f"{unusable[0]['days']:g} days opening {unusable[0]['opens']}, "
+              f"{unusable[0]['open_days']} days before they expire "
+              f"({unusable[0]['per_open_week']:g}/week of open time). OD-79")
 
         # ================================================== the writer
         # --------------------------------------------------- LA-APPLY-OFF 🔴

@@ -36,11 +36,12 @@ their joining date, in the same year they joined. Applying the anniversary rule
 to medical would postpone every new joiner's sick leave by a year, which is
 both against the Employment Act and against what CAF already does.
 
-⚠️ ANNUAL's own rule is NOT unanimous in the data — 3 rows fit the anniversary
-and 3 fit 1 January (Rajaindran, Kavithaa, Tanisha, all joined early 2025). The
-anniversary is the reading that ENFORCES the stated business rule, so it is the
-one built here, and `plan()` lists those 3 as START differences rather than
-hiding them. See the register row for the decision.
+✅ ANNUAL's rule was NOT unanimous in the data — 3 rows fit the anniversary and 3
+fit 1 January (Rajaindran, Kavithaa, Tanisha, all joined early 2025). **MG
+confirmed the anniversary reading on 2026-08-13** (*"AL can only be utilised
+after service > 1 year — this has been confirmed"*), so the three 1-January rows
+are records that VIOLATE the rule, not evidence for a second one. `plan()` lists
+them as START differences rather than hiding them. OD-78, closed.
 
 🔴 WHY THIS DOES NOT GO THROUGH A LEAVE POLICY ASSIGNMENT
 ----------------------------------------------------------
@@ -256,24 +257,90 @@ def diff(cycle=CYCLE, include_inactive=False):
     return rows
 
 
-def band_discontinuity(cycle=CYCLE):
-    """🔴 Where one MORE month of service produces FEWER annual days.
+def cumulative_annual(doj, through=CYCLE, since=None):
+    """Total annual GRANTED across every cycle from joining to `through`.
 
-    Found by running the plan over everybody rather than over the eight people
-    the formula was fitted to. The pro-rated annual figure is months/12 x 8, so
-    at 19 months it is 12.67 -> 12.5 days, and it keeps climbing to 15.33 -> 15
-    at 23 months. At 24 months the 2-5y band takes over at a flat **12**.
+    🔴 This exists because the single-cycle number is misleading, and I was
+    misled by it. Comparing one cycle's annual figure across two people at
+    different points in their catch-up says nothing: the 23-month employee's
+    15 days is his FIRST AND ONLY annual grant ever, while the 27-month
+    employee's 12 is her SECOND — she already received 10 in the cycle before.
+    Measured across both cycles the 27-month employee has 22 and the 23-month
+    employee 15, which is the right way round.
 
-        18 mo -> 12.0      23 mo -> 15.0      <- the peak
-        19 mo -> 12.5      24 mo -> 12.0      <- the cliff, -3 days
+    MG asked the question that exposed it: *"how do you get AL = 15 at 23
+    months?"* — because he was granted nothing at all in the cycle before.
+    """
+    doj = getdate(doj)
+    since = since or doj.year
+    total = 0.0
+    for cy in range(since, int(through) + 1):
+        if start_for(ANNUAL, doj, cy):
+            total += entitlement(doj, cy)["al"]
+    return total
 
-    Everyone between 19 and 23 completed months is therefore entitled to MORE
-    annual leave than a colleague with two full years. Medical has no such
-    cliff, because the MC cap at 14 holds the pro-rated figure below the 18-day
-    band. Annual has no cap, and that asymmetry is what produces this.
 
-    Returns the affected employees so the size of the problem is a number, not
-    an impression.
+def cumulative_inversions(through=CYCLE, span_years=4, since=None):
+    """Where LESS service earns MORE annual leave, cumulatively.
+
+    A real defect in this rule looks like this and nothing else. Swept over
+    every joining month in the window rather than over the employees who happen
+    to exist — a defect nobody currently stands on is still a defect, and the
+    population changes every time somebody is hired.
+
+    ✅ **Measured 2026-08-13 over a 4-year sweep: ZERO.** The rule is monotonic.
+    Every extra month of service earns the same or more annual leave, counted
+    across every cycle since joining.
+
+    🔴 TWO WRONG ANSWERS PRECEDED THAT ONE, AND BOTH HAD THE SAME SHAPE.
+    First, comparing a SINGLE cycle: 23 months shows 15 days and 24 months shows
+    12, which looks like a 3-day cliff. It is not a comparison at all — the 15
+    is a first grant covering 23 months, the 12 is a second grant. Then,
+    counting only 2025 and 2026: joined 2023-12-01 totals 24 and joined
+    2024-01-01 totals 27, which looks like a +3 inversion. Also wrong — the
+    2023 joiner was granted 8 more days in 2024, outside the window. The window
+    was truncated both times, and each truncation invented a defect.
+
+    ⚠️ `since` exists to make that FALSIFIABLE rather than merely asserted.
+    Passing `since=through-1` reproduces the truncated sweep and returns the
+    phantom inversion, which is what proves the detector can find one at all
+    (§F2 — a zero is a red flag until the check has been watched finding
+    something). Test LA-MONOTONIC uses it as its positive control.
+    """
+    rows, out = [], []
+    d = date(int(through), 6, 1)
+    stop = date(int(through) - span_years, 1, 1)
+    while d >= stop:
+        rows.append((d, entitlement(d, through)["months"],
+                     cumulative_annual(d, through, since=since or d.year)))
+        d = date(d.year - 1, 12, 1) if d.month == 1 else date(d.year, d.month - 1, 1)
+    rows.reverse()                       # most service first
+    for i in range(1, len(rows)):
+        if rows[i][2] > rows[i - 1][2]:
+            out.append({"more_service": {"joined": str(rows[i - 1][0]),
+                                         "months": rows[i - 1][1],
+                                         "annual": rows[i - 1][2]},
+                        "less_service": {"joined": str(rows[i][0]),
+                                         "months": rows[i][1],
+                                         "annual": rows[i][2]},
+                        "gap": round(rows[i][2] - rows[i - 1][2], 2)})
+    return out
+
+
+def late_opening_grants(cycle=CYCLE, min_days_per_week=1.0):
+    """🔴 A first annual grant that opens too late in the cycle to be TAKEN.
+
+    This is the real consequence of MG's *"no carry-over regardless of years of
+    service"*, and it only becomes visible once the anniversary start (OD-78)
+    and the no-carry-over rule are applied together.
+
+    Nurul Aisyah joined 2025-12-02. Her first annual allocation is 8 days and
+    it opens on 2026-12-02 — **30 calendar days before it expires**. To use it
+    she would have to be on leave for 8 of her last ~21 working days of the
+    year. Zin Min Paing has 8.5 days and 50 days to take them.
+
+    Returns anyone who would have to take more than `min_days_per_week` days of
+    leave per open week to consume the grant before it expires.
     """
     jan1, dec31 = cycle_bounds(cycle)
     out = []
@@ -282,13 +349,17 @@ def band_discontinuity(cycle=CYCLE):
                             order_by="date_of_joining"):
         if not e.date_of_joining:
             continue
-        w = entitlement(e.date_of_joining, cycle)
-        if w["rule"] != "pro-rated" or w["months"] < 19:
-            continue
-        out.append({"name": e.employee_name, "joined": str(e.date_of_joining),
-                    "months": w["months"], "al": w["al"], "band_above": 12,
-                    "excess": round(w["al"] - 12, 2)})
-    return out
+        s = start_for(ANNUAL, e.date_of_joining, cycle)
+        if not s or s == jan1:
+            continue                     # not a first grant opening mid-cycle
+        open_days = (dec31 - s).days + 1
+        days = entitlement(e.date_of_joining, cycle)["al"]
+        rate = days / (open_days / 7) if open_days else 0
+        out.append({"name": e.employee_name, "joined": str(getdate(e.date_of_joining)),
+                    "opens": str(s), "open_days": open_days, "days": days,
+                    "per_open_week": round(rate, 2),
+                    "unusable": rate > min_days_per_week})
+    return sorted(out, key=lambda r: r["open_days"])
 
 
 # ------------------------------------------------------------------- reports
@@ -346,17 +417,29 @@ def plan(cycle=CYCLE):
         if len(crossed) > 12:
             print(f"   ... and {len(crossed) - 12} more")
 
-    cliff = band_discontinuity(cycle)
-    if cliff:
-        print(f"\n🔴 RULE DEFECT — the annual band cliff at 24 months  ({len(cliff)} affected)")
-        print("   Pro-rated annual keeps climbing to 15 days at 23 months, then the")
-        print("   2-5y band drops it to a flat 12. One more month of service costs")
-        print("   these people up to 3 days. See band_discontinuity().")
-        print(f"   {'employee':32s} {'joined':11s} {'mo':>3s} {'gets':>6s} "
-              f"{'2-5y band':>10s} {'excess':>7s}")
-        for c in cliff:
-            print(f"   {c['name'][:32]:32s} {c['joined']:11s} {c['months']:>3} "
-                  f"{c['al']:>6g} {c['band_above']:>10} {c['excess']:>7g}")
+    late = [r for r in late_opening_grants(cycle) if r["unusable"]]
+    if late:
+        print(f"\n🔴 CANNOT BE TAKEN — a first annual grant that opens too late "
+              f"({len(late)})")
+        print("   No carry-over means whatever is not taken by 31 Dec is gone. These")
+        print("   grants open so late in the cycle that consuming them would mean")
+        print("   being on leave for most of the remaining working days. OD-79.")
+        print(f"   {'employee':32s} {'joined':11s} {'opens':11s} {'open':>5s} "
+              f"{'days':>6s} {'per week':>9s}")
+        for r in late:
+            print(f"   {r['name'][:32]:32s} {r['joined']:11s} {r['opens']:11s} "
+                  f"{r['open_days']:>5} {r['days']:>6g} {r['per_open_week']:>9.2f}")
+
+    inv = cumulative_inversions(cycle)
+    if inv:
+        print(f"\n⚠️ LESS SERVICE, MORE LEAVE — cumulative inversions  ({len(inv)})")
+        print("   Measured across EVERY cycle since joining, not one cycle in")
+        print("   isolation. Inherent to accruing at 8/yr then paying a flat 12/yr.")
+        for i in inv:
+            a, b = i["more_service"], i["less_service"]
+            print(f"   joined {a['joined']} ({a['months']}mo) gets {a['annual']:g}  vs  "
+                  f"joined {b['joined']} ({b['months']}mo) gets {b['annual']:g}  "
+                  f"(+{i['gap']:g})")
 
     print(f"\n{'=' * 104}")
     print("SUMMARY")
@@ -446,11 +529,16 @@ def apply(cycle=CYCLE):
     if not APPLY_ARMED:
         frappe.throw(
             "apply() is disarmed. Chunk 6a is a DRY RUN until MG says otherwise.\n"
-            "Read `plan()` first. Two things must be settled before this may run:\n"
-            "  1. the ANNUAL from_date for people who joined the previous cycle "
-            "(anniversary vs 1 January — the records hold 3 of each)\n"
-            "  2. whether FBR29 group A is correct, or is 58 people missing an "
-            "entitlement HR never recorded\n"
+            "Read `plan()` first. Two things are still open, and BOTH change what "
+            "would be written:\n"
+            "  1. OD-79 — 2 of the 6 MISSING rows are grants that open too late "
+            "to be taken (Nurul Aisyah: 8 days opening 2026-12-02). Creating them "
+            "records an entitlement that expires almost immediately.\n"
+            "  2. FBR29 group A — is 58 people holding nothing correct, or is it "
+            "an omission? HR confirms; the plan lists them.\n"
+            "(OD-78 is CLOSED: MG confirmed annual opens at 1 year of service. "
+            "OD-77 was WITHDRAWN — the 24-month cliff was a single-cycle "
+            "comparison error, see cumulative_annual().)\n"
             "Then set APPLY_ARMED = True in caf/caf/leave_allocation.py.")
     raise NotImplementedError(
         "The bulk pass is deliberately unwritten. When MG arms this, it loops "
