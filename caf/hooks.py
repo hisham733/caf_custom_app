@@ -561,6 +561,14 @@ doc_events = {
                          ".monthly_roster_confirmation.require_confirmed_month",
     },
     "Leave Application": {
+        # CAF Chunk 6c (2026-08-13) - E7. Stock counts leave days against the
+        # employee's STATIC Holiday List, which cannot know that a swap moved
+        # which shift applies on a given date. This recounts the span through
+        # resolve_day_type(). ⚠️ It MUST stay a `validate` hook: doc_events run
+        # AFTER the controller's own validate, which is what lets it overwrite
+        # the stock figure. The ledger derives from `total_leave_days`, so
+        # correcting the document corrects the balance.
+        "validate": "caf.caf.leave_days.recount_leave_days",
         "before_submit": "caf.caf.appraisal_refresh.check_leave_window",
         "on_submit": "caf.caf.appraisal_refresh.on_leave_application_submit",
         "on_cancel": "caf.caf.appraisal_refresh.on_leave_application_cancel",

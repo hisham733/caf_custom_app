@@ -1,17 +1,18 @@
-"""E7 — a leave spanning a swapped Saturday is counted wrong.  EXPECTED TO FAIL.
+"""E7 — a leave spanning a swapped Saturday.  ✅ FIXED 2026-08-13 (Chunk 6c), 4/4.
 
     bench --site <site> execute caf.tests.fingerlog.test_e7_leave_count.run
 
-🔴 THIS SUITE IS DELIBERATELY **NOT** IN `run_all()`, AND MUST NOT BE ADDED
-   UNTIL THE CHUNK 6 FIX LANDS.
----------------------------------------------------------------------------
-It asserts the CORRECT day counts, which the code does not produce today. Adding
-it to the matrix would turn the run red for a defect that is known, measured and
-scheduled — and a matrix that is red on purpose is a matrix nobody reads. Run it
-by hand; it prints the size of the gap.
+✅ **NOW IN `run_all()`.** It was written BEFORE the fix and deliberately kept
+out of the matrix while it stood at **2/4** — a matrix that is red on purpose is
+a matrix nobody reads. E7-GAIN and E7-LOSE were therefore **watched failing for
+a known reason and then watched passing**, which is §F3's mutation proof
+obtained the right way round: the assertions are known to be capable of going
+red, because they were red.
 
-Written now, at MG's instruction (2026-08-13: *"also don't forget to write test
-for it"*), so the number is watched rather than remembered.
+The fix is `caf/caf/leave_days.py`, hooked to Leave Application's `validate`.
+
+Written at MG's instruction (2026-08-13: *"also don't forget to write test for
+it"*), so the number was watched rather than remembered.
 
 WHAT IS WRONG, AND WHERE
 ------------------------
@@ -28,23 +29,26 @@ all right. Stock's leave arithmetic simply never asks CAF.
 the person who gains the working Saturday gets a free leave day, and their mirror
 partner, who gains the rest Saturday, is overcharged one.
 
-THE AGREED FIX — option C (MG, 2026-08-13)
-------------------------------------------
+THE FIX — option C (MG, 2026-08-13)  ✅ BUILT
+---------------------------------------------
 Not an override of `get_number_of_leave_days()` (option A): that is the function
-payroll and allocation also call. Instead a hook on **Leave Application's own
-`validate`** — after stock computes `total_leave_days`, adjust it by the
-assignment-driven day types in the span.
+payroll and allocation also call, and it is whitelisted so the form previews
+through it. Instead a hook on **Leave Application's own `validate`** — after
+stock computes `total_leave_days`, recount the span through `resolve_day_type`.
 
-⚠️ **One thing to confirm before building C:** read `create_leave_ledger_entry()`
-and verify the ledger is derived from `total_leave_days` rather than recomputed.
-Six measurements matched exactly, which points that way but does not prove it.
+✅ **The precondition was CONFIRMED before a line was written**, as this file
+demanded. `create_leave_ledger_entry()` builds `leaves=self.total_leave_days *
+-1` — derived, not recomputed — and across all **693** submitted applications
+**0** disagree with their ledger. The six matches that "pointed that way" are now
+693. (47 rows show a ledger summing to zero; every one is an *amended* 2025 row
+carrying a reversing pair — document history, not a second source.)
 
 FIXTURES
 --------
 **2026-08-31 .. 2026-09-05**, not June. June's four Saturdays are all owned by
-suites that ARE in the matrix, and September holds no imported data at all — so
-this suite can be run standalone at any time without colliding with them. If it
-is ever added to `run_all()`, move it to a date no other suite owns.
+suites that ARE in the matrix, and neither August nor September holds imported
+data — the importer covers 2026-07 only. That is what makes this suite safe to
+add to `run_all()` without moving it: it owns dates nothing else touches.
 """
 
 import frappe

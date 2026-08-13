@@ -313,14 +313,16 @@ def run_all():
                                      test_chunk7_dashboard, test_chunk7_report,
                                      test_chunk7_roster, test_chunk7_swap,
                                      test_chunk7_whoisoff, test_chunk_r,
-                                     test_leave_allocation, test_leave_policy,
-                                     test_monthly_roster, test_od61_guard,
-                                     test_readiness, test_swap_leave_guard)
+                                     test_e7_leave_count, test_leave_allocation,
+                                     test_leave_policy, test_monthly_roster,
+                                     test_od61_guard, test_readiness,
+                                     test_swap_leave_guard)
     from caf.scripts.naming_series_audit import _gaps
-    # ⚠️ `test_e7_leave_count` is DELIBERATELY absent and must stay absent until
-    # the Chunk 6 fix lands. It asserts the correct leave-day counts, which the
-    # code does not yet produce — a matrix that is red on purpose is one nobody
-    # reads. Run it by hand; it prints the size of the gap.
+    # ✅ `test_e7_leave_count` JOINED THE MATRIX 2026-08-13 with the Chunk 6c fix.
+    # It was held out while it stood at 2/4 — a matrix that is red on purpose is
+    # one nobody reads — so its two key assertions were watched failing for a
+    # known reason and then watched passing. That is §F3 obtained the right way
+    # round, and it is why they are trusted now.
     # `__import__(__name__)` returns the top-level `caf` package, not this module.
     #
     # The imported July data is the canary: if a suite's cleanup is scoped wrongly
@@ -372,6 +374,11 @@ def run_all():
                       # — the order is what keeps the two fixture pickers from
                       # selecting the same person.
                       ("chunk 6a leave allocation", test_leave_allocation),
+                      # ⚠️ Owns 2026-08-31 .. 09-05, which nothing else touches —
+                      # the importer covers July only and every other suite is in
+                      # June. It creates a real SWAP and real leave, so it must
+                      # run after the suites that count Shift Assignments.
+                      ("chunk 6c E7 leave count", test_e7_leave_count),
                       ("readiness audit", test_readiness),
                       ("chunk T enriched", sys.modules[__name__])):
         mod.RESULTS.clear()
