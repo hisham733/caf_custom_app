@@ -1471,7 +1471,7 @@ def get_recipe_bom_data(recipe_name):
     """
     bom = frappe.db.get_value(
         "BOM",
-        {"item": recipe_name, "docstatus": 1, "is_active": 1},
+        {"item": recipe_name, "docstatus": 1, "is_active": 1, "is_default": 1},
         ["name", "custom_yield", "custom_raw_materails"],
         as_dict=True,
         order_by="modified desc",

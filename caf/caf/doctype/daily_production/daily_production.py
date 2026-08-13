@@ -144,6 +144,7 @@ class DailyProduction(Document):
                     {"item": row.recipe_name, "is_default": 1, "is_active": 1, "docstatus": 1},
                     ["custom_yield", "custom_raw_materails"],
                     as_dict=True,
+                    order_by="modified desc",
                 )
 
             bom = recipe_cache[row.recipe_name]
@@ -1248,13 +1249,18 @@ def get_bom_info(item_code: str) -> dict:
         item_code: Item code to look up
 
     Returns:
-        Dict with "bom_total" and "bom_yield", or None for No Cooking
+        Dict with "bom_total" and "bom_yield", or None if no default active BOM
     """
     if item_code == NO_COOKING:
         return
-    bom = frappe.db.get_value("BOM", {"item": item_code, "is_default": 1}, "name")
+    bom = frappe.db.get_value(
+        "BOM",
+        {"item": item_code, "is_default": 1, "is_active": 1, "docstatus": 1},
+        "name",
+        order_by="modified desc",
+    )
     if not bom:
-        frappe.throw(_("No Default BOM found for item {0}").format(item_code))
+        return
 
     bom_items = frappe.get_all("BOM Item", filters={"parent": bom}, fields=["item_code", "qty"])
     bom_total = sum(
@@ -1263,9 +1269,7 @@ def get_bom_info(item_code: str) -> dict:
         for bi in bom_items
     )
 
-    bom_yield = frappe.db.get_value("BOM", bom, "custom_yield")
-    if not bom_yield:
-        frappe.throw(_("No Yield value found or Yield = 0 in BOM for item {0}").format(item_code))
+    bom_yield = frappe.db.get_value("BOM", bom, "custom_yield") or 0
 
     return {"bom_total": bom_total, "bom_yield": bom_yield}
 

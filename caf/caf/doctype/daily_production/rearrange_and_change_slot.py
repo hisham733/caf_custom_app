@@ -133,8 +133,7 @@ def _get_movable_fields(child_doctype: str) -> list:
     meta = frappe.get_meta(child_doctype)
     fixed = {
         "recipe_cook_workstaion", "recipe_cook_round", "link_id",
-        "rq_status", "custom_yield", "total_input", "total_output",
-        "custom_pair_id", "idx", "name", "produ_status", "parent",
+        "rq_status", "custom_pair_id", "idx", "name", "produ_status", "parent",
     }
     return [
         f.fieldname for f in meta.fields

@@ -825,29 +825,19 @@ frappe.ui.form.on("Create ProExl Items", {
             current_row._max_packs = 7;
             current_row._raw_materials = 0;
         } else {
-            frappe.call('caf.caf.doctype.daily_production.daily_production.get_bom_info', {
-                item_code: current_row.recipe_name
-            }).then(r => {
-                if (r.message && r.message.bom_yield) {
-                    frappe.model.set_value(cdt, cdn, 'custom_yield', r.message.bom_yield);
-                } else {
-                    frappe.model.set_value(cdt, cdn, 'custom_yield', null);
-                }
-            }).catch(() => {
-                frappe.model.set_value(cdt, cdn, 'custom_yield', null);
-            });
+            delete current_row._raw_materials;
+            delete current_row._max_packs;
 
-            // Fetch pack count from BOM (matching WPD's get_recipe_bom_data)
+            // Fetch yield + pack count from BOM (aligned with the server recompute)
             frappe.call('caf.caf.page.production_schedule.production_schedule.get_recipe_bom_data', {
                 recipe_name: current_row.recipe_name
             }).then(r => {
                 if (r.message) {
                     current_row._max_packs = r.message.pack_count || 7;
                     current_row._raw_materials = r.message.raw_materials || 0;
-                    var ti = flt(r.message.raw_materials) * flt(current_row.size);
-                    frappe.model.set_value(cdt, cdn, 'total_input', ti);
-                    frappe.model.set_value(cdt, cdn, 'total_output', ti * flt(current_row.custom_yield));
+                    frappe.model.set_value(cdt, cdn, 'custom_yield', r.message.yield || 0);
                 }
+                dp_recompute_row_totals(frm, cdt, cdn);
             }).catch(() => {
                 current_row._max_packs = 7;
                 current_row._raw_materials = 0;
@@ -904,12 +894,7 @@ frappe.ui.form.on("Create ProExl Items", {
         validate_field_dependency(frm, cdt, cdn, 'size', 'recipe_name', 'Recipe Name');
         if (typeof window.apply_edit_restrictions === 'function') { window.apply_edit_restrictions(frm, cdt, cdn); }
         debounced_validate_pack(frm, cdt, cdn);
-        var r = locals[cdt][cdn];
-	if (r && r._raw_materials) {
-            var ti = flt(r._raw_materials) * flt(r.size);
-            frappe.model.set_value(cdt, cdn, 'total_input', ti);
-            frappe.model.set_value(cdt, cdn, 'total_output', ti * flt(r.custom_yield));
-        }
+        dp_recompute_row_totals(frm, cdt, cdn);
     },
     recipe_cook_workstaion: function(frm, cdt, cdn) { if (validate_field_dependency(frm, cdt, cdn, 'recipe_cook_workstaion', 'recipe_name', 'Recipe Name')) { try { validate_unique_cook_combination(frm, cdt, cdn); } catch (e) { frappe.model.set_value(cdt, cdn, 'recipe_cook_round', ''); } } },
     recipe_cook_round: function(frm, cdt, cdn) { if (validate_field_dependency(frm, cdt, cdn, 'recipe_cook_round', 'recipe_name', 'Recipe Name')) { try { validate_unique_cook_combination(frm, cdt, cdn); } catch (e) { frappe.model.set_value(cdt, cdn, 'recipe_cook_workstaion', ''); } } },
@@ -1077,7 +1062,7 @@ const ALWAYS_READ_ONLY = ['recipe_cook_workstaion', 'recipe_cook_round', 'link_i
 const SYSTEM_FIELDS = ['name', 'owner', 'creation', 'modified', 'modified_by', 'parent', 'parentfield', 'parenttype', 'idx', 'doctype'];
 // MR/PP travel with the recipe during a slot swap/rearrange; link_id stays fixed
 // to the slot so the server-side WO migration (by link_id) still works.
-const SWAP_EXTRA_FIELDS = ['mr_reference', 'production_plane'];
+const SWAP_EXTRA_FIELDS = ['mr_reference', 'production_plane', 'custom_yield', 'total_input', 'total_output'];
 
 /** Gets all user-data fields that are allowed to be moved or swapped */
 function get_moveable_fields(doctype) {
@@ -1087,6 +1072,76 @@ function get_moveable_fields(doctype) {
         .filter(f => SWAP_EXTRA_FIELDS.includes(f.fieldname) ||
             (!ALWAYS_READ_ONLY.includes(f.fieldname) && !SYSTEM_FIELDS.includes(f.fieldname) && !non_data_types.includes(f.fieldtype)))
         .map(f => f.fieldname);
+}
+
+/**
+ * Recompute a row's total_input / total_output from BOM raw materials + yield.
+ * Loads the BOM data lazily (per-recipe cache) so this works even after a
+ * reload, when `_raw_materials` is no longer cached on the client.
+ */
+function dp_recompute_row_totals(frm, cdt, cdn) {
+    const row = locals[cdt][cdn];
+    if (!row || !row.recipe_name || row.recipe_name === "No Cooking") return;
+
+    const apply = (raw, row_size, yield_pct) => {
+        const ti = flt(raw) * flt(row_size);
+        frappe.model.set_value(cdt, cdn, 'total_input', ti);
+        frappe.model.set_value(cdt, cdn, 'total_output', ti * flt(yield_pct));
+    };
+
+    if (row._raw_materials != null) {
+        apply(row._raw_materials, row.size, row.custom_yield);
+        return;
+    }
+    frappe.call('caf.caf.page.production_schedule.production_schedule.get_recipe_bom_data', {
+        recipe_name: row.recipe_name
+    }).then(r => {
+        if (r.message) {
+            row._max_packs = r.message.pack_count || 7;
+            row._raw_materials = r.message.raw_materials || 0;
+            if (row.custom_yield == null) {
+                frappe.model.set_value(cdt, cdn, 'custom_yield', r.message.yield || 0);
+            }
+            apply(row._raw_materials, row.size, row.custom_yield);
+        }
+    }).catch(() => { /* server recompute fills on save */ });
+}
+
+/**
+ * Recompute a dialog's staged total_input / total_output from BOM raw + yield.
+ * Lazy-loads the BOM data when the dialog's raw-materials cache is empty
+ * (after a reload the grid `_raw_materials` cache is gone), so changing size
+ * in the edit dialog always updates the totals live.
+ */
+function dp_dialog_recompute_totals(d) {
+    const recipe = d.get_value("recipe") || "";
+    if (!recipe || recipe === "No Cooking") return;
+    const sz = flt(d.get_value("size"));
+
+    const apply = () => {
+        const ti = flt(d._dp_raw_materials) * sz;
+        d.set_value("total_input", ti);
+        d.set_value("total_output", ti * flt(d.get_value("custom_yield")));
+    };
+
+    if (flt(d._dp_raw_materials)) {
+        apply();
+        return;
+    }
+    frappe.call({
+        method: "caf.caf.page.production_schedule.production_schedule.get_recipe_bom_data",
+        args: { recipe_name: recipe },
+        callback: function(r) {
+            if (r.message) {
+                d._dp_max_packs = r.message.pack_count || 7;
+                d._dp_raw_materials = r.message.raw_materials || 0;
+                if (flt(d.get_value("custom_yield")) === 0) {
+                    d.set_value("custom_yield", r.message.yield || 0);
+                }
+                apply();
+            }
+        }
+    });
 }
 
 // =================================================================
@@ -1550,15 +1605,7 @@ function show_dp_edit_dialog(frm, cdt, cdn) {
     };
 
     d.fields_dict.size.df.change = function() {
-        const recipe = d.get_value("recipe") || "";
-        if (!recipe || recipe === "No Cooking") return;
-        const sz = flt(d.get_value("size"));
-        const raw = flt(d._dp_raw_materials);
-        if (raw) {
-            const ti = raw * sz;
-            d.set_value("total_input", ti);
-            d.set_value("total_output", ti * flt(d.get_value("custom_yield")));
-        }
+        dp_dialog_recompute_totals(d);
         _dp_dialog_restrict(d);
         refresh_dialog_status_options(d, no_wo);
     };
@@ -1696,7 +1743,7 @@ function show_rearrange_dialog(frm, cdt, cdn) {
     const source_row = locals[cdt][cdn];
     let action_applied = false;
     const other_rows = frm.doc.production_table.filter(r =>
-        r.name !== source_row.name && r.recipe_name && r.recipe_name !== "No Cooking" && (r.produ_status == "New Schedule" || r.produ_status == "")
+        r.name !== source_row.name && r.recipe_name && r.recipe_name !== "No Cooking"
     );
 
     if (other_rows.length === 0) {
@@ -1706,17 +1753,16 @@ function show_rearrange_dialog(frm, cdt, cdn) {
         return;
     }
 
-    let slot_options = other_rows.map(r =>
-        `Slot ${r.idx} — ${r.recipe_name} | ${r.recipe_cook_workstaion || 'N/A'} (Rnd ${r.recipe_cook_round || '-'})`
-    );
+    const slot_label = r =>
+        `Slot ${r.idx} — ${r.recipe_name} | ${r.recipe_cook_workstaion || 'N/A'} (Rnd ${r.recipe_cook_round || '-'})${r.produ_status ? ` [${r.produ_status}]` : ''}`;
+
+    let slot_options = other_rows.map(slot_label);
 
     let d = new frappe.ui.Dialog({
         title: `🔀 Rearrange Slot (${source_row.recipe_cook_workstaion} - R${source_row.recipe_cook_round})`,
         fields: [{ fieldtype: 'Select', fieldname: 'target_slot', label: 'Swap With', options: ['', ...slot_options], reqd: 1 }],
         primary_action: function(values) {
-            const target_row = other_rows.find(r =>
-                `Slot ${r.idx} — ${r.recipe_name} | ${r.recipe_cook_workstaion || 'N/A'} (Rnd ${r.recipe_cook_round || '-'})` === values.target_slot
-            );
+            const target_row = other_rows.find(r => slot_label(r) === values.target_slot);
             if (!target_row) return;
 
             action_applied = true;
