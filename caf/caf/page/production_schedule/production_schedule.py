@@ -962,7 +962,7 @@ def submit_week(week_monday):
 def edit_week(week_monday):
     """Switch all DPs for the week Mon-Sat to Edit mode.
 
-    For each day Mon-Sat:
+    For each day Mon-Sat (skipping past days):
     - If a DP exists and is in Submitted state → flips workflow_state to ""
     - If no DP exists → creates an empty DP with No Cooking placeholders
 
@@ -973,11 +973,17 @@ def edit_week(week_monday):
 
     monday = getdate(week_monday)
     days = [monday + datetime.timedelta(days=i) for i in range(6)]
+    today = datetime.date.today()
 
     edited = 0
     created = 0
+    skipped_past = 0
 
     for day in days:
+        if day < today:
+            skipped_past += 1
+            continue
+
         # Check if DP already exists for this date
         dp_name = frappe.db.get_value(
             "Daily Production",
@@ -1014,7 +1020,9 @@ def edit_week(week_monday):
 
     return {
         "success": True,
-        "message": _("Switched {0} DP(s) to Edit mode, created {1} new DP(s).").format(edited, created),
+        "message": _("Switched {0} DP(s) to Edit mode, created {1} new DP(s). Skipped {2} past.").format(
+            edited, created, skipped_past
+        ),
     }
 
 
