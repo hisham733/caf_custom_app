@@ -25,8 +25,8 @@ frappe.provide("caf.org_chart_colors");
 	function decorate(card) {
 		if (!color_map || !card.id) return;
 		const dept = color_map[card.id];
-		if (!dept) return; // MG's rule: no department -> no background
-		card.style.backgroundColor = dept_color(dept);
+		// MG's rule: no department -> plain white card
+		card.style.backgroundColor = dept ? dept_color(dept) : "#ffffff";
 	}
 
 	function decorate_all(root) {
