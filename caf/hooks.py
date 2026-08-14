@@ -66,6 +66,10 @@ app_include_js = [
     # so neither can serve both callers. Two copies of a dialog that FILES
     # DOCUMENTS drift apart silently, which is the worse trade.
     "/assets/caf/js/shift_trade.js",
+    # MG, 2026-08-14 — department background colours on the stock organisational
+    # chart (each card = one employee). MutationObserver decorates cards as they
+    # render; employees without a department keep the default background.
+    "/assets/caf/js/org_chart_dept_colors.js",
 ]
 
 # include js, css files in header of web template
