@@ -302,6 +302,16 @@ def verify():
     return out
 
 
+def tree_rebuild():
+    """After bulk reports_to updates the nested-set lft/rgt is stale - the org
+    chart's connection counts and get_descendants_of (appraisal subtree rule)
+    walk the tree, not reports_to."""
+    from frappe.utils.nestedset import rebuild_tree
+    rebuild_tree("Employee", "reports_to")
+    frappe.db.commit()
+    print("Employee tree rebuilt (lft/rgt now match reports_to)")
+
+
 def run(mode="verify"):
     funcs = {
         "meta_check": meta_check,
@@ -309,6 +319,7 @@ def run(mode="verify"):
         "title_setters_apply": title_setters_apply,
         "title_verify": title_verify,
         "companions_remove": companions_remove,
+        "tree_rebuild": tree_rebuild,
         "fill_dry": fill_dry,
         "fill_apply": fill_apply,
         "accounts_dry": accounts_dry,
