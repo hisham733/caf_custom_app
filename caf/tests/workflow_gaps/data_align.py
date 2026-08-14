@@ -248,6 +248,44 @@ def roles_apply():
     print(f"removed {len(remove)}, granted {len(grant)}")
 
 
+def title_setters_apply():
+    """Stock display mechanism: links to User/Employee render the target's
+    title field (full_name / employee_name) in form, list AND report views.
+    Replaces the fetch-companion custom fields."""
+    for dt in ("User", "Employee"):
+        if not frappe.db.exists("Property Setter", {
+            "doc_type": dt, "property": "show_title_field_in_link",
+        }):
+            frappe.get_doc({
+                "doctype": "Property Setter",
+                "doctype_or_field": "DocType",
+                "doc_type": dt,
+                "property": "show_title_field_in_link",
+                "value": "1",
+                "property_type": "Check",
+            }).insert(ignore_permissions=True)
+    frappe.clear_cache()
+    print("property setters applied for User + Employee")
+
+
+def title_verify():
+    from frappe.boot import get_link_title_doctypes
+    from frappe.desk.search import get_link_title
+    dts = get_link_title_doctypes()
+    print("link-title doctypes contain User:", "User" in dts,
+          "| Employee:", "Employee" in dts)
+    print("get_link_title(User, mursyid@):", get_link_title("User", "mursyid@caffood.com"))
+    print("get_link_title(Employee, HR-EMP-00013):", get_link_title("Employee", "HR-EMP-00013"))
+
+
+def companions_remove():
+    for name in ("Employee-leave_approver_name", "Employee-reports_to_name"):
+        if frappe.db.exists("Custom Field", name):
+            frappe.delete_doc("Custom Field", name, ignore_permissions=True)
+    frappe.clear_cache(doctype="Employee")
+    print("companion custom fields removed")
+
+
 def verify():
     out = frappe.db.sql("""
         SELECT
@@ -268,6 +306,9 @@ def run(mode="verify"):
     funcs = {
         "meta_check": meta_check,
         "apply_display": apply_display,
+        "title_setters_apply": title_setters_apply,
+        "title_verify": title_verify,
+        "companions_remove": companions_remove,
         "fill_dry": fill_dry,
         "fill_apply": fill_apply,
         "accounts_dry": accounts_dry,
