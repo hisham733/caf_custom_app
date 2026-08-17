@@ -139,20 +139,26 @@ def run():
           f"SILENT — the column arrives as None and every row reads 'not "
           f"adjusted' — and synthetic fixtures cannot see it")
 
-    # ── C7 — check_amendments is HR-gated and refuses a snapshot source ─────
-    from caf.caf.ingress.sync import check_amendments
+    # ── C7 — a snapshot can never answer the amendment question ────────────
+    # ⚠️ Asserted against a SnapshotSource DIRECTLY, not through the configured
+    # source. The first version called `check_amendments()` and expected a
+    # refusal, which passed only while the site happened to be pointed at a CSV —
+    # the moment the machine came back on the LAN the same assertion failed. A
+    # test whose result depends on a setting is testing the setting.
+    from caf.caf.ingress import source as _src
+    snap = _src.get_source("Snapshot CSV")
     try:
-        check_amendments(since="2026-01-01", update_watermark=0)
-        ok, why = False, "a snapshot source was accepted"
+        list(snap.read_revised_since("2026-01-01"))
+        ok, why = False, "a snapshot answered a revision query"
     except Exception as e:
         msg = frappe.utils.strip_html(str(e))
-        ok = "lastupdate history" in msg or "unreachable" in msg
+        ok = "lastupdate" in msg
         why = msg[:110]
-    check("C7-AMEND-NEEDS-LIVE", ok,
-          f"the amendment check refuses to run against a snapshot and says why — "
+    check("C7-SNAPSHOT-CANNOT-ANSWER", ok,
+          f"a SnapshotSource refuses a revision query outright and says why — "
           f"{why!r}. A CSV has no lastupdate history, so a silent empty result "
-          f"would read as 'nothing was amended', which is the worst possible lie "
-          f"for this particular question")
+          f"would read as 'nothing was amended' — the worst possible lie for this "
+          f"particular question")
 
     failed = [t for t, ok, _d in RESULTS if not ok]
     print(f"\n{len(RESULTS) - len(failed)}/{len(RESULTS)} passed"
