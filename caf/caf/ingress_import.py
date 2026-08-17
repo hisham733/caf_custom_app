@@ -1,212 +1,53 @@
-"""Ingress ➜ Finger Log import. Chunk 3. Field contract: CAF_BUILD_SPEC.md §9.6.
+"""Ingress ➜ Finger Log — the Chunk 3 entry point, now a shim.
 
-THE ONE RULE THAT MATTERS MOST
------------------------------
-🔴 **`day_type` and `shift_type` are NEVER imported.** Ingress' `daytype` and
-`sche1` play no part in the target design (**OD-45**) — the shift comes from a
-Shift Assignment covering the date, else `Employee.default_shift`, and the day
-type is resolved from that shift's working week. Importing Ingress' opinion
-would silently reintroduce the machine as the authority and undo Chunk 2.
+⚠️ **The feature moved to `caf.caf.ingress`** (2026-08-17). This module stays
+because it is named in places that are not code and cannot be refactored by a
+grep: `OpenCode_analysis/README.md`, `FIX_DECISION_LOG.md` F-3, and the muscle
+memory of anyone who has run
 
-`caf_work_hours` and `short` are likewise **derived, not imported** (OD-59) —
-`validate()` computes them, so this module simply does not set them.
+    bench --site … execute caf.caf.ingress_import.import_month --args 2026,7
 
-WHAT IS IMPORTED
-----------------
-    work_date            Ingress `date`      the business date, FBR7
-    time_in break resume out    the four punches — FACTS, FDR10
-    overtime             `othour`            hour.minute, FBR2
-    ftag_id              `userid`            provenance, and the join key
+Those keep working. What they do NOW, and what changed:
 
-WHO IS IMPORTED — OD-24
------------------------
-Employees who are **Active** and carry an `attendance_device_id`. Ingress keeps
-emitting rostered days for people who left years ago (one ex-employee has 457
-such rows, none of them punched), and those map to nobody. An **active**
-employee who simply did not turn up DOES get a row, with no punches — that is
-the `Absent` case and it is the point of the design, not noise.
+  · the source can be the LIVE Ingress MySQL, not only `/tmp/attendance.csv.gz`
+    (configured on **Ingress Sync Settings**);
+  · every run produces an **Ingress Import Batch** — a manifest you can revert,
+    which is what makes a test import disposable;
+  · 🔴 a Finger Log **HR cancelled is no longer re-created**. The old `run()`
+    filtered `docstatus < 2`, so a cancel was silently undone by the next run.
+    Only an explicit human re-import (`allow_recreate`) brings such a day back.
 
-SAFETY
-------
-**Savepoint per row.** A bare `rollback()` inside a per-row `except` destroyed
-~5,600 good rows in this project. Twice.
+The real code, and the reasoning, live in:
+    caf/caf/ingress/source.py   the two readers, and what is never imported
+    caf/caf/ingress/sync.py     the ownership rule and the import loop
 """
 
-import csv
-import gzip
-from datetime import datetime
-
 import frappe
-from frappe.utils import getdate
 
-SNAPSHOT = "/tmp/attendance.csv.gz"
-
-# Ingress column -> Finger Log field. The punches only; everything else is
-# either derived or deliberately excluded.
-PUNCHES = {
-    "att_in": "time_in",
-    "att_break": "break",
-    "att_resume": "resume",
-    "att_out": "out",
-}
-
-# 🔴 NEVER import these. Listed so the omission is visible rather than accidental.
-NEVER_IMPORT = {
-    "daytype": "day_type is resolved from the shift — OD-45",
-    "sche1": "shift_type is resolved from Shift Assignment / default_shift — OD-45",
-    "workhour": "caf_work_hours is derived — OD-59",
-    "shorthour": "short is derived — OD-59",
-    "leavetype": "leave_type belongs to the Leave Application — FDR4",
-}
+from caf.caf.ingress.sync import manual_import
 
 
-def _date(value):
-    value = (value or "").strip()
-    for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S", "%d/%m/%Y"):
-        try:
-            return datetime.strptime(value, fmt).date()
-        except ValueError:
-            pass
-    return None
-
-
-def _time(value):
-    """A punch, or the all-zero sentinel when the machine recorded nothing.
-
-    ⚠️ Writes '00:00:00', NOT NULL — deliberately. The whole absence path keys on
-    the all-zero row, and testing `time_in IS NULL` is the trap that produced a
-    withdrawn decision (OD-49) after returning 0 of 21,363.
+def run(snapshot: str = None, from_date=None, to_date=None, submit: bool = True,
+        limit: int = 0):
+    """Chunk 3's signature, kept. `limit` is accepted and ignored — a batch is
+    bounded by its date range and its employee filter now, which is the same
+    control expressed in terms a person can reason about.
     """
-    value = (value or "").strip()
-    if not value:
-        return "00:00:00"
-    parts = value.split(":")
-    if len(parts) == 2:
-        parts.append("00")
-    try:
-        return f"{int(parts[0]):02d}:{int(parts[1]):02d}:{int(float(parts[2])):02d}"
-    except (ValueError, IndexError):
-        return "00:00:00"
+    if not (from_date and to_date):
+        frappe.throw("run() needs from_date and to_date. For a whole month use "
+                     "import_month(year, month).")
+    if limit:
+        frappe.msgprint("`limit` is ignored — narrow the date range or pass "
+                        "employees instead.", alert=True)
+
+    return manual_import(from_date, to_date, submit=submit, purpose="Production",
+                         source_mode="Snapshot CSV" if snapshot else None)
 
 
-def _float(value):
-    try:
-        return float((value or "0").strip() or 0)
-    except ValueError:
-        return 0.0
-
-
-def active_by_device() -> dict:
-    rows = frappe.get_all("Employee", filters={"status": "Active"},
-                          fields=["name", "employee_name", "attendance_device_id"])
-    return {str(r.attendance_device_id).strip(): r for r in rows if r.attendance_device_id}
-
-
-def run(snapshot: str = SNAPSHOT, from_date=None, to_date=None, submit: bool = True,
-        limit: int = 0) -> dict:
-    """Import a date range. Existing live rows for a date are left alone (FDR1)."""
-    # D-15 (2026-08-15) — the FL on_submit doc_event skips its appraisal refresh
-    # when this flag is set, so a thousands-of-rows batch does not refresh per
-    # row. Reset before the final commit; if an exception escapes mid-batch the
-    # flag dies with this bench-execute process.
-    frappe.flags.in_import = True
-    by_device = active_by_device()
-    from_date = getdate(from_date) if from_date else None
-    to_date = getdate(to_date) if to_date else None
-
-    stats = frappe._dict(read=0, skipped_no_employee=0, skipped_out_of_range=0,
-                         already_present=0, created=0, submitted=0,
-                         not_full_day=0, held_as_draft=0, failed=0)
-    errors, not_full, held = {}, [], {}
-
-    with gzip.open(snapshot, "rt", encoding="utf-8", errors="replace") as fh:
-        for row in csv.DictReader(fh):
-            day = _date(row.get("date"))
-            if not day:
-                continue
-            if (from_date and day < from_date) or (to_date and day > to_date):
-                stats.skipped_out_of_range += 1
-                continue
-
-            emp = by_device.get((row.get("userid") or "").strip())
-            if not emp:
-                stats.skipped_no_employee += 1
-                continue
-
-            stats.read += 1
-            if limit and stats.created >= limit:
-                break
-
-            # FDR1 — one LIVE Finger Log per employee per work_date.
-            if frappe.db.exists("Finger Log", {"employee": emp.name, "work_date": day,
-                                               "docstatus": ("<", 2)}):
-                stats.already_present += 1
-                continue
-
-            sp = f"fl_{stats.read}"
-            frappe.db.savepoint(sp)
-            try:
-                doc = frappe.new_doc("Finger Log")
-                doc.employee = emp.name
-                doc.employee_name = emp.employee_name      # from ERPNext, not Ingress
-                doc.ftag_id = (row.get("userid") or "").strip()
-                doc.work_date = day
-                for src, field in PUNCHES.items():
-                    doc.set(field, _time(row.get(src)))
-                doc.overtime = _float(row.get("othour"))
-                doc.flags.ignore_permissions = True
-                doc.insert()                                # validate() derives the rest
-                stats.created += 1
-
-                if doc.caf_not_full_day:
-                    # OD-58 — leave it in draft for HR. Not an error.
-                    stats.not_full_day += 1
-                    not_full.append(f"{emp.name} {day}")
-                elif submit:
-                    # ⚠️ A REFUSED SUBMIT MUST NOT DISCARD THE OBSERVATION.
-                    # FBR11 refuses any log carrying OT with no approval, and
-                    # that is correct — but rolling back to the outer savepoint
-                    # would delete the imported row along with the failed submit,
-                    # losing what the clock saw. The draft IS the queue HR works
-                    # from. A second savepoint, taken after the insert, keeps it.
-                    sp2 = f"{sp}_sub"
-                    frappe.db.savepoint(sp2)
-                    try:
-                        doc.submit()
-                        stats.submitted += 1
-                    except Exception as e:
-                        frappe.db.rollback(save_point=sp2)
-                        stats.held_as_draft += 1
-                        held[f"{emp.name} {day}"] = str(e).splitlines()[0][:110]
-            except Exception as e:
-                frappe.db.rollback(save_point=sp)
-                stats.failed += 1
-                errors[f"{emp.name} {day}"] = str(e).splitlines()[0][:130]
-
-    frappe.flags.in_import = False
-    frappe.db.commit()
-
-    for k, v in stats.items():
-        print(f"{k:24s} {v}")
-    if not_full:
-        print(f"\nNOT FULL DAY - left in draft for HR ({len(not_full)}):")
-        for n in not_full[:10]:
-            print(f"   {n}")
-    if held:
-        print(f"\nHELD AS DRAFT - imported, could not submit ({len(held)}):")
-        for k, v in list(held.items())[:10]:
-            print(f"   {k}: {v}")
-    if errors:
-        print(f"\nfailed ({len(errors)}):")
-        for k, v in list(errors.items())[:10]:
-            print(f"   {k}: {v}")
-    return {"stats": dict(stats), "errors": errors,
-            "not_full_day": not_full, "held_as_draft": held}
-
-
-def import_month(year, month, snapshot: str = SNAPSHOT):
-    """Convenience for the checkpoint: one calendar month."""
+def import_month(year, month, snapshot: str = None):
+    """One calendar month. Unchanged signature."""
     from calendar import monthrange
+
     year, month = int(year), int(month)
     last = monthrange(year, month)[1]
     return run(snapshot, f"{year}-{month:02d}-01", f"{year}-{month:02d}-{last:02d}")

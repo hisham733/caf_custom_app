@@ -33,7 +33,8 @@
   "caf_not_full_day",
   "caf_hr_review",
   "leave_taken",
-  "caf_hr_review_note"
+  "caf_hr_review_note",
+  "caf_import_batch"
  ],
  "fields": [
   {
@@ -241,6 +242,15 @@
    "fieldname": "caf_hr_review_note",
    "fieldtype": "Small Text",
    "label": "HR Review Note",
+   "read_only": 1
+  },
+  {
+   "description": "Which Ingress Import Batch produced or last refreshed this log. The provenance trail, and what Revert walks.",
+   "fieldname": "caf_import_batch",
+   "fieldtype": "Link",
+   "label": "Import Batch",
+   "no_copy": 1,
+   "options": "Ingress Import Batch",
    "read_only": 1
   }
  ],

@@ -1,0 +1,89 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-08-17 00:00:00",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "action",
+  "employee",
+  "work_date",
+  "finger_log",
+  "ftag_id",
+  "machine_edited",
+  "reason"
+ ],
+ "fields": [
+  {
+   "columns": 1,
+   "fieldname": "action",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Action",
+   "options": "Created\nUpdated\nSubmitted\nHeld\nSkipped\nFailed\nDrift\nReverted",
+   "read_only": 1
+  },
+  {
+   "columns": 2,
+   "fieldname": "employee",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Employee",
+   "options": "Employee",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "work_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Work Date",
+   "read_only": 1
+  },
+  {
+   "columns": 2,
+   "description": "The document this row produced. Empty for Skipped and Failed - there is nothing to point at.",
+   "fieldname": "finger_log",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Finger Log",
+   "options": "Finger Log",
+   "read_only": 1
+  },
+  {
+   "fieldname": "ftag_id",
+   "fieldtype": "Data",
+   "label": "FTag ID",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "default": "0",
+   "description": "The machine's _x override flag: a person edited this punch in the Ingress app. Measured at 15 rows in 289,617 - rare, and exactly the row somebody will later argue about.",
+   "fieldname": "machine_edited",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Edited on machine",
+   "read_only": 1
+  },
+  {
+   "columns": 3,
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "Reason",
+   "read_only": 1
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-08-17 00:00:00",
+ "modified_by": "Administrator",
+ "module": "Caf",
+ "name": "Ingress Import Row",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

@@ -1,0 +1,245 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "INGB-.YYYY.-.#####",
+ "creation": "2026-08-17 00:00:00",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "section_run",
+  "run_type",
+  "purpose",
+  "status",
+  "column_break_run",
+  "from_date",
+  "to_date",
+  "source_label",
+  "section_filter",
+  "employees",
+  "section_counts",
+  "read_rows",
+  "created",
+  "updated",
+  "submitted",
+  "column_break_counts",
+  "held",
+  "already_present",
+  "skipped_no_employee",
+  "skipped_locked",
+  "drift",
+  "failed",
+  "section_rows",
+  "rows",
+  "section_log",
+  "log"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_run",
+   "fieldtype": "Section Break",
+   "label": "Run"
+  },
+  {
+   "default": "Manual",
+   "fieldname": "run_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Run Type",
+   "options": "Manual\nFetch\nSubmit\nReconcile",
+   "read_only": 1
+  },
+  {
+   "default": "Test",
+   "description": "Test batches may be reverted freely. Reverting a Production batch needs an explicit force - a production batch is not a scratch pad.",
+   "fieldname": "purpose",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Purpose",
+   "options": "Test\nProduction",
+   "read_only": 1
+  },
+  {
+   "default": "Running",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Running\nCompleted\nFailed\nReverted",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_run",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "from_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "From Date",
+   "read_only": 1
+  },
+  {
+   "fieldname": "to_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "To Date",
+   "read_only": 1
+  },
+  {
+   "description": "Which source this run actually read - the resolved host, or the snapshot path.",
+   "fieldname": "source_label",
+   "fieldtype": "Data",
+   "label": "Source",
+   "read_only": 1
+  },
+  {
+   "description": "Empty means every active employee carrying an Attendance Device ID.",
+   "fieldname": "section_filter",
+   "fieldtype": "Section Break",
+   "label": "Employee filter"
+  },
+  {
+   "fieldname": "employees",
+   "fieldtype": "Table MultiSelect",
+   "label": "Employees",
+   "options": "Ingress Import Employee",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_counts",
+   "fieldtype": "Section Break",
+   "label": "Counts"
+  },
+  {
+   "fieldname": "read_rows",
+   "fieldtype": "Int",
+   "label": "Read",
+   "read_only": 1
+  },
+  {
+   "fieldname": "created",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Created",
+   "read_only": 1
+  },
+  {
+   "fieldname": "updated",
+   "fieldtype": "Int",
+   "label": "Updated",
+   "read_only": 1
+  },
+  {
+   "fieldname": "submitted",
+   "fieldtype": "Int",
+   "label": "Submitted",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_counts",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Imported, but the submit was refused - a missing OT Approval, an incomplete punch record, or an unconfirmed roster month. The draft IS the HR worklist; this is not an error.",
+   "fieldname": "held",
+   "fieldtype": "Int",
+   "label": "Held as Draft",
+   "read_only": 1
+  },
+  {
+   "fieldname": "already_present",
+   "fieldtype": "Int",
+   "label": "Already Present",
+   "read_only": 1
+  },
+  {
+   "fieldname": "skipped_no_employee",
+   "fieldtype": "Int",
+   "label": "Skipped - no employee",
+   "read_only": 1
+  },
+  {
+   "description": "The day is human-owned: a draft somebody edited, a submitted log, or a log HR cancelled. The importer reports these and never touches them.",
+   "fieldname": "skipped_locked",
+   "fieldtype": "Int",
+   "label": "Skipped - human owned",
+   "read_only": 1
+  },
+  {
+   "description": "The machine has since revised a day ERPNext already submitted. Reported, never auto-corrected (FBR8) - a human decides whether the record or the machine is right.",
+   "fieldname": "drift",
+   "fieldtype": "Int",
+   "label": "Drift",
+   "read_only": 1
+  },
+  {
+   "fieldname": "failed",
+   "fieldtype": "Int",
+   "label": "Failed",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_rows",
+   "fieldtype": "Section Break",
+   "label": "Manifest"
+  },
+  {
+   "description": "Every document this run touched. This is what Revert walks.",
+   "fieldname": "rows",
+   "fieldtype": "Table",
+   "label": "Rows",
+   "options": "Ingress Import Row",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_log",
+   "fieldtype": "Section Break",
+   "label": "Log"
+  },
+  {
+   "fieldname": "log",
+   "fieldtype": "Code",
+   "label": "Log",
+   "options": "Text",
+   "read_only": 1
+  }
+ ],
+ "links": [],
+ "modified": "2026-08-17 00:00:00",
+ "modified_by": "Administrator",
+ "module": "Caf",
+ "name": "Ingress Import Batch",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "HR Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "title_field": "run_type",
+ "track_changes": 1
+}

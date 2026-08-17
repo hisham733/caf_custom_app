@@ -1,0 +1,197 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-08-17 00:00:00",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "section_source",
+  "enabled",
+  "source_mode",
+  "column_break_source",
+  "snapshot_path",
+  "section_connection",
+  "host",
+  "port",
+  "column_break_conn",
+  "db_name",
+  "db_user",
+  "db_password",
+  "section_window",
+  "fetch_from_days",
+  "fetch_to_days",
+  "column_break_window",
+  "submit_target_days",
+  "auto_submit",
+  "held_flag_after_days",
+  "section_state",
+  "last_fetch_run",
+  "column_break_state",
+  "last_submit_run"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_source",
+   "fieldtype": "Section Break",
+   "label": "Source"
+  },
+  {
+   "default": "0",
+   "description": "Master switch for the SCHEDULED fetch / submit passes. Manual imports and test batches run regardless. Ships off so a fresh deploy never starts writing on its own.",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Scheduled sync enabled"
+  },
+  {
+   "default": "Live MySQL",
+   "description": "Live MySQL reads the Ingress machine over the LAN. Snapshot CSV reads a gzipped export - use it when off-LAN.",
+   "fieldname": "source_mode",
+   "fieldtype": "Select",
+   "label": "Source",
+   "options": "Live MySQL\nSnapshot CSV",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_source",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "/tmp/attendance.csv.gz",
+   "description": "Path INSIDE the frappe container. Only used when Source is Snapshot CSV.",
+   "fieldname": "snapshot_path",
+   "fieldtype": "Data",
+   "label": "Snapshot path"
+  },
+  {
+   "description": "Read-only credentials for the FingerTec Ingress database. CAF never writes to it.",
+   "fieldname": "section_connection",
+   "fieldtype": "Section Break",
+   "label": "Ingress connection"
+  },
+  {
+   "fieldname": "host",
+   "fieldtype": "Data",
+   "label": "Host"
+  },
+  {
+   "default": "3306",
+   "fieldname": "port",
+   "fieldtype": "Int",
+   "label": "Port"
+  },
+  {
+   "fieldname": "column_break_conn",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "ingress",
+   "fieldname": "db_name",
+   "fieldtype": "Data",
+   "label": "Database"
+  },
+  {
+   "fieldname": "db_user",
+   "fieldtype": "Data",
+   "label": "User"
+  },
+  {
+   "fieldname": "db_password",
+   "fieldtype": "Password",
+   "label": "Password"
+  },
+  {
+   "fieldname": "section_window",
+   "fieldtype": "Section Break",
+   "label": "Scheduled window"
+  },
+  {
+   "default": "4",
+   "description": "Fetch re-reads work dates from D-minus-this back to the to-day below. A wide window is the point: every date is re-read many times before it is ever submitted.",
+   "fieldname": "fetch_from_days",
+   "fieldtype": "Int",
+   "label": "Fetch from D-"
+  },
+  {
+   "default": "1",
+   "fieldname": "fetch_to_days",
+   "fieldtype": "Int",
+   "label": "Fetch to D-"
+  },
+  {
+   "fieldname": "column_break_window",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "3",
+   "description": "The submit pass only touches this one work date - old enough that the machine has settled and any OT Approval has been filed.",
+   "fieldname": "submit_target_days",
+   "fieldtype": "Int",
+   "label": "Submit work date D-"
+  },
+  {
+   "default": "1",
+   "fieldname": "auto_submit",
+   "fieldtype": "Check",
+   "label": "Submit pass enabled"
+  },
+  {
+   "default": "3",
+   "description": "A draft held back by a missing OT Approval, an incomplete punch record or an unconfirmed roster month gets flagged for HR once it is older than this. 0 disables the flagging.",
+   "fieldname": "held_flag_after_days",
+   "fieldtype": "Int",
+   "label": "Flag held drafts after (days)"
+  },
+  {
+   "fieldname": "section_state",
+   "fieldtype": "Section Break",
+   "label": "Last run"
+  },
+  {
+   "fieldname": "last_fetch_run",
+   "fieldtype": "Datetime",
+   "label": "Last fetch",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_state",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "last_submit_run",
+   "fieldtype": "Datetime",
+   "label": "Last submit",
+   "read_only": 1
+  }
+ ],
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-08-17 00:00:00",
+ "modified_by": "Administrator",
+ "module": "Caf",
+ "name": "Ingress Sync Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "HR Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "track_changes": 1
+}
