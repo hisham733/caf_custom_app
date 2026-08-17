@@ -530,6 +530,106 @@ def manual_import(from_date, to_date, employees=None, submit=False,
 
 
 @frappe.whitelist()
+def check_amendments(since=None, update_watermark=1):
+    """Which already-imported days has somebody edited on the machine since?
+
+    🔴 **This is what FBR44 makes necessary.** With no scheduled fetch, an Ingress
+    amendment to a day ERPNext has already imported is invisible **forever** —
+    nothing re-reads that date unless HR happens to ask for it by hand, and she has
+    no way of knowing which date to ask for. Measured 2026-08-17: **543 rows** were
+    revised in August carrying work dates back to January, so this is a real
+    population, not a theoretical one.
+
+    It REPORTS and changes nothing. That is the whole design: it tells HR which
+    days moved and what each one needs, and she decides. Re-importing on her behalf
+    would be the auto-refresh FBR39 exists to avoid, one layer down.
+
+    The watermark is the MACHINE's clock, never this server's — comparing a
+    timestamp written on Natalie against `now()` here loses every row inside the
+    clock difference between the two hosts.
+    """
+    frappe.only_for("HR Manager")
+
+    from caf.caf.doctype.ingress_sync_settings.ingress_sync_settings import get_settings
+
+    settings = get_settings()
+    reader = src.get_source(None, settings)
+    if not hasattr(reader, "read_revised_since"):
+        frappe.throw(_("Amendment checking needs the live machine — a snapshot has "
+                       "no lastupdate history."))
+
+    since = since or settings.get("last_amendment_check")
+    if not since:
+        frappe.throw(_(
+            "No watermark yet, so there is nothing to compare against. Pass an "
+            "explicit date to start from — the first import date is the usual "
+            "choice — and this will record where it got to for next time."))
+
+    try:
+        machine_now = reader.clock()
+    except Exception as e:
+        frappe.throw(_("Ingress source unreachable: {0}").format(
+            frappe.utils.strip_html(str(e))[:200]))
+
+    by_device = active_by_device()
+    findings, seen = [], 0
+    for row in reader.read_revised_since(since):
+        seen += 1
+        emp = by_device.get(str(row["ftag_id"]))
+        if not emp:
+            continue                      # not an active mapped employee
+        day = row["work_date"]
+        # day_state returns (state, finger_log, detail) — the same ownership
+        # verdict `_import` acts on, so this report cannot drift from the importer.
+        state, existing, _detail = day_state(emp.name, day)
+
+        if state == NONE:
+            verdict, action = "Never imported", _("import this day")
+        elif state == CANCELLED:
+            verdict, action = "Cancelled in ERPNext", _(
+                "re-import only if this day should come back")
+        elif state == SUBMITTED:
+            doc = frappe.get_doc("Finger Log", existing)
+            changed = _machine_differs(doc, row)
+            if not changed:
+                continue                  # submitted and still agrees — silent
+            verdict = "SUBMITTED — punches differ ({0})".format(", ".join(changed))
+            action = _("cancel the Finger Log, then Re-import from Ingress")
+        elif state == DRAFT_HUMAN:
+            verdict, action = "Draft, edited by a person", _(
+                "check with whoever edited it before re-importing — a re-import "
+                "would discard their change")
+        else:                             # MACHINE_DRAFT
+            verdict, action = "Draft", _("re-import — the draft updates in place")
+
+        findings.append({
+            "employee": emp.name, "employee_name": emp.employee_name,
+            "ftag_id": row["ftag_id"], "work_date": str(day),
+            "finger_log": existing, "verdict": verdict, "what_to_do": action,
+            "machine_changed_at": str(row.get("lastupdate") or ""),
+            "adjusted_in_ingress": 1 if row.get("edited") else 0,
+        })
+
+    if int(update_watermark or 0):
+        frappe.db.set_value("Ingress Sync Settings", "Ingress Sync Settings",
+                            "last_amendment_check", machine_now,
+                            update_modified=False)
+        frappe.db.commit()
+
+    findings.sort(key=lambda f: (not f["verdict"].startswith("SUBMITTED"),
+                                 f["work_date"]))
+    return {
+        "checked_since": str(since),
+        "machine_clock_now": str(machine_now),
+        "machine_rows_revised": seen,
+        "needs_attention": len(findings),
+        "submitted_conflicts": sum(1 for f in findings
+                                   if f["verdict"].startswith("SUBMITTED")),
+        "findings": findings,
+    }
+
+
+@frappe.whitelist()
 def reimport_day(finger_log=None, employee=None, work_date=None, submit=0):
     """The "Re-import from Ingress" button — one employee, one date.
 

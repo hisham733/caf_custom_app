@@ -86,5 +86,59 @@ frappe.listview_settings["Ingress Import Batch"] = {
             });
             d.show();
         });
+
+        // 🔴 The button FBR44 makes necessary. With no scheduled fetch, a punch
+        // edited on the machine AFTER ERPNext imported that day is invisible
+        // forever — nothing re-reads the date, and HR has no way to know which
+        // date to ask for. Measured 2026-08-17: 543 rows revised in August,
+        // carrying work dates back to January.
+        //
+        // It REPORTS only. Re-importing on HR's behalf would be the silent
+        // auto-correction FBR39/FBR8 exist to prevent, one layer down.
+        listview.page.add_inner_button(__("Check for amendments"), () => {
+            frappe.call({
+                method: "caf.caf.ingress.sync.check_amendments",
+                freeze: true,
+                freeze_message: __("Asking the machine what changed…"),
+                callback(r) {
+                    if (!r.message) return;
+                    const m = r.message;
+                    if (!m.needs_attention) {
+                        frappe.msgprint({
+                            title: __("Nothing to do"),
+                            indicator: "green",
+                            message: __("The machine revised {0} row(s) since {1}, and none of them disagree with what ERPNext already holds.",
+                                [m.machine_rows_revised, m.checked_since]),
+                        });
+                        return;
+                    }
+                    const rows = m.findings.map((f) => `
+                        <tr>
+                          <td>${frappe.utils.escape_html(f.work_date)}</td>
+                          <td>${frappe.utils.escape_html(f.employee_name || f.employee)}</td>
+                          <td>${f.verdict.startsWith("SUBMITTED")
+                                 ? `<b style="color:var(--red-600)">${frappe.utils.escape_html(f.verdict)}</b>`
+                                 : frappe.utils.escape_html(f.verdict)}</td>
+                          <td>${frappe.utils.escape_html(f.what_to_do)}</td>
+                        </tr>`).join("");
+                    frappe.msgprint({
+                        title: __("{0} day(s) need attention", [m.needs_attention]),
+                        indicator: m.submitted_conflicts ? "red" : "orange",
+                        message: `
+                          <p>${__("The machine revised {0} row(s) since {1}. {2} of the days below are already SUBMITTED in ERPNext and disagree — those need cancelling before a re-import can take effect.",
+                                  [m.machine_rows_revised, m.checked_since, m.submitted_conflicts])}</p>
+                          <div style="overflow-x:auto">
+                          <table class="table table-bordered" style="font-size:var(--text-sm)">
+                            <thead><tr>
+                              <th>${__("Work date")}</th><th>${__("Employee")}</th>
+                              <th>${__("State in ERPNext")}</th><th>${__("What to do")}</th>
+                            </tr></thead>
+                            <tbody>${rows}</tbody>
+                          </table></div>
+                          <p style="color:var(--text-muted)">${__("Nothing has been changed. Checked up to the machine's own clock: {0}", [m.machine_clock_now])}</p>`,
+                    });
+                },
+            });
+        });
     },
 };

@@ -18,6 +18,8 @@
   "db_name",
   "db_user",
   "db_password",
+  "section_amend",
+  "last_amendment_check",
   "section_window",
   "fetch_from_days",
   "fetch_to_days",
@@ -103,8 +105,21 @@
    "label": "Password"
   },
   {
+   "description": "How CAF notices that somebody edited a punch on the machine AFTER ERPNext had already imported that day.",
+   "fieldname": "section_amend",
+   "fieldtype": "Section Break",
+   "label": "Amendment checking"
+  },
+  {
+   "description": "The machine's own clock at the last successful amendment check. Taken from Ingress, never from this server - comparing timestamps written on one host against now() on another loses every row in the clock difference. Blank means the next check has no watermark and will ask for an explicit date.",
+   "fieldname": "last_amendment_check",
+   "fieldtype": "Datetime",
+   "label": "Amendments checked up to",
+   "read_only": 1
+  },
+  {
    "collapsible": 1,
-   "description": "⚠️ NONE of the settings in this section are read by any code yet - they are the agreed constants for the Phase 2 scheduled passes, kept here so the values are decided and visible rather than buried in a future commit.",
+   "description": "⚠️ NONE of the settings in this section are read by any code yet - they are the agreed constants for the Phase 2 scheduled passes, kept here so the values are decided and visible rather than buried in a future commit. FBR44 removed the scheduled FETCH; what may still be built here is the daily 'did anyone import yesterday?' reminder.",
    "fieldname": "section_window",
    "fieldtype": "Section Break",
    "label": "Scheduled window (Phase 2 - not active)"

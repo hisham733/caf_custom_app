@@ -270,14 +270,19 @@ class LiveSource(BaseSource):
         sql = f"""
             SELECT a.userid, a.date, a.att_in, a.att_break, a.att_resume,
                    a.att_out, a.othour, a.hasmisspunch,
-                   a.in_x, a.break_x, a.resume_x, a.out_x, a.lastupdate
+                   a.in_c, a.break_c, a.resume_c, a.out_c, a.lastupdate
             FROM attendance a
             JOIN `user` u ON a.userid = u.userid
             WHERE {' AND '.join(where)}
             ORDER BY a.lastupdate, a.date, a.userid
         """
         cols = ["userid", "date", "att_in", "att_break", "att_resume", "att_out",
-                "othour", "hasmisspunch", "in_x", "break_x", "resume_x", "out_x",
+                # `_c`, not `_x` — EDIT_FLAGS keys these, and a mismatch here is
+                # silent: the column simply arrives as None and every row reports
+                # "not adjusted". Caught 2026-08-17 while building the amendment
+                # check, AFTER the suite went green — the synthetic fixtures set
+                # these keys directly, so only the LIVE path was broken.
+                "othour", "hasmisspunch", "in_c", "break_c", "resume_c", "out_c",
                 "lastupdate"]
         with self._cursor() as cur:
             cur.execute(sql, args)
@@ -318,14 +323,19 @@ class LiveSource(BaseSource):
         sql = f"""
             SELECT a.userid, a.date, a.att_in, a.att_break, a.att_resume,
                    a.att_out, a.othour, a.hasmisspunch,
-                   a.in_x, a.break_x, a.resume_x, a.out_x, a.lastupdate
+                   a.in_c, a.break_c, a.resume_c, a.out_c, a.lastupdate
             FROM attendance a
             JOIN `user` u ON a.userid = u.userid
             WHERE {' AND '.join(where)}
             ORDER BY a.date, a.userid
         """
         cols = ["userid", "date", "att_in", "att_break", "att_resume", "att_out",
-                "othour", "hasmisspunch", "in_x", "break_x", "resume_x", "out_x",
+                # `_c`, not `_x` — EDIT_FLAGS keys these, and a mismatch here is
+                # silent: the column simply arrives as None and every row reports
+                # "not adjusted". Caught 2026-08-17 while building the amendment
+                # check, AFTER the suite went green — the synthetic fixtures set
+                # these keys directly, so only the LIVE path was broken.
+                "othour", "hasmisspunch", "in_c", "break_c", "resume_c", "out_c",
                 "lastupdate"]
 
         with self._cursor() as cur:

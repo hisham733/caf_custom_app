@@ -105,14 +105,54 @@ def run():
             print(f"  cleanup {name}: {e}")
     frappe.db.commit()
 
+    # A dict cannot hold work_date twice — the second key silently won and this
+    # counted the whole table. Filters that need two bounds on one field go as a
+    # list of tuples.
     leftover = frappe.db.count("Finger Log",
-                               {"work_date": (">=", start),
-                                "work_date": ("<=", yesterday)})
+                               [["work_date", ">=", start],
+                                ["work_date", "<=", yesterday]])
     check("C5-CATCHUP-FULLY-REVERSIBLE", True,
           f"both catch-up batches reverted, {removed} Finger Log(s) removed. A "
           f"test import of the whole company across three days has to be as "
           f"removable as a one-row one, or nobody will risk running it "
           f"(remaining logs in range: {leftover})")
+
+    # ── C6 — the live SQL must select the columns EDIT_FLAGS keys on ────────
+    # 🔴 Regression guard for a bug that went green. When EDIT_FLAGS moved from
+    # `_x` to `_c` (2026-08-17), both live SELECTs still fetched `_x` — so
+    # `raw.get("in_c")` was always None and every live row reported "not
+    # adjusted". The suite stayed green because its synthetic fixtures set those
+    # keys directly, and only the LIVE path was broken. Comparing the two by hand
+    # is the only thing that would have caught it, so it is asserted here.
+    import inspect as _pyinspect
+
+    from caf.caf.ingress import source as _src
+    sql_text = _pyinspect.getsource(_src.LiveSource)
+    flags = list(_src.EDIT_FLAGS.keys())
+    missing = [f for f in flags if f not in sql_text]
+    wrong = [f.replace("_c", "_x") for f in flags
+             if f.replace("_c", "_x") in sql_text]
+    check("C6-SQL-SELECTS-EDIT-FLAGS",
+          not missing and not wrong,
+          f"every EDIT_FLAGS column {flags} appears in LiveSource's SQL, and none "
+          f"of the old `_x` names linger ({wrong or 'none'}). A mismatch here is "
+          f"SILENT — the column arrives as None and every row reads 'not "
+          f"adjusted' — and synthetic fixtures cannot see it")
+
+    # ── C7 — check_amendments is HR-gated and refuses a snapshot source ─────
+    from caf.caf.ingress.sync import check_amendments
+    try:
+        check_amendments(since="2026-01-01", update_watermark=0)
+        ok, why = False, "a snapshot source was accepted"
+    except Exception as e:
+        msg = frappe.utils.strip_html(str(e))
+        ok = "lastupdate history" in msg or "unreachable" in msg
+        why = msg[:110]
+    check("C7-AMEND-NEEDS-LIVE", ok,
+          f"the amendment check refuses to run against a snapshot and says why — "
+          f"{why!r}. A CSV has no lastupdate history, so a silent empty result "
+          f"would read as 'nothing was amended', which is the worst possible lie "
+          f"for this particular question")
 
     failed = [t for t, ok, _d in RESULTS if not ok]
     print(f"\n{len(RESULTS) - len(failed)}/{len(RESULTS)} passed"
