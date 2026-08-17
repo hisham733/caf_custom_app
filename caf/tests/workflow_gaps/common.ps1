@@ -107,3 +107,17 @@ function Count-MyDocs([string]$Dt, [string]$DateField, [array]$Dates) {
     ) @("name")
     return @($rows).Count
 }
+
+# D-12 (2026-08-15): cancelling a leave FIRST lets stock db_set its Attendance
+# rows to docstatus=2 (no events, no guard), so teardown can then delete the
+# Attendance before the leave itself is deletable (the row links it otherwise).
+function Cancel-MyDocs([string]$Dt, [string]$DateField, [array]$Dates) {
+    $rows = Get-List "ADMIN" $Dt @(
+        @($DateField, "in", $Dates),
+        @("owner", "in", $SessionUsers),
+        @("creation", ">=", "2026-08-14")
+    ) @("name", "docstatus")
+    foreach ($r in $rows) {
+        if ($r.docstatus -eq 1) { Cancel-Doc "ADMIN" $Dt $r.name | Out-Null }
+    }
+}

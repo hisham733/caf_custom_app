@@ -105,6 +105,11 @@ def active_by_device() -> dict:
 def run(snapshot: str = SNAPSHOT, from_date=None, to_date=None, submit: bool = True,
         limit: int = 0) -> dict:
     """Import a date range. Existing live rows for a date are left alone (FDR1)."""
+    # D-15 (2026-08-15) — the FL on_submit doc_event skips its appraisal refresh
+    # when this flag is set, so a thousands-of-rows batch does not refresh per
+    # row. Reset before the final commit; if an exception escapes mid-batch the
+    # flag dies with this bench-execute process.
+    frappe.flags.in_import = True
     by_device = active_by_device()
     from_date = getdate(from_date) if from_date else None
     to_date = getdate(to_date) if to_date else None
@@ -178,6 +183,7 @@ def run(snapshot: str = SNAPSHOT, from_date=None, to_date=None, submit: bool = T
                 stats.failed += 1
                 errors[f"{emp.name} {day}"] = str(e).splitlines()[0][:130]
 
+    frappe.flags.in_import = False
     frappe.db.commit()
 
     for k, v in stats.items():

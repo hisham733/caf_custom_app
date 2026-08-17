@@ -13,7 +13,9 @@ $MYDATES = @("2026-06-15", "2026-06-16", "2026-06-18", "2026-05-24", "2026-05-27
 
 function Clean-All {
     Write-Host "`n-- cleanup (first) --"
-    # link order: Attendance -> Finger Log -> OT Approval -> Leave Application
+    # D-12: cancel leaves FIRST (their Attendance becomes docstatus=2 via stock
+    # db_set), then attendance is deletable, then the cancelled leaves.
+    Cancel-MyDocs "Leave Application" "from_date" $MYDATES
     Remove-MyDocs "Attendance" "attendance_date" $MYDATES
     Remove-MyDocs "Finger Log" "work_date" $MYDATES
     Remove-MyDocs "OT Approval" "work_date" $MYDATES

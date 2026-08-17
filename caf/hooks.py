@@ -588,6 +588,13 @@ doc_events = {
     "Finger Log": {
         "before_submit": "caf.caf.doctype.monthly_roster_confirmation"
                          ".monthly_roster_confirmation.require_confirmed_month",
+        # Fix session 2026-08-15, D-15 - FL corrections reach the appraisal like
+        # the leave / Shift Assignment triggers. doc_events run AFTER the
+        # controller methods, so the Attendance is already created (on_submit,
+        # finger_log.py:93-95) or cancelled (on_cancel, cancel_attendance) when
+        # these read the day.
+        "on_submit": "caf.caf.finger_log_scope.refresh_appraisal_on_submit",
+        "on_cancel": "caf.caf.finger_log_scope.refresh_appraisal_on_cancel",
     },
     "Leave Application": {
         # CAF Chunk 6c (2026-08-13) - E7. Stock counts leave days against the

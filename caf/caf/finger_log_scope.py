@@ -28,12 +28,37 @@ the whole option-(d) decision is cancelled. The test suite asserts:
 """
 
 import frappe
+from frappe import _
 from frappe.utils import getdate
 
 from caf.caf.overrides.appraisal import get_employee_for_user, is_hr_manager
 
 PINK_ABSENT = "#f8d7da"
 PLAIN = "#ffffff"
+
+
+def refresh_appraisal_on_submit(doc, method=None):
+    """D-15 (2026-08-15) — a Finger Log correction reaches the appraisal like
+    the leave / Shift Assignment triggers. Skipped during the importer batch:
+    thousands of rows per run must not refresh per row
+    (`frappe.flags.in_import`, set by ingress_import.run)."""
+    if frappe.flags.in_import:
+        return
+    from caf.caf.appraisal_refresh import refresh_for
+    refresh_for(doc.employee, doc.work_date, doc.work_date,
+                reason=_("Finger Log {0} submitted").format(doc.name),
+                trigger=("Finger Log", doc.name))
+
+
+def refresh_appraisal_on_cancel(doc, method=None):
+    """D-15 — the cancel direction. The importer never cancels; the flag check
+    is belt-and-braces."""
+    if frappe.flags.in_import:
+        return
+    from caf.caf.appraisal_refresh import refresh_for
+    refresh_for(doc.employee, doc.work_date, doc.work_date,
+                reason=_("Finger Log {0} cancelled").format(doc.name),
+                trigger=("Finger Log", doc.name))
 
 
 def _hhmm(value):

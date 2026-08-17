@@ -11,9 +11,12 @@ $CYCLE = "2026-06"
 
 function Clean-All {
     Write-Host "`n-- cleanup (first) --"
+    # D-12: cancel leaves FIRST (their Attendance becomes docstatus=2 via stock
+    # db_set), then attendance is deletable, then the cancelled leaves.
+    Cancel-MyDocs "Leave Application" "from_date" @($D1)
     Remove-MyDocs "Attendance" "attendance_date" @($D1)
-    Remove-MyDocs "Finger Log" "work_date" @($D1)
     Remove-MyDocs "Leave Application" "from_date" @($D1)
+    Remove-MyDocs "Finger Log" "work_date" @($D1)
     Remove-MyDocs "Appraisal" "appraisal_cycle" @($CYCLE)
 }
 

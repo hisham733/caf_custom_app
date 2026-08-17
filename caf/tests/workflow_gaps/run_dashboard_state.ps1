@@ -15,9 +15,12 @@ $MYDATES = @($D1, $D2, $D3)
 
 function Clean-All {
     Write-Host "`n-- cleanup (first) --"
+    # D-12: cancel leaves FIRST (their Attendance becomes docstatus=2 via stock
+    # db_set), then attendance is deletable, then the cancelled leaves.
+    Cancel-MyDocs "Leave Application" "from_date" $MYDATES
     Remove-MyDocs "Attendance" "attendance_date" $MYDATES
-    Remove-MyDocs "Finger Log" "work_date" $MYDATES
     Remove-MyDocs "Leave Application" "from_date" $MYDATES
+    Remove-MyDocs "Finger Log" "work_date" $MYDATES
     Remove-MyDocs "Appraisal" "appraisal_cycle" @($CYCLE)
 }
 
