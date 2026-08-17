@@ -27,13 +27,29 @@ Both yield the SAME normalised dict, so `sync.py` cannot tell them apart. That i
 the point: the test suite proves parity (I1) and everything above this line is
 then source-agnostic.
 
-🔴 THE EDIT-FLAG TRAP — measured 2026-08-17, see INGRESS_EDIT_CAPABILITY.md
---------------------------------------------------------------------------
-Ingress stores each punch three ways: `att_in` (presented), `in_o` (original),
-`in_x` (a person overrode it). A human edit is **`_x = 1`, never `att_in <> in_o`**
-— the latter is the machine's own clamp-to-schedule and fires on ~19 rows a year
-with `_x = 0`. Comparing the two columns would manufacture false "HR edited this"
-alarms on rows nobody touched.
+🔴 THE THREE-COLUMN MODEL — settled by a controlled HR edit, 2026-08-17
+----------------------------------------------------------------------
+Ingress stores each punch three ways, and the roles are now measured rather than
+inferred (full evidence: INGRESS_EDIT_CAPABILITY.md E-9):
+
+    att_in   the PRESENTED value — **this is what ERP imports**
+    in_o     the ORIGINAL, preserved when the app overwrites a device reading
+    in_c     0 = came from a raw device tap · 1 = written by the Ingress app
+    in_x     ⚠️ NOT the edit marker. An HR edit does not touch it.
+
+HR edited four rows through the Ingress app (behind its edit password) and the
+result was unambiguous: `att_out` 17:58 → 19:45, `out_o` **kept 17:58**, `out_c`
+0 → **1**, and `out_x` stayed **0**.
+
+Two traps therefore, not one:
+  · `_x` looks like the override flag and is not — watching it means never seeing
+    an edit at all;
+  · `att_in <> in_o` is not an edit marker either — the machine also rewrites
+    presented values (enrolment-day normalisation, ~19 rows a year), so comparing
+    the two columns manufactures alarms on rows nobody touched.
+
+The raw device taps in `auditdata` were **unchanged** by all four edits, which is
+what lets `attendance` be treated as the single place an amendment lands.
 """
 
 import csv
@@ -52,13 +68,33 @@ PUNCHES = {
     "att_out": "out",
 }
 
-# The override flag that sits beside each punch. `_x = 1` means a person edited
-# it in the Ingress app.
+# 🔴 The flag that marks a punch as NOT a raw device reading. **`_c`, not `_x`** —
+# established by a controlled HR edit on 2026-08-17 (four rows, in the Ingress app,
+# behind its edit password):
+#
+#     att_out  17:58 -> 19:45     the new value
+#     out_o    17:58 -> 17:58     the original, PRESERVED
+#     out_x        0 -> 0         never moved
+#     out_c        0 -> 1         <-- this is the marker
+#
+# `machineInfo.md` documents `_c` the other way round ("1 = Ingress auto-computed,
+# 0 = manually entered"). That is wrong, or at least backwards for the fields a
+# person can touch. The coherent reading, which fits BOTH the edit test and the
+# population (96% of punched 2026 rows carry `in_c = 0`):
+#
+#     _c = 0  the value came from a raw device tap
+#     _c = 1  the value was written by the Ingress application
+#
+# So `_c = 1` is broader than "a human did it" — it also catches the machine's own
+# enrolment-day normalisation (E-3a). Either way it means **this is not what the
+# device recorded**, which is exactly what a person looking at the row needs to
+# know. `_x` is left alone deliberately: 15 rows in 289,617 carry it, an HR punch
+# edit does not set it, and what it does mean is still unknown.
 EDIT_FLAGS = {
-    "in_x": "time_in",
-    "break_x": "break",
-    "resume_x": "resume",
-    "out_x": "out",
+    "in_c": "time_in",
+    "break_c": "break",
+    "resume_c": "resume",
+    "out_c": "out",
 }
 
 # 🔴 NEVER read these. Listed so the omission is visible rather than accidental.

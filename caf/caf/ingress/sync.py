@@ -242,7 +242,7 @@ class _Batch:
         self.doc.append("rows", {
             "action": action, "employee": employee, "work_date": work_date,
             "finger_log": finger_log, "ftag_id": ftag_id,
-            "machine_edited": 1 if edited else 0,
+            "adjusted_in_ingress": 1 if edited else 0,
             "reason": (reason or "")[:400],
         })
 
@@ -412,14 +412,29 @@ def manual_import(from_date, to_date, employees=None, submit=False,
                 "device id, so these employees have no machine rows to import."
             ).format(", ".join(missing)))
 
+    # 🔴 The batch is created BEFORE the machine is touched, and the order is the
+    # point. It used to probe first and `throw` on failure — so an unreachable
+    # machine produced an exception and NO RECORD AT ALL. For a desk click that is
+    # survivable (a human reads the message); for the Phase-2 scheduled passes it
+    # is precisely the silent failure this feature exists to prevent (§6.5 blocker
+    # 7): a cron job that throws leaves nothing behind to notice.
+    #
+    # Found the honest way, 2026-08-17: Natalie went off the network mid-session
+    # (HR shut the PC down after making the test edits) and four runs produced
+    # four tracebacks and zero batches.
     reader = src.get_source(source_mode)
+    batch = _Batch("Manual", purpose, from_date, to_date, employees,
+                   f"{source_mode or 'configured'} (connecting…)")
     try:
         label = reader.describe()
+        batch.doc.source_label = label[:140]
     except Exception as e:
-        frappe.throw(_("Ingress source unreachable: {0}").format(
-            frappe.utils.strip_html(str(e))[:200]))
-
-    batch = _Batch("Manual", purpose, from_date, to_date, employees, label)
+        detail = frappe.utils.strip_html(str(e))[:300]
+        batch.note(f"SOURCE UNREACHABLE: {detail}")
+        batch.finish("Failed")
+        frappe.db.commit()
+        frappe.throw(_("Ingress source unreachable: {0}<br><br>Recorded as batch "
+                       "{1}.").format(detail, batch.name))
 
     # D-15 — the Finger Log on_submit doc_event skips its appraisal refresh while
     # this flag is set, so a batch does not refresh per row. Reset in `finally`:

@@ -11,7 +11,7 @@
   "work_date",
   "finger_log",
   "ftag_id",
-  "machine_edited",
+  "adjusted_in_ingress",
   "reason"
  ],
  "fields": [
@@ -60,11 +60,11 @@
   {
    "columns": 1,
    "default": "0",
-   "description": "The machine's _x override flag: a person edited this punch in the Ingress app. Measured at 15 rows in 289,617 - rare, and exactly the row somebody will later argue about.",
-   "fieldname": "machine_edited",
+   "description": "This punch is NOT what the fingerprint device recorded - the Ingress application wrote it (the machine's _c flag = 1). Usually an HR correction made in the Ingress app; occasionally the machine's own enrolment-day adjustment. Either way it is the row somebody may later argue about. Measured 2026-08-17: the flag that moves on an HR edit is _c, NOT the _x column that looks like an override flag.",
+   "fieldname": "adjusted_in_ingress",
    "fieldtype": "Check",
    "in_list_view": 1,
-   "label": "Edited on machine",
+   "label": "Adjusted in Ingress",
    "read_only": 1
   },
   {

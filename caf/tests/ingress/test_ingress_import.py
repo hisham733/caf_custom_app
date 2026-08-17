@@ -73,10 +73,34 @@ HRM = "hr.manager.test@caffood.com"
 EMP_USER = "mohd@caffood.com"
 
 RESULTS = []
+SKIPPED = []
 
 
 def check(tid, ok, detail):
     RESULTS.append((tid, bool(ok), detail))
+
+
+def skip(tid, why):
+    """A third state, and it has to exist.
+
+    🔴 Some assertions genuinely need the Ingress machine — source parity cannot
+    be checked against one source, and the August fixtures are not in the July
+    snapshot. When Natalie is off (it went off mid-session on 2026-08-17, right
+    after HR made the test edits) those rows must SKIP, not fail: a red gate that
+    is red for a reason nobody can fix from here is a gate people learn to
+    ignore. They are printed loudly and counted separately, never silently
+    dropped and never counted as passes.
+    """
+    SKIPPED.append((tid, why))
+
+
+def live_available():
+    """Is the machine reachable right now? Asked once, cheaply."""
+    try:
+        isrc.get_source("Live MySQL").describe()
+        return True
+    except Exception:
+        return False
 
 
 def as_user(user, fn, *a, **kw):
@@ -116,6 +140,36 @@ def run_rows(rows, submit=False, allow_recreate=False, purpose="Test"):
         frappe.flags.in_import = False
     frappe.db.commit()
     return doc
+
+
+def seed(live):
+    """Put the 12 fixture rows in place — from the machine, or equivalently.
+
+    Everything after I4 depends on this data existing, so when the machine is
+    unreachable the suite must still be ABLE to seed it, or two thirds of the
+    ownership rule goes untested for a reason that has nothing to do with the
+    code. The synthetic path mirrors what the machine actually holds for these
+    employees, including EMP_C's genuine all-zero day on D3.
+    """
+    if live:
+        return sync.manual_import(D1, D3, employees=EMPS, submit=True,
+                                  purpose="Test", source_mode="Live MySQL")
+
+    rows = []
+    for emp, tag in ((EMP_A, TAG_A), (EMP_B, TAG_B), (EMP_C, TAG_C)):
+        for day in DATES:
+            if emp == EMP_C and day == D3:
+                # the measured absence — rostered, never punched
+                rows.append(machine_row(tag, day, "00:00:00", "00:00:00",
+                                        "00:00:00", "00:00:00"))
+            else:
+                rows.append(machine_row(tag, day))
+    doc = run_rows(rows, submit=True)
+    return {"batch": doc.name,
+            "counts": {"created": doc.created, "submitted": doc.submitted,
+                       "failed": doc.failed, "held": doc.held,
+                       "already_present": doc.already_present,
+                       "drift": doc.drift}}
 
 
 def cleanup():
@@ -209,38 +263,43 @@ def fl_for(emp, day, docstatus=None):
 def run():
     frappe.set_user("Administrator")
     cleanup()
+    LIVE = live_available()
+    if not LIVE:
+        print("\n⚠️  Ingress machine UNREACHABLE — the live-source rows will be "
+              "SKIPPED. Everything driven by synthetic rows still runs, which is "
+              "most of the ownership rule.\n")
 
     try:
         # ══════════════════════════════════ I1 — the two sources agree
-        # Parity is what lets every other test run off-LAN. The snapshot holds
-        # July; live holds everything, so July is the overlap.
-        live_rows, snap_rows, i1_err = {}, {}, None
-        try:
-            live = isrc.get_source("Live MySQL")
-            snap = isrc.get_source("Snapshot CSV")
-            for r in live.read("2026-07-15", "2026-07-15", [TAG_A, TAG_B]):
-                live_rows[(r["ftag_id"], str(r["work_date"]))] = r
-            for r in snap.read("2026-07-15", "2026-07-15", [TAG_A, TAG_B]):
-                snap_rows[(r["ftag_id"], str(r["work_date"]))] = r
-        except Exception as e:
-            i1_err = frappe.utils.strip_html(str(e))[:120]
+        # The snapshot holds July; live holds everything, so July is the overlap.
+        if LIVE:
+            live_rows, snap_rows, i1_err = {}, {}, None
+            try:
+                live = isrc.get_source("Live MySQL")
+                snap = isrc.get_source("Snapshot CSV")
+                for r in live.read("2026-07-15", "2026-07-15", [TAG_A, TAG_B]):
+                    live_rows[(r["ftag_id"], str(r["work_date"]))] = r
+                for r in snap.read("2026-07-15", "2026-07-15", [TAG_A, TAG_B]):
+                    snap_rows[(r["ftag_id"], str(r["work_date"]))] = r
+            except Exception as e:
+                i1_err = frappe.utils.strip_html(str(e))[:120]
 
-        same = live_rows and live_rows.keys() == snap_rows.keys() and all(
-            all(live_rows[k][f] == snap_rows[k][f]
-                for f in ("time_in", "break", "resume", "out", "overtime"))
-            for k in live_rows)
-        check("I1-SOURCE-PARITY", same and not i1_err,
-              f"LiveSource and SnapshotSource produced identical punches for "
-              f"{len(live_rows)} row(s) on 2026-07-15 — so every assertion below "
-              f"holds whichever source is configured, and the suite still runs "
-              f"off the CAF LAN"
-              if same else
-              f"🔴 sources disagree: live={len(live_rows)} snapshot={len(snap_rows)} "
-              f"err={i1_err}")
+            same = live_rows and live_rows.keys() == snap_rows.keys() and all(
+                all(live_rows[k][f] == snap_rows[k][f]
+                    for f in ("time_in", "break", "resume", "out", "overtime"))
+                for k in live_rows)
+            check("I1-SOURCE-PARITY", same and not i1_err,
+                  f"LiveSource and SnapshotSource produced identical punches for "
+                  f"{len(live_rows)} row(s) on 2026-07-15 — the two readers agree, "
+                  f"so a result from one is a result from the other"
+                  if same else
+                  f"🔴 sources disagree: live={len(live_rows)} "
+                  f"snapshot={len(snap_rows)} err={i1_err}")
+        else:
+            skip("I1-SOURCE-PARITY", "needs BOTH sources; machine unreachable")
 
-        # ══════════════════════════════════ I2/I3 — a real import from the machine
-        out = sync.manual_import(D1, D3, employees=EMPS, submit=True,
-                                 purpose="Test", source_mode="Live MySQL")
+        # ══════════════════════════════════ I2/I3 — the fixture import
+        out = seed(LIVE)
         batch_name = out["batch"]
         counts = out["counts"]
 
@@ -285,8 +344,7 @@ def run():
               f"{counts['failed']} failed, {counts['held']} held")
 
         # ══════════════════════════════════ I4 — idempotency
-        again = sync.manual_import(D1, D3, employees=EMPS, submit=True,
-                                   purpose="Test", source_mode="Live MySQL")
+        again = seed(LIVE)
         check("I4-IDEMPOTENT",
               again["counts"]["already_present"] == 12
               and again["counts"]["created"] == 0
@@ -464,18 +522,23 @@ def run():
               f"counted ({ghost.skipped_no_employee}) — Ingress keeps emitting "
               f"rostered days for people who left years ago (OD-24)")
 
-        # ══════════════════════════════════ I21 — the _x flag is carried
+        # ══════════════════════════════════ I21 — the adjustment flag is carried
+        # ⚠️ The day must be empty, or an identical row reads as already-present
+        # and the importer writes no manifest line to assert against. That is
+        # correct behaviour and a vacuous test — the same trap as I11.
+        drop_day(EMP_A, D3)
         edited_run = run_rows([machine_row(TAG_A, D3, edited=["time_in"])])
         er = [r for r in frappe.get_doc("Ingress Import Batch", edited_run.name).rows
               if r.employee == EMP_A]
-        check("I21-MACHINE-EDIT-FLAG",
-              bool(er) and er[0].machine_edited == 1,
-              f"the machine's `in_x` override flag survived into the manifest "
-              f"(machine_edited={er[0].machine_edited if er else '—'}). Measured: "
-              f"15 such rows in 289,617 — rare, and exactly the row somebody "
-              f"will later argue about. ⚠️ `_x` is the ONLY edit marker; "
-              f"`att_in <> in_o` is the machine's own clamp-to-schedule and "
-              f"fires on ~19 untouched rows a year")
+        check("I21-ADJUSTED-FLAG",
+              bool(er) and er[0].adjusted_in_ingress == 1,
+              f"a punch the Ingress application wrote (rather than a device tap) "
+              f"is marked on the manifest "
+              f"(adjusted_in_ingress={er[0].adjusted_in_ingress if er else '—'}). "
+              f"🔴 The source flag is **`_c`, not `_x`** — established by a "
+              f"controlled HR edit on 2026-08-17: `att_out` 17:58→19:45, `out_o` "
+              f"KEPT 17:58, `out_c` 0→1, and `out_x` never moved. Watching `_x`, "
+              f"as this code originally did, would never have seen an edit at all")
 
         # ══════════════════════════════════ I20 — in_import is honoured
         calls = []
@@ -527,6 +590,7 @@ def run():
               f"week's payroll input")
 
         # ══════════════════════════════════ I15 — revert refuses a touched row
+        drop_day(EMP_B, D3)                  # same emptiness requirement as I21
         test_batch = run_rows([machine_row(TAG_B, D3)])
         made = [r.finger_log for r in frappe.get_doc(
             "Ingress Import Batch", test_batch.name).rows if r.finger_log]
@@ -542,9 +606,12 @@ def run():
               f"in-flight work is worse than one that stops and says why")
 
         # ══════════════════════════════════ I14 — the whole point: clean teardown
-        final = sync.manual_import(D1, D1, employees=[EMP_A], submit=True,
-                                   purpose="Test", source_mode="Live MySQL",
-                                   allow_recreate=True)
+        final = ({"batch": run_rows([machine_row(TAG_A, D1)], submit=True,
+                                    allow_recreate=True).name}
+                 if not LIVE else
+                 sync.manual_import(D1, D1, employees=[EMP_A], submit=True,
+                                    purpose="Test", source_mode="Live MySQL",
+                                    allow_recreate=True))
         # D1/EMP_A already holds a submitted log from the first run, so this
         # asserts the SECOND half of the contract: nothing new was created, and
         # the revert therefore removes nothing that was not this batch's.
@@ -559,8 +626,7 @@ def run():
 
         # And the full create -> submit -> revert -> nothing cycle, measured.
         cleanup()
-        cycle = sync.manual_import(D1, D3, employees=EMPS, submit=True,
-                                   purpose="Test", source_mode="Live MySQL")
+        cycle = seed(LIVE)
         mid_fl = frappe.db.count("Finger Log", {"employee": ("in", EMPS),
                                                 "work_date": ("in", DATES)})
         mid_att = frappe.db.count("Attendance", {"employee": ("in", EMPS),
@@ -594,7 +660,13 @@ def run():
     print("\n=== I — Ingress import ===")
     for tid, ok, detail in RESULTS:
         print(f"{tid:28s} {'PASS' if ok else 'FAIL'}  {detail}")
+    for tid, why in SKIPPED:
+        print(f"{tid:28s} SKIP  {why}")
     failed = [t for t, ok, _d in RESULTS if not ok]
     print(f"\n{len(RESULTS) - len(failed)}/{len(RESULTS)} passed"
+          + (f" · {len(SKIPPED)} skipped" if SKIPPED else "")
           + (f" — FAILED: {failed}" if failed else ""))
+    if SKIPPED:
+        print("⚠️  Skipped rows are NOT passes. Re-run with the Ingress machine "
+              "reachable before treating this suite as a full gate.")
     return not failed
