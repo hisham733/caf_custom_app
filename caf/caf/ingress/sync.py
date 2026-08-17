@@ -420,12 +420,35 @@ def manual_import(from_date, to_date, employees=None, submit=False,
                   purpose="Test", allow_recreate=False, source_mode=None):
     """Import a window, optionally narrowed to named employees.
 
+    🔴 **HR Manager only, and the check lives HERE.** Found 2026-08-17 by the
+    role-driven suite (S11 A3/A4): the desk wrapper was `@frappe.whitelist()` with
+    no role guard, and everything below it runs `ignore_permissions = True` because
+    the importer legitimately writes documents a person could not. Net effect —
+    **any logged-in employee could create and SUBMIT Finger Logs and Attendance
+    for the entire company.** A plain Employee got HTTP 200.
+
+    The doctype permissions were right and meant nothing: a whitelisted method is
+    its own front door. The guard sits on this function rather than only on the
+    wrapper so every caller is covered — desk dialog, `reimport_day`, the CLI
+    helpers, and anything added later.
+
     This is the surface MG asked for: pull the logs for one date or one person,
     test against them, then throw them away with `revert_batch`.
 
     allow_recreate — the ONE way a day HR cancelled comes back. Never set by the
     scheduled passes; only a human asking for this employee on this date.
     """
+    # Importing rewrites other people's attendance. Not the employee's own act,
+    # and not a supervisor's either — seniority is not the same as being HR.
+    #
+    # HR Manager ONLY here, while `revert_batch` and `reimport_day` also admit
+    # System Manager. The asymmetry is deliberate: CREATING the company's
+    # attendance is a business act that belongs to HR, whereas those two are
+    # repair paths, and a stuck batch or a wrong day should not need an HR role to
+    # clean up. Administrator reaches all three regardless, so nothing is
+    # strandable.
+    frappe.only_for("HR Manager")
+
     from_date, to_date = getdate(from_date), getdate(to_date)
     if to_date < from_date:
         frappe.throw(_("to_date {0} is before from_date {1}").format(to_date, from_date))
