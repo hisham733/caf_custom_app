@@ -545,6 +545,13 @@ doc_events = {
         # that measurement silently, because auto-fill matches rows by KRA name
         "validate": "caf.caf.overrides.appraisal_template.warn_on_missing_auto_fill_kras"
     },
+    # Fix session 2026-08-15, D-12 - a leave-owned Attendance row may only be
+    # un-decided by cancelling the leave itself; a direct cancel silently drops
+    # the day from the appraisal count while the leave stays Approved (FDR4 /
+    # OD-60). Machine paths (FL cascade, re-resolve) set the skip flag.
+    "Attendance": {
+        "before_cancel": "caf.caf.attendance_verdict.block_cancel_of_leave_owned_day",
+    },
     # CAF Chunk 5 (2026-08-10) - OD-44 / FBR39. A leave approved after the
     # appraisal was submitted has to reach the appraisal, or the two documents
     # disagree permanently.

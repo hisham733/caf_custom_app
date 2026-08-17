@@ -88,8 +88,14 @@ def reconcile_attendance(doc):
     if not should_exist:
         for row in rows:
             if row.docstatus == 1:
+                # D-12 (2026-08-15) — mirror the update branch's FDR4 check:
+                # a row carrying a leave_type was decided by a Leave
+                # Application. The machine must never cancel it either.
+                if row.leave_type:
+                    return "left alone (leave)"
                 att = frappe.get_doc("Attendance", row.name)
                 att.flags.ignore_permissions = True
+                att.flags.caf_skip_leave_guard = True
                 att.cancel()
                 att.add_comment("Comment", _(
                     "Cancelled by re-resolve: {0} is now a {1} for {2}. Cancelled, never "

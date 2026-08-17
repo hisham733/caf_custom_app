@@ -50,13 +50,23 @@ $ad2 = Get-Doc "ADMIN" "Appraisal" $APPN
 $cell2 = ($ad2.appraisal_kra | Where-Object { $_.kra -eq "Attendance" }).caf_date_cell
 Check "A1-COUNT" ($cell2 -match "\b16\b") "the day stays counted: cell='$cell2'"
 
-# A2 - TRUTH: HR Manager cancels the attendance outright
+# A2 (2026-08-15, D-12) - the guard: direct cancel of a leave-owned row is refused
 $a2 = Cancel-Doc "HRM" "Attendance" $ATTN
-Check "A2-CANCEL-TRUTH" ($a2.code -eq 200) "HR Manager cancels the attendance: $($a2.code) (truth)"
+Check "A2-CANCEL-GUARD" ($a2.code -ne 200 -and $a2.raw -match $LVN) "direct cancel of a leave-owned row refused ($($a2.code)), names the leave: $($a2.raw.Substring(0,[Math]::Min(120,[string]$a2.raw.Length)))"
+$att3 = Get-Doc "ADMIN" "Attendance" $ATTN
+Check "A2-UNCHANGED" ($null -ne $att3 -and $att3.docstatus -eq 1 -and $att3.status -eq "On Leave") "refused cancel changed nothing: ds=$($att3.docstatus) status=$($att3.status)"
 $r3 = Invoke-Call "HRM" "POST" "/api/method/run_doc_method" @{ dt = "Appraisal"; dn = $APPN; method = "refresh_auto_fill_action" }
 $ad3 = Get-Doc "ADMIN" "Appraisal" $APPN
 $cell3 = ($ad3.appraisal_kra | Where-Object { $_.kra -eq "Attendance" }).caf_date_cell
-Check "A2-COUNT" ($cell3 -notmatch "\b16\b") "cancelled attendance stays out of the count: cell='$cell3'"
+Check "A2-COUNT-KEPT" ($cell3 -match "\b16\b") "the day STAYS counted while the leave stands: cell='$cell3'"
+
+# A2b - the sanctioned route: cancel the LEAVE (restores the day from its own record)
+$cL = WF-Action "HRM" "Leave Application" $LVN "Cancel"
+Check "A2B-LEAVE-CANCEL" ($cL.code -eq 200) "cancel the leave instead: $($cL.code)"
+$r4 = Invoke-Call "HRM" "POST" "/api/method/run_doc_method" @{ dt = "Appraisal"; dn = $APPN; method = "refresh_auto_fill_action" }
+$ad4 = Get-Doc "ADMIN" "Appraisal" $APPN
+$cell4 = ($ad4.appraisal_kra | Where-Object { $_.kra -eq "Attendance" }).caf_date_cell
+Check "A2B-COUNT-DROP" ($cell4 -notmatch "\b16\b") "sanctioned route drops the day: cell='$cell4'"
 
 # A3 - Employee cannot touch it
 $a3 = Invoke-Call "EMP" "PUT" "/api/resource/Attendance/$ATTN" @{ status = "Absent" }

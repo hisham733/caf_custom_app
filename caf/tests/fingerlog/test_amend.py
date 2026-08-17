@@ -122,12 +122,17 @@ def amend(doctype, name):
 
 
 def cleanup():
-    """Scoped to this suite's dates and employee. Runs FIRST (§F4)."""
+    """Scoped to this suite's dates and employee. Runs FIRST (§F4).
+
+    2026-08-15 (D-12): Leave Application comes FIRST — a leave-owned Attendance
+    row may only be un-decided by cancelling the leave (the guard refuses the
+    other order), so teardown walks the sanctioned order too.
+    """
     for dt, filt in (
+            ("Leave Application", {"employee": EMP, "from_date": D_LEAVE}),
             ("Attendance", {"employee": EMP, "attendance_date":
                             ("in", [D_LOG, D_LEAVE, D_SHIFT])}),
             ("Finger Log", {"employee": EMP, "work_date": ("in", [D_LOG])}),
-            ("Leave Application", {"employee": EMP, "from_date": D_LEAVE}),
             ("Shift Assignment", {"employee": EMP, "start_date": D_SHIFT}),
             ("Appraisal", {"employee": EMP, "appraisal_cycle": CYCLE})):
         for r in frappe.get_all(dt, filters=filt, fields=["name", "docstatus"]):

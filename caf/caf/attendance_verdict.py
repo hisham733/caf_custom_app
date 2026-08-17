@@ -149,6 +149,40 @@ def cancel_attendance(doc):
                               fields=["name"]):
         att = frappe.get_doc("Attendance", row.name)
         att.flags.ignore_permissions = True
+        # D-12 (2026-08-15) — this is a machine cancel (FL cascade); the
+        # leave-owned guard must not fire on it. FL-created rows carry no
+        # leave_type (FDR4), but the flag keeps the cascade immune regardless.
+        att.flags.caf_skip_leave_guard = True
         att.cancel()
         cancelled.append(row.name)
     return cancelled
+
+
+def block_cancel_of_leave_owned_day(doc, method=None):
+    """D-12 (2026-08-15) — a leave-decided day may only be un-decided by
+    cancelling the LEAVE, which restores the day from its Finger Log (OD-60)
+    and refreshes the appraisal. A direct cancel of the leave-owned Attendance
+    row is the one route that silently drops the day from FBR37's count while
+    the Leave Application stays Approved.
+
+    Registered as `doc_events "Attendance" -> before_cancel`. The stock
+    leave-cancel path erases rows with a raw `db_set docstatus=2` — no events
+    fire — so the sanctioned route never trips this guard.
+    """
+    if doc.flags.caf_skip_leave_guard:
+        return
+
+    la = doc.get("leave_application")
+    if not la and not doc.get("leave_type"):
+        return  # not a leave-owned row — plain-day corrections stay open
+
+    if not la or frappe.db.get_value("Leave Application", la, "docstatus") != 1:
+        return  # stray row after a leave cancel — the repair route stays open
+
+    frappe.throw(
+        _("Attendance {0} belongs to Leave Application {1}, which is still approved. "
+          "Cancel the leave application instead - it restores the day from its "
+          "Finger Log and keeps the appraisal correct.").format(
+              frappe.bold(doc.name), frappe.bold(la)),
+        title=_("Leave-owned day"),
+    )
