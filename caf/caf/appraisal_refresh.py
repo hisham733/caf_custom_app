@@ -314,15 +314,33 @@ def check_leave_window(doc, method=None):
         closed, submitted, deadline = window_closed(app.name)
         if not closed:
             continue
+        # 🔴 The message names the WAY OUT, not just the refusal — MG, 2026-08-17.
+        #
+        # FBR39 is not a ceiling on backdating; it is a gate that forces the
+        # deliberate route. Cancelling the appraisal removes it from
+        # `submitted_appraisals()` (which filters docstatus = 1), so this check
+        # stops applying and the leave files normally. The appraisal is then
+        # amended and re-submitted, recomputing from the corrected attendance —
+        # which is SAFER than the in-place refresh, because nothing can be left
+        # stale.
+        #
+        # The old message ended "Ask HR how to record it", which told a supervisor
+        # nothing and told HR nothing either. A refusal that hides the remedy gets
+        # worked around, not obeyed.
         frappe.throw(
             _(
-                "Appraisal {0} for cycle {1} was submitted on {2}. Leave for that period "
-                "could be filed until {3} — that window has closed, so this application "
-                "cannot be approved (FBR39). Ask HR how to record it."
+                "Appraisal {0} for cycle {1} was submitted on {2}, and leave for that "
+                "period could be filed until {3}. That window has closed, so this "
+                "application cannot be approved as it stands (FBR39)."
+                "<br><br><b>How to record it anyway:</b> HR cancels appraisal {0}, "
+                "then this leave can be approved normally, then the appraisal is "
+                "amended and re-submitted — it will recompute from the corrected "
+                "attendance. There is no time limit on that route; the window only "
+                "governs changing a <i>submitted</i> appraisal in place."
             ).format(frappe.bold(app.name), app.appraisal_cycle,
                      frappe.format(submitted, {"fieldtype": "Datetime"}),
                      frappe.format(deadline, {"fieldtype": "Datetime"})),
-            title=_("Leave window closed"))
+            title=_("Leave window closed — appraisal must be re-opened"))
 
 
 def on_leave_application_submit(doc, method=None):
