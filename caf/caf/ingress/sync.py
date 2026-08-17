@@ -189,6 +189,28 @@ def _machine_differs(doc, row) -> list:
     return changed
 
 
+def _flag_drift(finger_log: str, changed: list, batch_name: str):
+    """Put the drift where a human will meet it: on the Finger Log.
+
+    The batch is the run record; `caf_hr_review` is the worklist. HR opening the
+    day in dispute sees the flag and the note without knowing an import batch
+    exists. Idempotent by content — re-running a sweep over the same unchanged
+    disagreement rewrites the same note rather than stacking comments.
+    """
+    doc = frappe.get_doc("Finger Log", finger_log)
+    note = _("Ingress revised this day after ERPNext submitted it ({0}). The log "
+             "was NOT changed. If the machine is right, cancel this log and "
+             "re-import the day; if ERPNext is right, clear this flag. [{1}]"
+             ).format(", ".join(changed), batch_name)
+    if doc.caf_hr_review and (doc.caf_hr_review_note or "") == note:
+        return
+    doc.flags.ignore_permissions = True
+    doc.flags.caf_system_write = True          # OD-62's sanctioned machine write
+    doc.caf_hr_review = 1
+    doc.caf_hr_review_note = note
+    doc.save(ignore_permissions=True)
+
+
 def _apply(doc, row, batch_name):
     """Write the machine's facts onto a Finger Log. Nothing derived is touched."""
     doc.ftag_id = row["ftag_id"]
@@ -293,6 +315,15 @@ def _import(batch, rows, by_device, submit, allow_recreate):
                         reason = _("machine now differs on {0} — submitted log left "
                                    "untouched").format(", ".join(changed))
                         batch.note(f"DRIFT {emp.name} {day} {existing}: {', '.join(changed)}")
+                        # 🔴 MG, 2026-08-17: *"where will this report live?"* — a
+                        # drift buried in a batch document is a drift nobody sees.
+                        # It has to reach the DOCUMENT in dispute, so flag the log
+                        # itself: `caf_hr_review` already exists for exactly this
+                        # and already feeds the HR appraisal dashboard's review
+                        # panel (D-13 uses it for the OT cascade).
+                        # `caf_system_write` is the one marker OD-62's
+                        # after-submit guard lets past.
+                        _flag_drift(existing, changed, batch.name)
                     else:
                         batch.counts.already_present += 1
                         continue

@@ -374,6 +374,21 @@ def run():
               f"{sync._as_time_str(fl_a.time_in)}. FBR8: report, never "
               f"auto-correct")
 
+        # 🔴 MG's question, 2026-08-17: "where does the drift report live?" — a
+        # drift recorded only in a batch document is one nobody meets. It has to
+        # reach the document in dispute.
+        flagged = frappe.db.get_value("Finger Log", fl_a.name,
+                                      ["caf_hr_review", "caf_hr_review_note"],
+                                      as_dict=True)
+        check("I9b-DRIFT-REACHES-THE-LOG",
+              flagged.caf_hr_review == 1 and "Ingress revised" in (
+                  flagged.caf_hr_review_note or ""),
+              f"the drift is flagged ON THE FINGER LOG "
+              f"(caf_hr_review={flagged.caf_hr_review}), not only in the batch — "
+              f"note reads {(flagged.caf_hr_review_note or '')[:90]!r}. That field "
+              f"already drives the HR appraisal dashboard's review panel, so the "
+              f"day surfaces where HR is already looking")
+
         # D-13's OT cascade rewrites final_ot / ot_approval_id on a SUBMITTED
         # log. Those are ERP-owned and have no machine counterpart, so they must
         # not count as drift or every cascade raises a false alarm.
