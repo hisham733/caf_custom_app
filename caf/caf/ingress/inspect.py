@@ -113,6 +113,102 @@ def _s(v):
 
 
 @frappe.whitelist()
+def audit_snapshot(label="before"):
+    """The Ingress app's OWN login history — session-level attribution.
+
+    🔴 This corrects an earlier conclusion in this project. `log_update` is empty,
+    so the first read of the evidence was "an Ingress edit is not attributable at
+    all". That was too quick: MG established 2026-08-17 that **editing a punch
+    needs a special password**, which means an elevated login is involved — and
+    `system_user_lastlogin` keeps 1,221 of them, with the account id, the IP, and
+    the login/logout window.
+
+    So an amendment CAN be tied to a session: which app account, from which
+    machine, between which two times. What it cannot be tied to is a PERSON,
+    because CAF has three app accounts (`admin`, `Fiza`, `Test`) and every login
+    in the history is `admin` — shared. Session-level, not person-level.
+
+    Correlate afterwards by checking which session window `attendance.lastupdate`
+    falls inside. Combined with HR's own written note, that is full attribution.
+    """
+    frappe.only_for(("System Manager", "HR Manager"))
+    src = _live()
+    out = {}
+
+    with src._cursor() as cur:
+        # `attendanceview` is captured because it evidently records the LAST
+        # attendance screen the account opened — admin's currently reads
+        # "10,2026-08-15,2026-08-15::'12','22',…'385','442',…'1017',…" i.e. a
+        # schedule, a date range and the userid list in view. If it moves when HR
+        # edits, it is a second activity trace and a better one than a timestamp.
+        cur.execute("""SELECT id, username, RolesID, activeFlag, Remark,
+                              attendanceview, passwordUpdateOn
+                       FROM system_user ORDER BY id""")
+        out["system_user"] = [
+            {"id": a, "username": b, "roles_id": c, "active": d, "remark": e,
+             "attendanceview": _s(f), "password_updated_on": _s(g)}
+            for a, b, c, d, e, f, g in cur.fetchall()]
+
+        cur.execute("""SELECT id, userid, ipaddress, LoginTime, LogoutTime,
+                              LogoutStatusFlag, Remark
+                       FROM system_user_lastlogin ORDER BY id DESC LIMIT 20""")
+        out["recent_logins"] = [
+            {"id": a, "user_id": b, "ip": c, "login": _s(d), "logout": _s(e),
+             "still_open": f == 1, "remark": g}
+            for a, b, c, d, e, f, g in cur.fetchall()]
+
+        for tbl in ("system_user_lastlogin", "log_client", "log_client_details",
+                    "log_server", "event_activity", "log_update"):
+            cur.execute(f"SELECT COUNT(*) FROM `{tbl}`")
+            out[f"count_{tbl}"] = cur.fetchone()[0]
+
+    os.makedirs(SNAP_DIR, exist_ok=True)
+    path = os.path.join(SNAP_DIR, f"audit_{label}.json")
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(out, fh, indent=2, default=str)
+    out["saved"] = path
+    return out
+
+
+@frappe.whitelist()
+def audit_diff(before="before", after="after"):
+    """Which login sessions appeared between two audit snapshots."""
+    frappe.only_for(("System Manager", "HR Manager"))
+
+    def load(label):
+        path = os.path.join(SNAP_DIR, f"audit_{label}.json")
+        if not os.path.exists(path):
+            frappe.throw(_("No audit snapshot at {0}").format(path))
+        with open(path, encoding="utf-8") as fh:
+            return json.load(fh)
+
+    b, a = load(before), load(after)
+    seen = {r["id"] for r in b["recent_logins"]}
+    new = [r for r in a["recent_logins"] if r["id"] not in seen]
+    names = {u["id"]: u["username"] for u in a["system_user"]}
+    for r in new:
+        r["username"] = names.get(r["user_id"], "?")
+
+    bview = {u["id"]: u.get("attendanceview") for u in b["system_user"]}
+    view_moved = [
+        {"account": u["username"], "before": bview.get(u["id"]),
+         "after": u.get("attendanceview")}
+        for u in a["system_user"]
+        if u.get("attendanceview") != bview.get(u["id"])]
+
+    return {
+        "new_login_sessions": new,
+        "attendanceview_moved": view_moved,
+        "table_growth": {k: {"before": b.get(k), "after": a.get(k)}
+                         for k in a if k.startswith("count_")
+                         and b.get(k) != a.get(k)},
+        "note": ("Match attendance.lastupdate against these windows to place the "
+                 "edit in a session. Shared accounts mean this identifies the "
+                 "ACCOUNT and the machine, never the individual."),
+    }
+
+
+@frappe.whitelist()
 def snapshot(ftag_id, work_date, label="before"):
     """Read the row and keep it on disk so it survives across days."""
     frappe.only_for(("System Manager", "HR Manager"))
