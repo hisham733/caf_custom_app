@@ -271,7 +271,9 @@ def run():
 
     try:
         # ══════════════════════════════════ I1 — the two sources agree
-        # The snapshot holds July; live holds everything, so July is the overlap.
+        # Both sources are asked the same day. (The snapshot is NOT July-only as
+        # an earlier comment here claimed — measured 2026-08-17 it spans
+        # 2025-06 → 2026-12, ~9k rows a month.)
         if LIVE:
             live_rows, snap_rows, i1_err = {}, {}, None
             try:

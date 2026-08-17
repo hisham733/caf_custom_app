@@ -60,7 +60,7 @@ import json
 
 import frappe
 from frappe import _
-from frappe.utils import getdate, now_datetime
+from frappe.utils import add_days, getdate, now_datetime, nowdate
 
 from caf.caf.ingress import source as src
 
@@ -429,6 +429,24 @@ def manual_import(from_date, to_date, employees=None, submit=False,
     from_date, to_date = getdate(from_date), getdate(to_date)
     if to_date < from_date:
         frappe.throw(_("to_date {0} is before from_date {1}").format(to_date, from_date))
+
+    # 🔴 TODAY IS NEVER IMPORTABLE — MG, 2026-08-17.
+    #
+    # A punch record for today is mid-sentence: the person has clocked in and not
+    # out. Importing it would derive a day from half the facts, and because the
+    # importer is allowed to UPDATE its own drafts, the wrong verdict would sit in
+    # front of HR until something happened to correct it.
+    #
+    # The cap is refused loudly rather than silently clamped: a clamp would let
+    # somebody ask for 1–17 Aug, receive 1–16, and never learn the difference.
+    # Yesterday is the newest date the machine can be trusted on.
+    yesterday = add_days(getdate(nowdate()), -1)
+    if to_date > yesterday:
+        frappe.throw(_(
+            "Cannot import {0} — today's punches are still incomplete (somebody "
+            "has clocked in and not out yet). The newest importable work date is "
+            "{1}. Ask again with to_date = {1} or earlier."
+        ).format(to_date, yesterday))
 
     by_device = active_by_device()
     ftag_ids = None
