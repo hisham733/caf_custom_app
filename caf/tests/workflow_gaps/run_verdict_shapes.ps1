@@ -101,7 +101,7 @@ $d7 = Log-Doc $EMP16 "2026-05-27"
 Check "W7-HOLIDAY" ($null -ne $ot7 -and $s7.code -eq 200 -and $d7.day_type -eq "Holiday" -and $d7.ot_in_hour -gt 0) "day_type=$($d7.day_type), ot_in_hour=$($d7.ot_in_hour) — distinct from W6's Restday"
 
 # W9 — half-day leave -> Attendance Half Day, counted 0.5 in the appraisal cell
-$lv = Insert-Doc "EMP" @{ doctype = "Leave Application"; employee = $EMP13; from_date = "2026-06-18"; to_date = "2026-06-18"; leave_type = $LTYPE; leave_approver = "mursyid@caffood.com"; half_day = 1; description = "WF-GAP S3 W9" }
+$lv = Insert-Doc "EMP" @{ doctype = "Leave Application"; employee = $EMP13; from_date = "2026-06-18"; to_date = "2026-06-18"; leave_type = $LTYPE; leave_approver = "too@caffood.com"; half_day = 1; description = "WF-GAP S3 W9" }
 $lvName = $lv.data.message.name
 Approve-Leave $lvName
 $att9 = Get-List "ADMIN" "Attendance" @( @("employee", "=", $EMP13), @("attendance_date", "=", "2026-06-18"), @("docstatus", "<", 2) ) @("name", "status", "leave_type")

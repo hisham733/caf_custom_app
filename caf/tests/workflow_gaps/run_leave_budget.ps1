@@ -32,15 +32,15 @@ $as = Submit-Doc "HRM" "Leave Allocation" $allocName
 Check "SETUP-ALLOC" ($null -ne $allocName -and $as.code -eq 200) "allocation 10 days Privilege: $allocName"
 
 # B1 - 15 days vs 10 balance
-$b1 = Insert-Doc "EMP" @{ doctype = "Leave Application"; employee = $EMP13; from_date = $D1; to_date = "2026-06-15"; leave_type = $TYPE; leave_approver = "mursyid@caffood.com"; description = "WF-GAP S2 B1" }
+$b1 = Insert-Doc "EMP" @{ doctype = "Leave Application"; employee = $EMP13; from_date = $D1; to_date = "2026-06-15"; leave_type = $TYPE; leave_approver = "too@caffood.com"; description = "WF-GAP S2 B1" }
 Check "B1-OVER-BUDGET" ($b1.code -ne 200) "15-day application refused ($($b1.code)): $($b1.raw)"
 
 # B2 - control: within budget accepted
-$b2 = Insert-Doc "EMP" @{ doctype = "Leave Application"; employee = $EMP13; from_date = $D2; to_date = "2026-06-25"; leave_type = $TYPE; leave_approver = "mursyid@caffood.com"; description = "WF-GAP S2 B2" }
+$b2 = Insert-Doc "EMP" @{ doctype = "Leave Application"; employee = $EMP13; from_date = $D2; to_date = "2026-06-25"; leave_type = $TYPE; leave_approver = "too@caffood.com"; description = "WF-GAP S2 B2" }
 Check "B2-CONTROL" ($b2.code -eq 200) "10-day application accepted (control) — a refused B1 alone proves nothing"
 
 # B3 - second large application: remaining balance blocks it
-$b3 = Insert-Doc "EMP" @{ doctype = "Leave Application"; employee = $EMP13; from_date = $D3; to_date = "2026-06-12"; leave_type = $TYPE; leave_approver = "mursyid@caffood.com"; description = "WF-GAP S2 B3" }
+$b3 = Insert-Doc "EMP" @{ doctype = "Leave Application"; employee = $EMP13; from_date = $D3; to_date = "2026-06-12"; leave_type = $TYPE; leave_approver = "too@caffood.com"; description = "WF-GAP S2 B3" }
 Check "B3-EXHAUSTED" ($b3.code -ne 200) "second large application refused ($($b3.code)): $($b3.raw)"
 
 # ------------------------------------------------------------------

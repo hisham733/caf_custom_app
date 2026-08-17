@@ -3,8 +3,8 @@
 #
 # Fixture (verified by S8 test_fixture_integrity):
 #   EMP      mohd@caffood.com            HR-EMP-00013  (Employee)
-#   SUP      mursyid@caffood.com         HR-EMP-00011  (supervisor AND leave approver, pure LA)
-#   STRANGER production.c.caf@gmail.com  (pure Leave Approver, NOT mohd's approver)
+#   SUP      too@caffood.com         HR-EMP-00003  (supervisor AND leave approver)
+#   STRANGER yow.kwee@caffood.com       HR-EMP-00002  (director, pure LA, NOT mohd's approver)
 #   HRM      hr.manager.test@caffood.com (HR Manager)
 #   ADMIN    Administrator (setup/cleanup only)
 #
@@ -140,7 +140,7 @@ function New-Leave([string]$Role, [string]$Employee, [string]$From, [string]$To)
         from_date = $From
         to_date = $To
         leave_type = $LTYPE
-        leave_approver = "mursyid@caffood.com"
+        leave_approver = "too@caffood.com"
         description = "WF-GAP S1 test"
     }
     if ($r.code -ne 200) { return $null }

@@ -41,13 +41,13 @@ $log1n = $log1.data.message.name
 $s1 = Submit-Doc "HRM" "Finger Log" $log1n
 Check "B2-PRESENT" ($s1.code -eq 200) "day $D1 is Present"
 
-$lv = Insert-Doc "EMP" @{ doctype = "Leave Application"; employee = $EMP13; from_date = $D1; to_date = $D1; leave_type = $LTYPE; leave_approver = "mursyid@caffood.com"; description = "WF-GAP S5 B2" }
+$lv = Insert-Doc "EMP" @{ doctype = "Leave Application"; employee = $EMP13; from_date = $D1; to_date = $D1; leave_type = $LTYPE; leave_approver = "too@caffood.com"; description = "WF-GAP S5 B2" }
 Check "B2-INSERT" ($lv.code -ne 200) "TRUTH: leave over a Present day refused at filing ($($lv.code)): $($lv.raw)"
 $att1 = Get-List "ADMIN" "Attendance" @( @("employee", "=", $EMP13), @("attendance_date", "=", $D1), @("docstatus", "<", 2) ) @("name", "status", "leave_type")
 Check "B2-TRUTH" ($att1.Count -eq 1 -and $att1[0].status -eq "Present" -and [string]::IsNullOrEmpty($att1[0].leave_type)) "attendance untouched: $($att1[0].status)/$($att1[0].leave_type) — he worked, not overwritten"
 
 # V2 — leave approved FIRST, then the log arrives (the 4am import shape)
-$lv2 = Insert-Doc "EMP" @{ doctype = "Leave Application"; employee = $EMP13; from_date = $D2; to_date = $D2; leave_type = $LTYPE; leave_approver = "mursyid@caffood.com"; description = "WF-GAP S5 V2" }
+$lv2 = Insert-Doc "EMP" @{ doctype = "Leave Application"; employee = $EMP13; from_date = $D2; to_date = $D2; leave_type = $LTYPE; leave_approver = "too@caffood.com"; description = "WF-GAP S5 V2" }
 $lv2n = $lv2.data.message.name
 Approve-Leave $lv2n
 $att2 = Get-List "ADMIN" "Attendance" @( @("employee", "=", $EMP13), @("attendance_date", "=", $D2), @("docstatus", "<", 2) ) @("name", "status", "leave_type")

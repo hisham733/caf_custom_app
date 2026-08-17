@@ -28,12 +28,121 @@ the whole option-(d) decision is cancelled. The test suite asserts:
 """
 
 import frappe
+from frappe.utils import getdate
 
 from caf.caf.overrides.appraisal import get_employee_for_user, is_hr_manager
+
+PINK_ABSENT = "#f8d7da"
+PLAIN = "#ffffff"
+
+
+def _hhmm(value):
+    """A punch as HH:MM; an all-zero punch renders as nothing (OD-49)."""
+    if not value:
+        return ""
+    text = str(value)
+    if text.startswith("0:00:00") or text.startswith("00:00:00"):
+        return ""
+    parts = text.split(":")
+    return "{0:02d}:{1}".format(int(parts[0]), parts[1]) if len(parts) >= 2 else text
+
+
+@frappe.whitelist()
+def get_employee_events(doctype, start, end, fields=None, filters=None, field_map=None):
+    """Calendar events for the Finger Log calendar view — D-5 / D-7 / AC-1.
+
+    The STATUS column (the Attendance verdict) comes from a server-side join:
+    employees never read Attendance itself, and leave_type (MC) is never
+    selected. Rows are scoped by the CALLER's identity, never by a
+    client-supplied filter — employees get their own rows only (AC-1).
+    """
+    user = frappe.session.user
+    conditions = ["fl.docstatus < 2"]
+    values = {}
+
+    if user == "Administrator" or is_hr_manager(user):
+        emp = (filters or {}).get("employee")
+        if emp:
+            conditions.append("fl.employee = %(employee)s")
+            values["employee"] = emp
+    else:
+        own = _own_employees(user)
+        if not own:
+            return []
+        conditions.append("fl.employee in ({0})".format(
+            ", ".join(frappe.db.escape(e) for e in own)))
+
+    if start:
+        conditions.append("fl.work_date >= %(start)s")
+        values["start"] = getdate(start)
+    if end:
+        conditions.append("fl.work_date <= %(end)s")
+        values["end"] = getdate(end)
+
+    rows = frappe.db.sql("""
+        SELECT fl.name, fl.employee, fl.work_date, fl.day_type, fl.shift_type,
+               fl.time_in, fl.`break`, fl.resume, fl.`out`, fl.final_ot,
+               fl.docstatus, att.status
+          FROM `tabFinger Log` fl
+          LEFT JOIN `tabAttendance` att
+                 ON att.employee = fl.employee
+                AND att.attendance_date = fl.work_date
+                AND att.docstatus = 1
+         WHERE {conditions}
+      ORDER BY fl.work_date
+    """.format(conditions=" AND ".join(conditions)), values, as_dict=True)
+
+    events = []
+    for r in rows:
+        t_in, t_out = _hhmm(r.time_in), _hhmm(r.get("out"))
+        l_out, l_in = _hhmm(r.get("break")), _hhmm(r.resume)
+        punches = " · ".join(p for p in (
+            "{0}–{1}".format(t_in, t_out) if (t_in or t_out) else "",
+            "L{0}–{1}".format(l_out, l_in) if (l_out or l_in) else "",
+        ) if p)
+        label = "DRAFT" if r.docstatus == 0 else "SUBMITTED"
+        status = r.status or ""
+        title = " · ".join(x for x in (label, status, punches) if x)
+        tooltip = (
+            "{0} · {1} · {2} · {3}\n"
+            "in {4} · lunch {5}–{6} · out {7}\n"
+            "final OT {8} · {9}"
+        ).format(
+            r.work_date, r.day_type or "", r.shift_type or "", label,
+            _hhmm(r.time_in) or "-", _hhmm(r.get("break")) or "-",
+            _hhmm(r.resume) or "-", _hhmm(r.get("out")) or "-",
+            r.final_ot or 0, r.name,
+        )
+        events.append({
+            "name": r.name,
+            "start": r.work_date,
+            "end": r.work_date,
+            "allDay": 1,
+            "title": title,
+            "tooltip": tooltip,
+            "color": PINK_ABSENT if status == "Absent" else PLAIN,
+            "doctype": "Finger Log",
+        })
+    return events
 
 
 def _own_employee(user):
     return get_employee_for_user(user)
+
+
+def _own_employees(user):
+    """The Employee records this user may read: their user_id-linked record plus
+    any `Employee` User Permission rows — the same two conventions the site
+    already uses to scope Attendance (prod links user_id; the fixture users are
+    linked by User Permission rows, verified live)."""
+    linked = get_employee_for_user(user)
+    up = frappe.get_all(
+        "User Permission",
+        filters={"user": user, "allow": "Employee"},
+        pluck="for_value",
+    )
+    own = {e for e in [linked] + up if e}
+    return sorted(own)
 
 
 def has_permission(doc, ptype=None, user=None, **kwargs):
@@ -47,11 +156,10 @@ def has_permission(doc, ptype=None, user=None, **kwargs):
     if ptype != "read":
         return False
 
-    own = _own_employee(user)
     employee = getattr(doc, "employee", None)
-    if not own or not employee:
+    if not employee:
         return False
-    return employee == own
+    return employee in _own_employees(user)
 
 
 def get_permission_query_conditions(user=None):
@@ -60,10 +168,13 @@ def get_permission_query_conditions(user=None):
     if user == "Administrator" or is_hr_manager(user):
         return ""
 
-    own = _own_employee(user)
+    own = _own_employees(user)
     if not own:
-        # No linked Employee -> nothing. An empty IN () would be a SQL syntax
-        # error, so emit a condition that is simply always false.
+        # No linked Employee and no Employee User Permission -> nothing. An empty
+        # IN () would be a SQL syntax error, so emit a condition that is simply
+        # always false.
         return "1=0"
 
-    return "`tabFinger Log`.`employee` = {0}".format(frappe.db.escape(own))
+    return "`tabFinger Log`.`employee` in ({0})".format(
+        ", ".join(frappe.db.escape(e) for e in own)
+    )

@@ -22,7 +22,7 @@ Write-Host "=== S9 - Attendance amend/cancel truth ==="
 Clean-All
 
 # leave approved -> Attendance On Leave for D1
-$lv = Insert-Doc "EMP" @{ doctype = "Leave Application"; employee = $EMP13; from_date = $D1; to_date = $D1; leave_type = $LTYPE; leave_approver = "mursyid@caffood.com"; description = "WF-GAP S9" }
+$lv = Insert-Doc "EMP" @{ doctype = "Leave Application"; employee = $EMP13; from_date = $D1; to_date = $D1; leave_type = $LTYPE; leave_approver = "too@caffood.com"; description = "WF-GAP S9" }
 $LVN = $lv.data.message.name
 WF-Action "SUP" "Leave Application" $LVN "Submit for Approval" | Out-Null
 WF-Action "SUP" "Leave Application" $LVN "Approve" | Out-Null

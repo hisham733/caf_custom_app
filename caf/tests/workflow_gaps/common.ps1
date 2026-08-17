@@ -88,7 +88,7 @@ function Summary() {
 # created today, on the suite's own dates. Real data (other owners) is never
 # touched — MG boundary: core data (Employee/User) must not change; test
 # records are disposable but must not be deleted by accident.
-$SessionUsers = @("mohd@caffood.com", "mursyid@caffood.com", "hr.manager.test@caffood.com")
+$SessionUsers = @("mohd@caffood.com", "too@caffood.com", "yow.kwee@caffood.com", "hr.manager.test@caffood.com")
 
 function Remove-MyDocs([string]$Dt, [string]$DateField, [array]$Dates) {
     $rows = Get-List "ADMIN" $Dt @(

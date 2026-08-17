@@ -50,11 +50,15 @@ $log1 = Insert-Doc "HRM" @{
     doctype = "Finger Log"; employee = $EMP13; employee_name = "Mohd Hairy Bin Abd Latif"; work_date = $D1
     time_in = "00:00:00"; break = "00:00:00"; resume = "00:00:00"; out = "00:00:00"; overtime = 0
 }
-$lv1 = Insert-Doc "EMP" @{ doctype = "Leave Application"; employee = $EMP13; from_date = $D1; to_date = $D1; leave_type = $LTYPE; leave_approver = "mursyid@caffood.com"; description = "WF-GAP S7 D1" }
+$lv1 = Insert-Doc "EMP" @{ doctype = "Leave Application"; employee = $EMP13; from_date = $D1; to_date = $D1; leave_type = $LTYPE; leave_approver = "too@caffood.com"; description = "WF-GAP S7 D1" }
 $LV1N = $lv1.data.message.name
 Approve-Leave $LV1N
 $rep1e = Run-Report "EMP" "My Attendance" @{ from_date = $D1; to_date = $D1 }
-Check "D1-EMP-403-TRUTH" ($rep1e.Count -eq 0) "TRUTH: Employee cannot RUN the report via the desk path (403 - 'report' permission on Finger Log is HR-only) (REPORT)"
+Check "D1-EMP-GATE" ($rep1e.Count -eq 0) "TRUTH: Employee cannot RUN the report via the desk path - Report roles are HR-Manager-only (D-2) and Employee holds report=0 on Finger Log (D-1) (REPORT)"
+$ev1 = Invoke-Call "EMP" "POST" "/api/method/caf.caf.finger_log_scope.get_employee_events" @{ doctype = "Finger Log"; start = $D1; end = $D1 }
+$ev1row = @($ev1.data.message) | Where-Object { $_.name -eq $log1.data.message.name } | Select-Object -First 1
+Check "D1-EMP-CAL" ($ev1.code -eq 200 -and $null -ne $ev1row -and $ev1row.title -match "On Leave" -and $ev1row.title -match "DRAFT") "calendar (EMP): own row for ${D1} shows DRAFT + On Leave: '$($ev1row.title)' (D-5/D-7 join)"
+Check "D1-EMP-CAL-SCOPE" (@($ev1.data.message).Count -eq 1) "calendar (EMP) returns ONLY own rows: $(@($ev1.data.message).Count) event(s) for ${D1} (AC-1)"
 $rep1h = Run-Report "HRM" "My Attendance" @{ from_date = $D1; to_date = $D1; employee = $EMP13 }
 $row1h = $rep1h | Where-Object { $_.work_date -eq $D1 } | Select-Object -First 1
 Check "D1-MYATT-STATUS" ($null -ne $row1h -and $row1h.status -eq "On Leave") "My Attendance as HRM shows On Leave for ${D1}: status=$($row1h.status)"
@@ -62,7 +66,7 @@ Check "D1-LEAVETYPE-HR" ($null -ne $row1h -and $row1h.leave_type -eq $LTYPE) "HR
 
 # ---- D2: Who Is Off stage walk with the REAL 6b workflow ----
 # NB: board rows carry employee_name (no employee key); from/to filter = spans covering the date
-$lv2 = Insert-Doc "EMP" @{ doctype = "Leave Application"; employee = $EMP13; from_date = $D2; to_date = $D2; leave_type = $LTYPE; leave_approver = "mursyid@caffood.com"; description = "WF-GAP S7 D2" }
+$lv2 = Insert-Doc "EMP" @{ doctype = "Leave Application"; employee = $EMP13; from_date = $D2; to_date = $D2; leave_type = $LTYPE; leave_approver = "too@caffood.com"; description = "WF-GAP S7 D2" }
 $LV2N = $lv2.data.message.name
 function Board-Row {
     $b = Run-Report "HRM" "Who Is Off" @{ from_date = $D2; to_date = $D2 }
@@ -88,7 +92,7 @@ $c = Insert-Doc "SUP" @{ doctype = "Appraisal"; employee = $EMP13; appraisal_cyc
 $APP_C = $c.data.message.name
 WF-Action "SUP" "Appraisal" $APP_C "Submit for Review" | Out-Null
 WF-Action "HRM" "Appraisal" $APP_C "Approve" | Out-Null
-$lv3 = Insert-Doc "EMP" @{ doctype = "Leave Application"; employee = $EMP13; from_date = $D3; to_date = $D3; leave_type = $LTYPE; leave_approver = "mursyid@caffood.com"; description = "WF-GAP S7 D3" }
+$lv3 = Insert-Doc "EMP" @{ doctype = "Leave Application"; employee = $EMP13; from_date = $D3; to_date = $D3; leave_type = $LTYPE; leave_approver = "too@caffood.com"; description = "WF-GAP S7 D3" }
 $LV3N = $lv3.data.message.name
 Approve-Leave $LV3N
 $panel = Invoke-Call "HRM" "POST" "/api/method/caf.caf.page.hr_appraisal_dashboard.hr_appraisal_dashboard.get_refreshed_after_submit" @{ limit = 25 }
