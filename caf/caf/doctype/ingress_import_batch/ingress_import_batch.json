@@ -16,7 +16,7 @@
   "to_date",
   "source_label",
   "section_filter",
-  "employees",
+  "employee_filter",
   "section_counts",
   "read_rows",
   "created",
@@ -94,16 +94,16 @@
    "read_only": 1
   },
   {
-   "description": "Empty means every active employee carrying an Attendance Device ID.",
+   "description": "Empty means every active employee carrying an Attendance Device ID. This records what the run ASKED FOR - who it actually touched is the Manifest below.",
    "fieldname": "section_filter",
    "fieldtype": "Section Break",
    "label": "Employee filter"
   },
   {
-   "fieldname": "employees",
-   "fieldtype": "Table MultiSelect",
-   "label": "Employees",
-   "options": "Ingress Import Employee",
+   "description": "The employees this run was limited to, as requested. Validated before the run - an employee with no Attendance Device ID is refused loudly, because Ingress can only be matched by device id.",
+   "fieldname": "employee_filter",
+   "fieldtype": "Small Text",
+   "label": "Limited to",
    "read_only": 1
   },
   {

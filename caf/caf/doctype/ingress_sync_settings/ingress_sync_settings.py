@@ -11,8 +11,19 @@ cannot be shown a literal in a .py file.
 
 ⚠️ Single-doctype trap (protocol §7 / quirks): `frappe.db.get_value` on a Single
 bypasses permlevel. `db_password` is therefore protected by DOCTYPE permission
-only — System Manager and HR Manager — and carries no permlevel, so nothing about
-this document implies a field-level guarantee it cannot keep.
+only, and carries no permlevel — nothing about this document implies a
+field-level guarantee it cannot keep.
+
+WHO MAY SEE IT — MG, 2026-08-17: **HR Manager only.** Not HR User, not Employee,
+and deliberately not System Manager either: this document holds the machine's
+database password, and HR owns the machine relationship. Administrator still
+reaches it, because Administrator bypasses every permission check in Frappe — so
+there is no lock-out, only a narrower door.
+
+The read-only DIAGNOSTICS (`test_connection`, and `ingress.inspect`) stay open to
+System Manager as well. They expose reachability and punch data, never the
+password, and somebody technical has to be able to answer "is the machine up?"
+without holding an HR role.
 """
 
 import frappe

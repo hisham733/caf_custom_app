@@ -1,8 +1,9 @@
-# Copyright (c) 2026, CAF and contributors
+# Copyright (c) 2026, hisham and contributors
 # For license information, please see license.txt
 
+# import frappe
 from frappe.model.document import Document
 
 
-class IngressImportEmployee(Document):
-    pass
+class PMWS(Document):
+	pass

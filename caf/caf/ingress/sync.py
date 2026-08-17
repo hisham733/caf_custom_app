@@ -217,8 +217,13 @@ class _Batch:
         self.doc.to_date = to_date
         self.doc.source_label = (source_label or "")[:140]
         self.doc.status = "Running"
-        for emp in (employees or []):
-            self.doc.append("employees", {"employee": emp})
+        # The employee filter is an INPUT, recorded as text. It was briefly a
+        # Table MultiSelect with its own child doctype; that was a doctype
+        # earning nothing. Nobody queries "which batches named employee X" — and
+        # if they did, `rows` answers it properly with real Finger Log links.
+        # This field says what the run ASKED FOR; the manifest says what it
+        # TOUCHED, and those are different questions.
+        self.doc.employee_filter = ", ".join(employees) if employees else ""
         self.doc.flags.ignore_permissions = True
         self.doc.insert()
 
