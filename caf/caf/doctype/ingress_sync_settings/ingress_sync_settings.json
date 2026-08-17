@@ -38,10 +38,10 @@
   },
   {
    "default": "0",
-   "description": "Master switch for the SCHEDULED fetch / submit passes. Manual imports and test batches run regardless. Ships off so a fresh deploy never starts writing on its own.",
+   "description": "⚠️ NOT ACTIVE YET - the scheduled passes are designed but not built (Phase 2). Ticking this currently does nothing. Manual imports and test batches work regardless, and are the supported route today.",
    "fieldname": "enabled",
    "fieldtype": "Check",
-   "label": "Scheduled sync enabled"
+   "label": "Scheduled sync enabled (not built yet)"
   },
   {
    "default": "Live MySQL",
@@ -103,9 +103,11 @@
    "label": "Password"
   },
   {
+   "collapsible": 1,
+   "description": "⚠️ NONE of the settings in this section are read by any code yet - they are the agreed constants for the Phase 2 scheduled passes, kept here so the values are decided and visible rather than buried in a future commit.",
    "fieldname": "section_window",
    "fieldtype": "Section Break",
-   "label": "Scheduled window"
+   "label": "Scheduled window (Phase 2 - not active)"
   },
   {
    "default": "4",

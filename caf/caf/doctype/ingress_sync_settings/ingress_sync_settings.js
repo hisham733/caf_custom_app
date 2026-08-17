@@ -21,10 +21,11 @@ frappe.ui.form.on("Ingress Sync Settings", {
             });
         });
 
+        // Say what is TRUE, not what is planned. The switch and the whole window
+        // section are inert until Phase 2 exists, and a settings page that
+        // implies otherwise is one HR will stop believing.
         frm.set_intro(
-            frm.doc.enabled
-                ? __("Scheduled sync is ON. The fetch pass writes drafts only; the submit pass decides.")
-                : __("Scheduled sync is OFF — manual imports and test batches still work. Nothing runs on a timer until this is ticked."),
-            frm.doc.enabled ? "blue" : "orange");
+            __("Scheduled sync is <b>not built yet</b>. Imports run when a person asks for them — <b>Import from Ingress</b> on the Ingress Import Batch list, or <b>Re-import from Ingress</b> on a Finger Log. The window settings below are agreed values waiting for Phase 2; nothing reads them today."),
+            "orange");
     },
 });
