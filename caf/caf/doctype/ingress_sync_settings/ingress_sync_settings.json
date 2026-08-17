@@ -64,21 +64,23 @@
    "label": "Snapshot path"
   },
   {
-   "description": "Read-only credentials for the FingerTec Ingress database. CAF never writes to it.",
+   "description": "The PC running FingerTec Ingress (\"Natalie\") and its MySQL service. Read-only credentials - CAF never writes to the machine.",
    "fieldname": "section_connection",
    "fieldtype": "Section Break",
-   "label": "Ingress connection"
+   "label": "Ingress machine (Natalie)"
   },
   {
+   "description": "IP address of the Natalie PC on the CAF LAN. ⚠️ This MUST be a STATIC/reserved address. If Natalie is on DHCP its address can change on any reboot or lease expiry, and every import then fails with a connection timeout - which looks like the machine being off rather than a network change.",
    "fieldname": "host",
    "fieldtype": "Data",
-   "label": "Host"
+   "label": "Natalie IP address"
   },
   {
    "default": "3306",
+   "description": "MySQL port on Natalie. 3306 is the default. (Not 4370 - that is the port the fingerprint devices use to talk to the Ingress software, and ERPNext never uses it.)",
    "fieldname": "port",
    "fieldtype": "Int",
-   "label": "Port"
+   "label": "MySQL port"
   },
   {
    "fieldname": "column_break_conn",
