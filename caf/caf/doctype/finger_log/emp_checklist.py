@@ -30,7 +30,20 @@ from frappe.utils import getdate
 def make_employee_checkin_from_finger_log( doc,target_doc=None, ignore_permissions=False):
       """
       Map data from a Finger Log document to create two Employee Checkin records (IN and OUT).
+
+      🔴 Role guard added 2026-08-17. Dormant is not the same as harmless: this is
+      still `@frappe.whitelist()`, so before this line ANY logged-in employee could
+      call it over REST and mint Employee Checkin rows against ANY Finger Log —
+      the same shape of hole found in `ingress.sync.manual_import` the same day
+      (whitelisted + writes + `ignore_permissions` + no role check).
+
+      Impact was low only because nothing currently reads Employee Checkin. That
+      is a fact about today's wiring, not a permission, and the module docstring
+      above says re-enabling makes this a SECOND producer of `Attendance` — at
+      which point an unguarded endpoint would be writing attendance facts.
       """
+      frappe.only_for(("HR Manager", "System Manager"))
+
       finger_log_name = doc
       finger_log_doc = frappe.get_doc("Finger Log", finger_log_name)
 
