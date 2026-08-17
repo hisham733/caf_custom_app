@@ -154,6 +154,13 @@ class FingerLog(Document):
         self.name = key + '-' + getseries(key, 3)
 
     def validate(self):
+        # D-6 (2026-08-15) - `employee` is now a Link, but `employee_name`
+        # carries a fetch_from companion, which makes Frappe silently SKIP the
+        # does-it-exist check for the Link (the EPF `reviewer` quirk). Validate
+        # explicitly: the importer must fail loudly on a bad name, never store
+        # junk.
+        if self.employee and not frappe.db.exists("Employee", self.employee):
+            frappe.throw(_("Employee {0} does not exist").format(self.employee))
         # (debug prints removed 2026-08-10 — the importer creates thousands of
         # rows per run and three lines each buried the actual result)
         # if FingerLog record is NOT submitted, then execute the following

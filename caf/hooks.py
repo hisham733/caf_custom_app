@@ -656,11 +656,18 @@ permission_query_conditions = {
     # never a person, so the workflow cannot do this by itself.
     "Leave Application":
         "caf.caf.overrides.leave_application.get_permission_query_conditions",
+    # Fix session 2026-08-15, D-1/AC-1 - Employee read on Finger Log, scoped to
+    # their own rows (OD-63 option d). Finger Log.employee is a Link since D-6,
+    # but the User Permission mechanism is a data setup we cannot assume every
+    # site has - this is the enforcement.
+    "Finger Log": "caf.caf.finger_log_scope.get_permission_query_conditions",
 }
 
 has_permission = {
     "Appraisal": "caf.caf.overrides.appraisal.has_permission",
     "Leave Application": "caf.caf.overrides.leave_application.has_permission",
+    # Fix session 2026-08-15, D-1/AC-1 - per-doc read check for Finger Log.
+    "Finger Log": "caf.caf.finger_log_scope.has_permission",
 }
 # User Data Protection
 # --------------------
