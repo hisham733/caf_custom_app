@@ -29,7 +29,7 @@ function Invoke-Call([string]$Role, [string]$Method, [string]$Path, $Body) {
         $err = ""
         if ($_.ErrorDetails.Message) {
             try { $err = ($_.ErrorDetails.Message | ConvertFrom-Json).exception } catch { $err = $_.ErrorDetails.Message }
-            if ($err -is [string] -and $err.Length -gt 250) { $err = $err.Substring(0, 250) }
+            if ($err -is [string] -and $err.Length -gt 1500) { $err = $err.Substring(0, 1500) }
         }
         return [pscustomobject]@{ code = $code; data = $null; raw = $err }
     }

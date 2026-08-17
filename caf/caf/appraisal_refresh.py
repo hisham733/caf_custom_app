@@ -185,14 +185,21 @@ def refresh_submitted_appraisal(name, reason="", trigger=None):
     return {"name": name, "changed": changed}
 
 
-def refresh_for(employee, start_date, end_date, reason="", trigger=None):
+def refresh_for(employee, start_date, end_date, reason="", trigger=None, within_window=False):
     """Refresh every submitted appraisal this date range touches. Never throws.
 
     One savepoint per appraisal — the Chunk 4 rule. A single unrefreshable
     appraisal must not roll back the document that triggered this.
+
+    `within_window` (D-13): refresh only appraisals whose FBR39 window is still
+    open. The OT-cancel cascade uses this — a settled appraisal stays final
+    (MG's ruling); the flag + comment on the log still record the event.
     """
     results = []
     for app in submitted_appraisals(employee, start_date, end_date):
+        if within_window and window_closed(app.name)[0]:
+            results.append({"name": app.name, "skipped": "window closed"})
+            continue
         sp = f"ar_{app.name}".replace("-", "_")[:60]
         frappe.db.savepoint(sp)
         try:

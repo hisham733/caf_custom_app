@@ -45,14 +45,70 @@ class OTApproval(Document):
                 for row in self.emp_list:
                     print(self.name, row.work_date, row.emp_id)
                     frappe.db.sql("""UPDATE `tabOT Approval Table` SET docstatus = 2 WHERE parent != %s AND docstatus = 1 AND work_date = %s AND emp_id = %s""", (self.name, row.work_date, row.emp_id))
-                frappe.db.commit()
+                # D-13 hygiene 1 (2026-08-15): the db.commit() here was removed.
+                # Committing inside validate persisted the sibling-row
+                # cancellation even when THIS document later failed to save or
+                # submit - a partial commit. Without it the update rolls back
+                # with the transaction, and an aborted special_approve leaves
+                # the previous approvals untouched.
 
 
+
+    def before_update_after_submit(self):
+        # D-13 hygiene 2 (2026-08-15) - a submitted approval's child rows must
+        # not change. `emp_list` carries allow_on_submit = 1 (the schema lets
+        # the edit through), so this is the lock - the OD-62 shape. The
+        # correction route is cancel + file a new approval.
+        before = self.get_doc_before_save()
+        if not before:
+            return
+        before_rows = {(r.name, r.emp_id, r.work_date, r.start_work, r.ot_end, r.ot_duration)
+                       for r in before.emp_list}
+        after_rows = {(r.name, r.emp_id, r.work_date, r.start_work, r.ot_end, r.ot_duration)
+                      for r in self.emp_list}
+        if before_rows != after_rows:
+            frappe.throw(_("OT Approval {0} is submitted. Its employee rows cannot be "
+                           "changed - cancel it and file a new approval.").format(self.name),
+                         title=_("Submitted approval"))
 
     def on_cancel(self):
+        # D-13 (2026-08-15) - the lifecycle was FROZEN: a submitted Finger Log
+        # holding this name in ot_approval_id made stock refuse the cancel
+        # (LinkExistsError). The Finger Log pattern: ignore_links, then cascade
+        # - zero the linked logs' OT figures, flag them for HR, and refresh the
+        # appraisals whose FBR39 window is still open.
+        self.flags.ignore_links = True
         # if OT Approval is cancelled, then cancel all OT Approval Table entries with the same name
         frappe.db.sql("""UPDATE `tabOT Approval Table` SET docstatus = 2 WHERE parent = %s""", self.name)
+        for row in self.emp_list:
+            self._cascade_cancel(row.emp_id, row.work_date)
         frappe.db.commit()
+
+    def _cascade_cancel(self, emp_id, work_date):
+        logs = frappe.get_all("Finger Log",
+                              filters={"employee": emp_id, "work_date": work_date,
+                                       "docstatus": 1, "ot_approval_id": self.name},
+                              fields=["name"])
+        for lg in logs:
+            doc = frappe.get_doc("Finger Log", lg.name)
+            doc.flags.ignore_permissions = True
+            # OD-62: the machine writing the derived fields - the one marker
+            # FingerLog.before_update_after_submit lets past.
+            doc.flags.caf_system_write = True
+            doc.final_ot = 0
+            doc.ot_approval_id = ""
+            doc.caf_hr_review = 1
+            doc.caf_hr_review_note = _("OT Approval {0} was cancelled - re-file the approval and amend this log").format(self.name)
+            doc.save(ignore_permissions=True)
+            doc.add_comment("Comment", _("OT Approval {0} cancelled: final_ot zeroed and flagged for HR (D-13).").format(self.name))
+
+        # D-13 - refresh the appraisals this day touches, but ONLY those whose
+        # FBR39 window is still open. A settled appraisal stays final (MG).
+        from caf.caf.appraisal_refresh import refresh_for
+        refresh_for(emp_id, work_date, work_date,
+                    reason=_("OT Approval {0} was cancelled").format(self.name),
+                    trigger=("OT Approval", self.name),
+                    within_window=True)
 
 
 
