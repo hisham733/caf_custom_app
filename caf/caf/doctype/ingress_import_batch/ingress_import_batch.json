@@ -17,6 +17,7 @@
   "source_label",
   "section_filter",
   "employee_filter",
+  "unprocessed_dates",
   "section_counts",
   "read_rows",
   "created",
@@ -104,6 +105,13 @@
    "fieldname": "employee_filter",
    "fieldtype": "Small Text",
    "label": "Limited to",
+   "read_only": 1
+  },
+  {
+   "description": "⚠️ Work dates where the fingerprint devices had recorded taps NEWER than the last time Ingress rebuilt its attendance table. Punches after that point are NOT in this import. Ingress materialises attendance when a date range is processed, not tap by tap - so a day can show an IN and no OUT simply because nobody has refreshed it yet. Refresh the day in Ingress, then re-import.",
+   "fieldname": "unprocessed_dates",
+   "fieldtype": "Small Text",
+   "label": "⚠️ Days Ingress had not finished processing",
    "read_only": 1
   },
   {

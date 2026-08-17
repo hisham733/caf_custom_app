@@ -291,6 +291,46 @@ class LiveSource(BaseSource):
                 if row:
                     yield row
 
+    def unprocessed_dates(self, from_date, to_date):
+        """Work dates whose RAW TAPS are newer than the derived `attendance` row.
+
+        🔴 Measured 2026-08-18, and it changes what "yesterday is safe" means.
+        `attendance` is NOT maintained in real time — it is materialised when
+        Ingress processes a date range, and every tap after that processing sits
+        in `auditdata` unreflected. On 2026-08-17: 74 rows carried punches but only
+        **16** had `att_out`, because the table was last written at 13:33 while
+        people tapped out at 17:33–17:38.
+
+        Importing such a day gives ERPNext half a day. OD-58 contains most of the
+        damage — an incomplete punch set is held as a draft rather than submitted —
+        but a person whose row was never processed at all would read as an absence
+        and submit, which is the wrong verdict on a day they actually worked.
+
+        So this is the question to ask before importing: *has Ingress caught up
+        with the machine?* Returns one row per unready date with both timestamps,
+        so a human can see the size of the gap rather than just a warning.
+        """
+        sql = """
+            SELECT t.d, t.last_tap, a.last_written
+            FROM (SELECT DATE(checktime) d, MAX(checktime) last_tap
+                    FROM auditdata
+                   WHERE DATE(checktime) BETWEEN %s AND %s
+                   GROUP BY DATE(checktime)) t
+            LEFT JOIN (SELECT date d, MAX(lastupdate) last_written
+                         FROM attendance
+                        WHERE date BETWEEN %s AND %s
+                        GROUP BY date) a ON a.d = t.d
+            WHERE a.last_written IS NULL OR t.last_tap > a.last_written
+            ORDER BY t.d
+        """
+        out = []
+        with self._cursor() as cur:
+            cur.execute(sql, (from_date, to_date, from_date, to_date))
+            for d, last_tap, last_written in cur.fetchall():
+                out.append({"work_date": str(d), "last_tap": str(last_tap),
+                            "attendance_written": str(last_written or "never")})
+        return out
+
     def clock(self):
         """The machine's own `MAX(lastupdate)` — the watermark for the next run.
 

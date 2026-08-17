@@ -500,6 +500,28 @@ def manual_import(from_date, to_date, employees=None, submit=False,
     try:
         label = reader.describe()
         batch.doc.source_label = label[:140]
+
+        # 🔴 Has Ingress caught up with its own devices? Measured 2026-08-18:
+        # `attendance` is materialised when Ingress processes a date range, not
+        # per tap, so a day can hold an IN and no OUT purely because nobody has
+        # refreshed it yet. Importing then gives ERPNext half a day.
+        #
+        # Reported, NOT refused — the same rule the rest of this module follows.
+        # Refusing would block HR on a judgement only she can make (an old day
+        # with a trailing tap is usually fine; yesterday evening is usually not),
+        # and OD-58 already holds an incomplete day as a draft rather than
+        # submitting a wrong verdict. She needs to KNOW, not to be stopped.
+        if hasattr(reader, "unprocessed_dates"):
+            stale = reader.unprocessed_dates(from_date, to_date)
+            for s in stale:
+                batch.note(
+                    f"⚠️ NOT PROCESSED BY INGRESS: {s['work_date']} — last tap "
+                    f"{s['last_tap']}, attendance last written "
+                    f"{s['attendance_written']}. Punches after that are NOT in "
+                    f"this import. Refresh the day in Ingress, then re-import.")
+            batch.doc.unprocessed_dates = "\n".join(
+                f"{s['work_date']}: taps to {s['last_tap']}, "
+                f"processed to {s['attendance_written']}" for s in stale)
     except Exception as e:
         detail = frappe.utils.strip_html(str(e))[:300]
         batch.note(f"SOURCE UNREACHABLE: {detail}")
