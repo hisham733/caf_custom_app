@@ -18,6 +18,9 @@
   "db_name",
   "db_user",
   "db_password",
+  "section_reminder",
+  "reminder_enabled",
+  "reminder_recipients",
   "section_amend",
   "last_amendment_check",
   "section_window",
@@ -103,6 +106,26 @@
    "fieldname": "db_password",
    "fieldtype": "Password",
    "label": "Password"
+  },
+  {
+   "description": "A daily nudge if nobody has imported yesterday. Never touches the Ingress machine, so it works whether that PC is awake, asleep or off - which is the point of putting the check on this side.",
+   "fieldname": "section_reminder",
+   "fieldtype": "Section Break",
+   "label": "Daily import reminder"
+  },
+  {
+   "default": "1",
+   "description": "Send a bell notification when no completed import covers yesterday. Chosen over a pop-up deliberately: a notification persists until read, while a dialog dismissed at 09:00 is gone - and a daily modal gets clicked away by reflex.",
+   "fieldname": "reminder_enabled",
+   "fieldtype": "Check",
+   "label": "Remind if yesterday was not imported"
+  },
+  {
+   "depends_on": "reminder_enabled",
+   "description": "Who gets it. Leave BLANK to notify everyone holding HR Manager. Put one email per line to narrow it to the people who actually do the import - the directors hold the role but probably do not want a daily nudge.",
+   "fieldname": "reminder_recipients",
+   "fieldtype": "Small Text",
+   "label": "Notify (blank = all HR Managers)"
   },
   {
    "description": "How CAF notices that somebody edited a punch on the machine AFTER ERPNext had already imported that day.",

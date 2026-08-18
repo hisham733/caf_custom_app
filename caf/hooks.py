@@ -223,6 +223,22 @@ scheduler_events = {
         # HR learns to filter.
         "0 7 * * 1": [
             "caf.caf.scheduled.weekly_roster_check"
+        ],
+        # CAF (2026-08-18) - the safety net FBR44 leaves open. Import is a human
+        # act, and its stated fallback is that employees notice the gap in their
+        # Finger Log calendar and complain - a real feedback loop, but a slow one.
+        # This asks one question at 16:00: is there a completed batch covering
+        # yesterday? Silent when there is, which is most days.
+        #
+        # 🔴 It never touches the Ingress machine, deliberately. Natalie is a
+        # desktop that sleeps on inactivity, so any check needing HER to answer
+        # would be unreliable exactly when it matters most.
+        #
+        # 16:00 rather than the morning: the PC may only just have been switched
+        # on at 09:00, and reminding somebody before they could plausibly have
+        # done the job is how a reminder loses its meaning.
+        "0 16 * * *": [
+            "caf.caf.ingress.reminder.daily_import_check"
         ]
     }
 }
