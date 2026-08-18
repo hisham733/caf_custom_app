@@ -34,11 +34,22 @@ TEST_PASSWORD = "abc@123"
 # person's name — FBR51. Guessing produced two wrong out of three on this very
 # list: Nur Najwa Farhana is `wawa@`, not `najwa@`; Nurfarahayu is `farah@`, not
 # `farahayu@`.
+# 🔴 TWO CHAINS, because no single employee can test both leave and OT.
+# Measured for 6–12 July 2026: the OFFICE staff hold leave allocations but worked
+# ZERO overtime that week, while the PRODUCTION staff logged 23–28 OT hours each
+# and hold NO leave allocations at all. Testing leave on a production worker fails
+# for a data reason; testing OT on an office worker finds nothing to approve.
 TEST_CAST = {
+    # ── office chain — LEAVE, appraisal, alternate-Saturday ──
     "too@caffood.com": "Too Poh Chin (HR-EMP-00003) — SUPERVISOR of the three below",
     "wawa@caffood.com": "Nur Najwa Farhana (HR-EMP-00005) — alt-Sat 1st-3rd",
-    "farah@caffood.com": "Nurfarahayu (HR-EMP-00007) — alt-Sat 2nd-4th, the OPPOSITE group",
+    "farah@caffood.com": "Nurfarahayu (HR-EMP-00007) — alt-Sat 2nd-4th; ABSENT 9+10 Jul",
     "seow@caffood.com": "Seow Zi Ying (HR-EMP-00009) — 3 allocations",
+    # ── production chain — OVERTIME and final OT ──
+    "production1@caffood.com": "Ow Yong Nin Geet (HR-EMP-00008) — PRODUCTION MANAGER, "
+                               "supervisor and leave approver for the two below",
+    "md.nurul@caffood.com": "Md Nurul Islam (HR-EMP-00048) — 7 OT days, 28.22 h that week",
+    "md.arif@caffood.com": "Md Arif (HR-EMP-00055) — 6 OT days, 26.90 h",
 }
 
 # The four MG named, resolved through Employee.user_id rather than by guessing
