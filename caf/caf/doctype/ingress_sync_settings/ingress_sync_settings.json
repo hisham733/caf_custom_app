@@ -7,7 +7,6 @@
  "engine": "InnoDB",
  "field_order": [
   "section_source",
-  "enabled",
   "source_mode",
   "column_break_source",
   "snapshot_path",
@@ -22,31 +21,13 @@
   "reminder_enabled",
   "reminder_recipients",
   "section_amend",
-  "last_amendment_check",
-  "section_window",
-  "fetch_from_days",
-  "fetch_to_days",
-  "column_break_window",
-  "submit_target_days",
-  "auto_submit",
-  "held_flag_after_days",
-  "section_state",
-  "last_fetch_run",
-  "column_break_state",
-  "last_submit_run"
+  "last_amendment_check"
  ],
  "fields": [
   {
    "fieldname": "section_source",
    "fieldtype": "Section Break",
    "label": "Source"
-  },
-  {
-   "default": "0",
-   "description": "⚠️ NOT ACTIVE YET - the scheduled passes are designed but not built (Phase 2). Ticking this currently does nothing. Manual imports and test batches work regardless, and are the supported route today.",
-   "fieldname": "enabled",
-   "fieldtype": "Check",
-   "label": "Scheduled sync enabled (not built yet)"
   },
   {
    "default": "Live MySQL",
@@ -138,71 +119,6 @@
    "fieldname": "last_amendment_check",
    "fieldtype": "Datetime",
    "label": "Amendments checked up to",
-   "read_only": 1
-  },
-  {
-   "collapsible": 1,
-   "description": "⚠️ NONE of the settings in this section are read by any code yet - they are the agreed constants for the Phase 2 scheduled passes, kept here so the values are decided and visible rather than buried in a future commit. FBR44 removed the scheduled FETCH; what may still be built here is the daily 'did anyone import yesterday?' reminder.",
-   "fieldname": "section_window",
-   "fieldtype": "Section Break",
-   "label": "Scheduled window (Phase 2 - not active)"
-  },
-  {
-   "default": "4",
-   "description": "Fetch re-reads work dates from D-minus-this back to the to-day below. A wide window is the point: every date is re-read many times before it is ever submitted.",
-   "fieldname": "fetch_from_days",
-   "fieldtype": "Int",
-   "label": "Fetch from D-"
-  },
-  {
-   "default": "1",
-   "fieldname": "fetch_to_days",
-   "fieldtype": "Int",
-   "label": "Fetch to D-"
-  },
-  {
-   "fieldname": "column_break_window",
-   "fieldtype": "Column Break"
-  },
-  {
-   "default": "3",
-   "description": "The submit pass only touches this one work date - old enough that the machine has settled and any OT Approval has been filed.",
-   "fieldname": "submit_target_days",
-   "fieldtype": "Int",
-   "label": "Submit work date D-"
-  },
-  {
-   "default": "1",
-   "fieldname": "auto_submit",
-   "fieldtype": "Check",
-   "label": "Submit pass enabled"
-  },
-  {
-   "default": "3",
-   "description": "A draft held back by a missing OT Approval, an incomplete punch record or an unconfirmed roster month gets flagged for HR once it is older than this. 0 disables the flagging.",
-   "fieldname": "held_flag_after_days",
-   "fieldtype": "Int",
-   "label": "Flag held drafts after (days)"
-  },
-  {
-   "fieldname": "section_state",
-   "fieldtype": "Section Break",
-   "label": "Last run"
-  },
-  {
-   "fieldname": "last_fetch_run",
-   "fieldtype": "Datetime",
-   "label": "Last fetch",
-   "read_only": 1
-  },
-  {
-   "fieldname": "column_break_state",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "last_submit_run",
-   "fieldtype": "Datetime",
-   "label": "Last submit",
    "read_only": 1
   }
  ],

@@ -24,8 +24,11 @@ frappe.ui.form.on("Ingress Sync Settings", {
         // Say what is TRUE, not what is planned. The switch and the whole window
         // section are inert until Phase 2 exists, and a settings page that
         // implies otherwise is one HR will stop believing.
+        // Every field on this page is now read by code — the six that were not
+        // were removed 2026-08-18 once FBR44 cancelled the scheduled passes they
+        // belonged to. Say what the page IS, not what it might one day be.
         frm.set_intro(
-            __("Scheduled sync is <b>not built yet</b>. Imports run when a person asks for them — <b>Import from Ingress</b> on the Ingress Import Batch list, or <b>Re-import from Ingress</b> on a Finger Log. The window settings below are agreed values waiting for Phase 2; nothing reads them today."),
-            "orange");
+            __("Importing is a <b>human act</b> — there is no scheduled fetch (FBR44). Use <b>Import from Ingress</b> on the Ingress Import Batch list, or <b>Re-import from Ingress</b> on a Finger Log.<br><br>⚠️ Generate the day in Ingress <b>first</b> — its attendance table is not built until somebody does, so importing before that gives ERPNext half a day."),
+            "blue");
     },
 });

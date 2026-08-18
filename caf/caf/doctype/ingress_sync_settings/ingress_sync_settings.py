@@ -33,15 +33,6 @@ from frappe.model.document import Document
 
 class IngressSyncSettings(Document):
     def validate(self):
-        # A window that runs backwards silently fetches nothing, and a silent
-        # no-op is the failure mode this whole feature exists to avoid.
-        if self.fetch_from_days is not None and self.fetch_to_days is not None:
-            if int(self.fetch_from_days) < int(self.fetch_to_days):
-                frappe.throw(_(
-                    "Fetch window runs backwards: D-{0} to D-{1}. The FROM day must be "
-                    "the older one — e.g. from D-4 to D-1."
-                ).format(self.fetch_from_days, self.fetch_to_days))
-
         if self.source_mode == "Live MySQL" and not (self.host and self.db_name):
             frappe.throw(_("Live MySQL needs at least a host and a database name."))
 
@@ -53,11 +44,22 @@ def get_settings():
     """The settings document, or a defaulted one on a site that never saved it.
 
     `get_single` returns a document with empty fields rather than throwing, so
-    every caller would otherwise have to defend against None on nine fields.
+    every caller would otherwise have to defend against None.
+
+    Every field here is READ BY CODE. Six that were not — `enabled`,
+    `fetch_from_days`, `fetch_to_days`, `submit_target_days`, `auto_submit`,
+    `held_flag_after_days`, plus the two run-stamps — were removed on 2026-08-18
+    (MG). They were the constants for the scheduled passes, and **FBR44 cancelled
+    those passes**: importing is a human act, so there is no window to sweep and no
+    pass to auto-submit. A settings page that shows controls doing nothing teaches
+    people to disbelieve the ones that work.
+
+    What replaced them, and does something: `reminder_enabled` /
+    `reminder_recipients` (the daily nudge) and `last_amendment_check` (the
+    watermark for revision checking).
     """
     doc = frappe.get_single("Ingress Sync Settings")
     return frappe._dict(
-        enabled=bool(doc.enabled),
         source_mode=doc.source_mode or "Live MySQL",
         snapshot_path=doc.snapshot_path or "/tmp/attendance.csv.gz",
         host=doc.host or "",
@@ -65,11 +67,9 @@ def get_settings():
         db_name=doc.db_name or "ingress",
         db_user=doc.db_user or "",
         db_password=doc.get_password("db_password", raise_exception=False) or "",
-        fetch_from_days=int(doc.fetch_from_days or 4),
-        fetch_to_days=int(doc.fetch_to_days or 1),
-        submit_target_days=int(doc.submit_target_days or 3),
-        auto_submit=bool(doc.auto_submit),
-        held_flag_after_days=int(doc.held_flag_after_days or 0),
+        reminder_enabled=bool(doc.reminder_enabled),
+        reminder_recipients=doc.reminder_recipients or "",
+        last_amendment_check=doc.last_amendment_check,
     )
 
 
