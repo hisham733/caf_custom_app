@@ -22,6 +22,25 @@ import frappe
 ROLE = "HR Manager"
 TEST_PASSWORD = "abc@123"
 
+# The manual-testing cast (MG, 2026-08-18). These need a known password too, or
+# the walk cannot be done as anybody except an HR Manager — and the workflows worth
+# testing are precisely the ones that cross roles.
+#
+# Chosen because each has a device id, a supervisor, a leave approver and at least
+# two submitted Leave Allocations, so the leave path does not fail for a data
+# reason. They form one working chain: three employees → Too Poh Chin (their
+# supervisor) → Chen / Afiza (HR Manager).
+# ⚠️ Every address here was READ from `Employee.user_id`, not inferred from the
+# person's name — FBR51. Guessing produced two wrong out of three on this very
+# list: Nur Najwa Farhana is `wawa@`, not `najwa@`; Nurfarahayu is `farah@`, not
+# `farahayu@`.
+TEST_CAST = {
+    "too@caffood.com": "Too Poh Chin (HR-EMP-00003) — SUPERVISOR of the three below",
+    "wawa@caffood.com": "Nur Najwa Farhana (HR-EMP-00005) — alt-Sat 1st-3rd",
+    "farah@caffood.com": "Nurfarahayu (HR-EMP-00007) — alt-Sat 2nd-4th, the OPPOSITE group",
+    "seow@caffood.com": "Seow Zi Ying (HR-EMP-00009) — 3 allocations",
+}
+
 # The four MG named, resolved through Employee.user_id rather than by guessing
 # from the email — see the traps below.
 KEEP_NAMED = {
@@ -114,7 +133,7 @@ def run(apply=0):
 
     # Known password, test server only, so MG can sign in as each person.
     from frappe.utils.password import update_password
-    for u in KEEP_NAMED:
+    for u in list(KEEP_NAMED) + list(TEST_CAST):
         if frappe.db.exists("User", u):
             update_password(u, TEST_PASSWORD)
             frappe.db.set_value("User", u, "enabled", 1, update_modified=False)
@@ -127,4 +146,9 @@ def run(apply=0):
     print(f"\nDONE. {ROLE} now held by {len(after)}:")
     for u in sorted(after):
         print(f"  {u}")
-    print(f"\npassword set to {TEST_PASSWORD!r} for: {', '.join(sorted(KEEP_NAMED))}")
+    print(f"\npassword {TEST_PASSWORD!r} set for the HR Managers:")
+    for u in sorted(KEEP_NAMED):
+        print(f"  {u:26s} {KEEP_NAMED[u]}")
+    print(f"\n…and the manual-testing cast:")
+    for u in sorted(TEST_CAST):
+        print(f"  {u:26s} {TEST_CAST[u]}")
