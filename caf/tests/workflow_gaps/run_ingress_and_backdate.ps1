@@ -121,6 +121,17 @@ Write-Host "`n=== S11 — Ingress import + backdating routes, as real roles ===`
 
 # ── cleanup ─────────────────────────────────────────────────────────────────
 Write-Host "-- cleanup (first) --"
+# Sweep FAILED Test batches left by an earlier interrupted run. When the machine
+# is unreachable `manual_import` deliberately records a Failed batch rather than
+# vanishing (that is the point of creating it before probing) — but the caller
+# gets an exception and never learns the batch name, so nothing cleans it up.
+# Four accumulated on 2026-08-18 before this existed.
+foreach ($fb in @((Invoke-Call ADMIN "POST" "/api/method/frappe.client.get_list" @{
+        doctype = "Ingress Import Batch"
+        filters = @(@("status","=","Failed"),@("purpose","=","Test"))
+        fields = @("name"); limit_page_length = 0 }).data.message)) {
+    if ($fb) { Invoke-Call ADMIN "POST" "/api/method/frappe.client.delete" @{ doctype = "Ingress Import Batch"; name = $fb.name } | Out-Null }
+}
 foreach ($d in @($LV_A, $LV_B)) {
     foreach ($la in @((Invoke-Call ADMIN "POST" "/api/method/frappe.client.get_list" @{
             doctype = "Leave Application"; filters = @(@("employee","=",$EMP_HR),@("from_date","=",$d))

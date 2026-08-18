@@ -69,12 +69,24 @@ frappe.listview_settings["Ingress Import Batch"] = {
                             frappe.dom.unfreeze();
                             if (!r.message) return;
                             const c = r.message.counts;
+                            // 🔴 The FBR49 warning has to appear HERE, not only on
+                            // the batch document. A day Ingress has not finished
+                            // building imports as half a day — an IN with no OUT —
+                            // and it looks like an ordinary held draft. Somebody
+                            // who has to think to go and open the batch will not.
+                            const stale = (r.message.unprocessed_dates || "").trim();
+                            const counts = __("Read {0} · created {1} · updated {2} · submitted {3} · held {4} · already present {5} · human-owned {6} · drift {7} · failed {8}",
+                                [c.read_rows, c.created, c.updated, c.submitted, c.held,
+                                 c.already_present, c.skipped_locked, c.drift, c.failed]);
                             frappe.msgprint({
                                 title: __("Batch {0}", [r.message.batch]),
-                                indicator: c.failed ? "orange" : "green",
-                                message: __("Read {0} · created {1} · updated {2} · submitted {3} · held {4} · already present {5} · human-owned {6} · drift {7} · failed {8}",
-                                    [c.read_rows, c.created, c.updated, c.submitted, c.held,
-                                     c.already_present, c.skipped_locked, c.drift, c.failed]),
+                                indicator: stale ? "red" : (c.failed ? "orange" : "green"),
+                                message: stale
+                                    ? `<p style="color:var(--red-600)"><b>${__("⚠️ Ingress had not finished processing these days — punches are MISSING from this import:")}</b></p>
+                                       <pre style="white-space:pre-wrap">${frappe.utils.escape_html(stale)}</pre>
+                                       <p>${__("Go to Ingress → Attendance Sheet → <b>Generate</b> for those dates, then import again. Until then this day is incomplete.")}</p>
+                                       <hr>${counts}`
+                                    : counts,
                             });
                             listview.refresh();
                         },

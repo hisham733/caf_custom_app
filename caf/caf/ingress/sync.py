@@ -548,7 +548,12 @@ def manual_import(from_date, to_date, employees=None, submit=False,
         frappe.flags.in_import = False
 
     frappe.db.commit()
-    return {"batch": doc.name, "status": doc.status, "counts": dict(batch.counts)}
+    # `unprocessed_dates` is returned, not just stored: the desk dialog raises it
+    # in red, because a day Ingress has not finished building imports as HALF a day
+    # and is indistinguishable from an ordinary held draft. Anyone who has to think
+    # to go and open the batch record will not (FBR49).
+    return {"batch": doc.name, "status": doc.status, "counts": dict(batch.counts),
+            "unprocessed_dates": doc.get("unprocessed_dates") or ""}
 
 
 @frappe.whitelist()
