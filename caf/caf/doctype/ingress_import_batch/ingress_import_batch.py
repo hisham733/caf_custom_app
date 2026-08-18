@@ -56,17 +56,60 @@ def revert(batch_name: str, force: int = 0):
 @frappe.whitelist()
 def run_manual_import(from_date, to_date, employees=None, submit=0,
                       purpose="Test", allow_recreate=0):
-    """Desk dialog entry point. See `caf.caf.ingress.sync.manual_import`."""
+    """Desk dialog entry point. See `caf.caf.ingress.sync.manual_import`.
+
+    🔴 EVERY ARGUMENT HERE ARRIVES AS A STRING, and one of them arrives EMPTY.
+
+    Found by MG in the desk on 2026-08-18: leaving *Limit to* blank produced
+    `JSONDecodeError: Expecting value: line 1 column 1 (char 0)` — so the MAIN
+    path, import everyone, was broken while every narrower one worked.
+
+    The dialog does send `null`, correctly. Frappe's form-encoded transport turns
+    that into the empty string `""` on the way, and `frappe.parse_json("")` is
+    `json.loads("")`, which raises. The guard belongs here rather than in the JS
+    because this endpoint is whitelisted — anything may call it.
+
+    Why no test caught it: the suites pass `employees` as a real list, or omit the
+    key so the value is `None` and the branch never runs. Neither reproduces the
+    DESK's actual payload. `test_desk_payloads` now does exactly that.
+    """
+    from frappe.utils import cint
+
     from caf.caf.ingress.sync import manual_import
 
-    if isinstance(employees, str):
-        employees = frappe.parse_json(employees) or None
+    employees = _as_employee_list(employees)
 
     return manual_import(
         from_date=from_date,
         to_date=to_date,
         employees=employees,
-        submit=bool(int(submit or 0)),
+        # cint, not int(): a checkbox can arrive as "1", 1, True, "true", "" or
+        # None depending on caller, and int("") raises just as loudly as the above.
+        submit=bool(cint(submit)),
         purpose=purpose,
-        allow_recreate=bool(int(allow_recreate or 0)),
+        allow_recreate=bool(cint(allow_recreate)),
     )
+
+
+def _as_employee_list(employees):
+    """Whatever the caller sent, return a list of employee ids or None.
+
+    Shapes seen in the wild: a real list (tests), `None` (omitted), `""` (the desk
+    with the field left blank), `"[]"`, a JSON array string, and a single bare id
+    typed by hand or sent by a script.
+    """
+    if employees is None:
+        return None
+    if isinstance(employees, (list, tuple)):
+        cleaned = [str(e).strip() for e in employees if str(e).strip()]
+        return cleaned or None
+
+    text = str(employees).strip()
+    if not text or text in ("null", "[]"):
+        return None
+    if text.startswith("["):
+        parsed = frappe.parse_json(text) or None
+        return _as_employee_list(parsed)
+    # A single id, unwrapped — accepted so a one-employee call does not have to
+    # know it should have been a list.
+    return [text]

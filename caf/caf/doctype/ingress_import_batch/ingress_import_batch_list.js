@@ -37,17 +37,42 @@ frappe.listview_settings["Ingress Import Batch"] = {
                         description: __("A Test batch can be reverted in one click. A Production batch needs a force."),
                     },
                     {
-                        fieldname: "submit_logs", fieldtype: "Check",
+                        // Default ON — MG, 2026-08-18. The everyday act is
+                        // "bring in yesterday and decide it", and a day that
+                        // cannot be decided is HELD as a draft regardless of this
+                        // box. So leaving it off does not make anything safer; it
+                        // only leaves a pile of drafts nobody asked for, and the
+                        // real worklist (the held ones) gets lost among them.
+                        fieldname: "submit_logs", fieldtype: "Check", default: 1,
                         label: __("Submit the logs"),
-                        description: __("Leave off to import as drafts only. A log refused at submit stays a draft either way — that draft is the HR worklist, not an error."),
+                        description: __("On by default. Anything that cannot be decided — missing punches, no OT approval, unconfirmed roster — is held as a draft anyway, and those drafts are your worklist. Untick only to import without deciding anything."),
                     },
                     { fieldtype: "Section Break", label: __("Employees") },
                     {
                         fieldname: "employees", fieldtype: "MultiSelectList",
                         label: __("Limit to"),
-                        description: __("Leave empty for every active employee with an Attendance Device ID."),
+                        description: __("Leave empty for EVERY active employee — that is the normal daily import. Name one or more only to redo specific people, e.g. after correcting their punches in Ingress. Type a name or an employee ID."),
+                        // 🔴 `frappe.db.get_link_options` filters on `name`, which
+                        // for Employee is the ID (HR-EMP-00023) — so typing a
+                        // PERSON'S NAME matched nothing and the field looked
+                        // broken or permission-filtered. It was neither.
+                        // Reported by MG 2026-08-18: typing "rohit" returned
+                        // nothing as natalie@.
+                        // `search_link` is what an ordinary Link field uses, and
+                        // it honours the doctype's search fields, so a name works.
                         get_data(txt) {
-                            return frappe.db.get_link_options("Employee", txt, { status: "Active" });
+                            return frappe.call({
+                                method: "frappe.desk.search.search_link",
+                                args: {
+                                    doctype: "Employee",
+                                    txt: txt,
+                                    filters: { status: "Active" },
+                                },
+                            }).then((r) => (r.message || []).map((o) => ({
+                                value: o.value,
+                                description: o.label && o.label !== o.value
+                                    ? o.label : o.description,
+                            })));
                         },
                     },
                 ],
