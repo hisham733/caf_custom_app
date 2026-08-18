@@ -30,9 +30,19 @@ $LV_B    = "2026-06-12"       # Route B target (window aged shut)
 $IMPORT_EMP = "HR-EMP-00006"  # HR-approved test employee (Chen), device 442
 
 $script:Results = @()
+$script:Skipped = @()
 function Check([string]$tid, [bool]$ok, [string]$detail) {
     $script:Results += [pscustomobject]@{ id = $tid; ok = $ok; detail = $detail }
     Write-Host ("{0} {1,-26} {2}" -f ($(if ($ok) { "PASS" } else { "FAIL" }), $tid, $detail))
+}
+# 🔴 Part B needs the Ingress machine, and that machine is a DESKTOP THAT SLEEPS
+# on inactivity — it dropped off three times on 2026-08-18 alone. A suite that
+# goes red because somebody's PC went idle is a suite people stop reading, and the
+# redness says nothing about the code. Skips are counted separately and printed
+# loudly; they are never treated as passes.
+function Skip([string]$tid, [string]$why) {
+    $script:Skipped += [pscustomobject]@{ id = $tid; why = $why }
+    Write-Host ("SKIP {0,-26} {1}" -f $tid, $why)
 }
 
 function Invoke-Call([string]$Role, [string]$Method, [string]$Path, $Body) {
@@ -159,9 +169,23 @@ $today     = (Get-Date).ToString("yyyy-MM-dd")
 $yesterday = (Get-Date).AddDays(-1).ToString("yyyy-MM-dd")
 $start3    = (Get-Date).AddDays(-3).ToString("yyyy-MM-dd")
 
+# Is the machine awake? Asked once, via the settings page's own connection test.
+$probe = Invoke-Call ADMIN "GET" "/api/method/caf.caf.doctype.ingress_sync_settings.ingress_sync_settings.test_connection" $null
+$LIVE = ($probe.code -eq 200 -and $probe.data.message.ok -eq $true)
+if (-not $LIVE) { Write-Host "`n⚠️  Ingress machine unreachable — Part B will SKIP.`n" }
+
 $r = Ingress-Import HRM $today $today $null 0
 Check "B1-TODAY-REFUSED" ($r.code -ne 200 -and $r.raw -match "incomplete") `
-    "HR Manager is refused TODAY (HTTP $($r.code)) because the punches are half written — FBR43. Refused, not silently trimmed"
+    "HR Manager is refused TODAY (HTTP $($r.code)) because the punches are half written — FBR43. Refused, not silently trimmed. (Checked BEFORE the machine is touched, so it holds whether Natalie is awake or not)"
+
+if (-not $LIVE) {
+    Skip "B2-CATCHUP-3-DAYS"    "needs the Ingress machine; it is asleep or off"
+    Skip "B3-CATCHUP-IDEMPOTENT" "needs the Ingress machine; it is asleep or off"
+    Skip "B5-HRM-REVERTS"        "needs a real batch to revert"
+    $r = Invoke-Call EMP "POST" "/api/method/caf.caf.doctype.ingress_import_batch.ingress_import_batch.revert" @{ batch_name = "INGB-NONE"; force = 1 }
+    Check "B4-EMP-CANNOT-REVERT" ($r.code -ne 200) `
+        "a plain Employee cannot revert an import batch (HTTP $($r.code)) — the role gate is checked before the batch is even looked up, so this holds with the machine off"
+} else {
 
 $r = Ingress-Import HRM $start3 $yesterday $null 0
 $b1 = $null
@@ -190,6 +214,7 @@ foreach ($bn in @($b1, $b2)) {
 }
 Check "B5-HRM-REVERTS" ($removed -gt 0) `
     "HR Manager reverted her own test batches, $removed Finger Log(s) removed — a whole-company 3-day import has to be as removable as a one-row one or nobody will risk it"
+}   # end of the LIVE-only block
 
 # ═══════════════════════════════ PART C — FBR39 Route A vs Route B ══════════
 # supervisor builds and sends; HR approves. That IS the submit (docstatus 0->1).
@@ -282,6 +307,10 @@ foreach ($ap in @($APR2, $APR)) {
 
 $pass = @($script:Results | Where-Object { $_.ok }).Count
 $fail = @($script:Results | Where-Object { -not $_.ok })
-Write-Host "`n$pass/$($script:Results.Count) passed"
+$skipLine = if ($script:Skipped.Count) { " · $($script:Skipped.Count) skipped" } else { "" }
+Write-Host "`n$pass/$($script:Results.Count) passed$skipLine"
+if ($script:Skipped.Count) {
+    Write-Host "⚠️  Skipped rows are NOT passes — re-run with the Ingress machine awake for a full gate."
+}
 if ($fail.Count) { Write-Host ("FAILED: " + (($fail | ForEach-Object { $_.id }) -join ", ")) ; exit 1 }
 exit 0

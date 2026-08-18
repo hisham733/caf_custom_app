@@ -27,9 +27,41 @@ TEST_PASSWORD = "abc@123"
 KEEP_NAMED = {
     "natalie@caffood.com": "Chen Xiao Natalie (HR-EMP-00006)",
     "fiza@caffood.com": "Afiza binti Mustafa (HR-EMP-00004)",
-    "ow.yong@caffood.com": "Ow Yong Mian Fatt — Director 1 (HR-EMP-00001)",
-    "production1@caffood.com": "Ow Yong Nin Geet — Director 2 (HR-EMP-00008)",
+    "ow.yong@caffood.com": "Ow Yong Mian Fatt — ROOT 1 (HR-EMP-00001)",
 }
+
+# 🔴 DELIBERATELY NOT GRANTED — Yow Kwee Chin, ROOT 2 (HR-EMP-00002),
+# `yow.kwee@caffood.com`. MG, 2026-08-18. Two reasons, and the second is the
+# better one:
+#
+#  1. TECHNICAL — that account is the `STRANGER` fixture in
+#     run_leave_workflow.ps1, which asserts a director who is NOT this employee's
+#     approver is REFUSED (W4 read, W5 workflow transition). HR Manager can read
+#     every Leave Application and drive the workflow, so granting it would turn
+#     both assertions green for the wrong reason — the worst kind of passing test.
+#
+#  2. SUBSTANTIVE — *"this dir never uses ERPNext anyway"* (MG). Granting HR
+#     Manager to a dormant account hands real power to a login nobody watches, and
+#     buys nothing. In practice the HR Manager approves leave on both roots'
+#     behalf, so the role is not needed for the business flow either.
+#
+# Neither reason is about difficulty. If she ever starts using ERPNext, grant it
+# and re-point STRANGER to `quality@caffood.com` (Nurulfarehah, HR-EMP-00036 —
+# Leave Approver, no HR Manager, no System Manager), which is already prepared.
+
+# ⚠️ TWO NAME TRAPS, both corrected the hard way. Left here because the next
+# person will hit them:
+#
+#   "Afiza"  -> `fiza@caffood.com` is Afiza binti Mustafa (HR-EMP-00004).
+#              `afiza@caffood.com` is AFRIZA MAULANA, a DIFFERENT PERSON.
+#
+#   "the 2 directors" -> the two org roots (`reports_to IS NULL`) are
+#              HR-EMP-00001 Ow Yong Mian Fatt and HR-EMP-00002 Yow Kwee Chin.
+#              `production1@caffood.com` / HR-EMP-00008 Ow Yong Nin Geet is the
+#              PRODUCTION MANAGER and reports to HR-EMP-00001 — he was granted the
+#              role in error on 2026-08-18 and it is removed here. Corrected by MG.
+#
+# Resolve people through `Employee.user_id`, never by reading the email address.
 
 # Kept for reasons that are NOT about who should hold the role in the business.
 KEEP_TECHNICAL = {
