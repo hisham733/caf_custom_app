@@ -62,17 +62,10 @@ frappe.listview_settings["Ingress Import Batch"] = {
                         // it honours the doctype's search fields, so a name works.
                         get_data(txt) {
                             return frappe.call({
-                                method: "frappe.desk.search.search_link",
-                                args: {
-                                    doctype: "Employee",
-                                    txt: txt,
-                                    filters: { status: "Active" },
-                                },
-                            }).then((r) => (r.message || []).map((o) => ({
-                                value: o.value,
-                                description: o.label && o.label !== o.value
-                                    ? o.label : o.description,
-                            })));
+                                method: "caf.caf.doctype.ingress_import_batch"
+                                        + ".ingress_import_batch.employee_options",
+                                args: { txt: txt },
+                            }).then((r) => r.message || []);
                         },
                     },
                 ],

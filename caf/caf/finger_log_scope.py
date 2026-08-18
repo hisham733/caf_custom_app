@@ -85,11 +85,33 @@ def get_employee_events(doctype, start, end, fields=None, filters=None, field_ma
     conditions = ["fl.docstatus < 2"]
     values = {}
 
+    # 🔴 `filters` arrives from the desk as a JSON STRING, not a dict. Calling
+    # `.get` on it raised `AttributeError: 'str' object has no attribute 'get'`
+    # and the calendar was dead for HR Managers — reported by MG 2026-08-18.
+    #
+    # Employees never saw it, because their branch below never touches `filters`.
+    # So the view worked for 85 people and failed only for the person who most
+    # needs it, which is why it survived every test.
+    #
+    # Same root cause as the import dialog's JSONDecodeError the same day: a
+    # whitelisted method receives strings, and Python types are what the TESTS
+    # pass. Normalised here rather than trusted.
+    filters = _as_dict(filters)
+
     if user == "Administrator" or is_hr_manager(user):
-        emp = (filters or {}).get("employee")
+        emp = filters.get("employee")
         if emp:
-            conditions.append("fl.employee = %(employee)s")
-            values["employee"] = emp
+            # A list filter (["in", [...]]) or a plain value — the calendar sends
+            # either depending on how the sidebar filter was set.
+            if isinstance(emp, (list, tuple)) and len(emp) == 2:
+                emp = emp[1]
+            if isinstance(emp, (list, tuple)):
+                if emp:
+                    conditions.append("fl.employee in ({0})".format(
+                        ", ".join(frappe.db.escape(str(e)) for e in emp)))
+            else:
+                conditions.append("fl.employee = %(employee)s")
+                values["employee"] = emp
     else:
         own = _own_employees(user)
         if not own:
@@ -149,6 +171,36 @@ def get_employee_events(doctype, start, end, fields=None, filters=None, field_ma
             "doctype": "Finger Log",
         })
     return events
+
+
+def _as_dict(value):
+    """Whatever the desk sent, give back a dict. Never raise on the way.
+
+    Frappe hands whitelisted methods JSON strings; a filter can also arrive as a
+    list of [field, op, value] triples from the list-view sidebar. Both are
+    normalised to something `.get()` works on, because the alternative is a
+    500 in a view somebody uses every morning.
+    """
+    if not value:
+        return {}
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            value = frappe.parse_json(value)
+        except Exception:
+            return {}
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, (list, tuple)):
+        # [["Finger Log", "employee", "=", "HR-EMP-00006"], ...] or
+        # [["employee", "=", "HR-EMP-00006"], ...]
+        out = {}
+        for row in value:
+            if isinstance(row, (list, tuple)) and len(row) >= 3:
+                out[row[-3]] = row[-1]
+        return out
+    return {}
 
 
 def _own_employee(user):

@@ -54,6 +54,47 @@ def revert(batch_name: str, force: int = 0):
 
 
 @frappe.whitelist()
+def employee_options(txt=None):
+    """Employees the importer can actually act on, searched by NAME or by id.
+
+    🔴 Two failed attempts preceded this, both reported by MG:
+      · `frappe.db.get_link_options` filters on `name`, which for Employee is the
+        id — typing "rohit" searched for an ID containing "rohit" and matched
+        nothing. It looked permission-filtered; it was not.
+      · `frappe.desk.search.search_link` finds people, but writes its results to
+        `frappe.response["results"]` rather than `message`, so the dialog still
+        saw an empty list.
+
+    A method of our own ends the guessing, and lets the list say something the
+    generic helpers cannot: it returns ONLY employees with an Attendance Device
+    ID. Offering somebody with no device id would be offering a choice the
+    importer is about to refuse (`manual_import` throws on exactly that), which is
+    a worse experience than not offering them.
+    """
+    frappe.only_for("HR Manager")
+    txt = (txt or "").strip()
+
+    conditions = ["e.status = 'Active'", "IFNULL(e.attendance_device_id,'') <> ''"]
+    values = {}
+    if txt:
+        conditions.append("(e.employee_name LIKE %(txt)s OR e.name LIKE %(txt)s "
+                          "OR e.attendance_device_id LIKE %(txt)s)")
+        values["txt"] = f"%{txt}%"
+
+    rows = frappe.db.sql(f"""
+        SELECT e.name, e.employee_name, e.attendance_device_id
+          FROM `tabEmployee` e
+         WHERE {' AND '.join(conditions)}
+      ORDER BY e.employee_name
+         LIMIT 50
+    """, values, as_dict=True)
+
+    return [{"value": r.name,
+             "description": f"{r.employee_name} · device {r.attendance_device_id}"}
+            for r in rows]
+
+
+@frappe.whitelist()
 def run_manual_import(from_date, to_date, employees=None, submit=0,
                       purpose="Test", allow_recreate=0):
     """Desk dialog entry point. See `caf.caf.ingress.sync.manual_import`.
