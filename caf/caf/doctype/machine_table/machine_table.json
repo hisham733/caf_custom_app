@@ -14,7 +14,8 @@
     "fieldtype": "Link",
     "in_list_view": 1,
     "label": "Workstation",
-    "options": "Workstation"
+    "options": "Workstation",
+    "reqd": 1
    }
   ],
  "grid_page_length": 50,
