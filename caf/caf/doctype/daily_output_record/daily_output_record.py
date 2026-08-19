@@ -8,6 +8,8 @@ from frappe.model.document import Document
 from caf.caf.overrides.work_order import make_stock_entry, create_recook_stock_entry_backend
 from datetime import datetime, timedelta
 
+from caf.caf.utils.notifications import _send_report_message
+
 
 class DailyOutputRecord(Document):
 
@@ -258,6 +260,75 @@ class DailyOutputRecord(Document):
             jc_doc.submit()
 
 
+def _extract_user_message(exc):
+    """Return a short, user-friendly message from a raised exception.
+
+    Walks the exception chain and looks for the clearest message — the one
+    raised by frappe.throw(frappe.ValidationError) — falling back to str(exc).
+    Returns a single non-empty line if possible.
+    """
+    seen = set()
+    current = exc
+    candidates = []
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if getattr(current, "__cause__", None) is not current:
+            candidates.append(str(current))
+        current = getattr(current, "__cause__", None) or getattr(current, "__context__", None)
+
+    for raw in reversed(candidates):
+        for line in raw.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            # Skip framework noise
+            if line.startswith("File ") or "Traceback" in line or "line " in line[:20]:
+                continue
+            return line
+    return str(exc) or "Unknown error"
+
+
+def _safe_get(obj, key, default=""):
+    if hasattr(obj, "get"):
+        val = obj.get(key)
+    else:
+        val = getattr(obj, key, None)
+    return default if val is None else val
+
+
+def _build_daily_output_failure_message(doc, row, exc):
+    """Build a clear warning message for a Daily Output failure."""
+    message = "⚠️ *Daily Output Warning*\n"
+    message += f"📄 {_safe_get(doc, 'name') or ''}"
+    if _safe_get(doc, "date_of_output"):
+        message += f" | 📅 {_safe_get(doc, 'date_of_output')}"
+    message += "\n--------------------------\n"
+    if row is not None:
+        idx = _safe_get(row, "idx") or ""
+        link_id = _safe_get(row, "link_id") or ""
+        workstation = _safe_get(row, "workstation") or ""
+        rnd = _safe_get(row, "round") or ""
+        sz = _safe_get(row, "size") or ""
+        message += f"\n🧩 Row {idx} Failed"
+        if link_id:
+            message += f"\n🔗 Link ID: {link_id}"
+        if workstation:
+            message += f"\n📍 Workstation: {workstation}"
+        if rnd:
+            message += f"\n🔢 Round: {rnd}"
+        if sz:
+            message += f"\n📏 Size: {sz}"
+    else:
+        message += "\n🧩 Record-level processing failed"
+    message += f"\n❌ Reason: {_extract_user_message(exc)}\n"
+    return message
+
+
+def _notify_daily_output_failure(doc, row, exc):
+    """Send a clear WhatsApp/Telegram warning for a Daily Output failure."""
+    _send_report_message("dor", _build_daily_output_failure_message(doc, row, exc))
+
+
 def background_process_all(doc_name):
     doc = frappe.get_doc("Daily Output Record", doc_name)
     try:
@@ -271,6 +342,7 @@ def background_process_all(doc_name):
                 row.status = "Done"
             except Exception as e:
                 frappe.log_error(frappe.get_traceback(), "Daily Output Row {0} failed".format(row.idx))
+                _notify_daily_output_failure(doc, row, e)
                 frappe.db.set_value("Daily Output Item", row.name, "status", "Failed")
                 row.status = "Failed"
                 doc.status = "In Process"
@@ -281,6 +353,7 @@ def background_process_all(doc_name):
         doc._update_parent_status()
         doc.save(ignore_permissions=True)
         frappe.db.set_value("Daily Output Record", doc_name, "custom_process_status", "Completed")
-    except Exception:
+    except Exception as e:
         frappe.db.set_value("Daily Output Record", doc_name, "custom_process_status", "Failed")
         frappe.log_error(frappe.get_traceback(), "Daily Output Record {0} background processing failed".format(doc_name))
+        _notify_daily_output_failure(doc, None, e)
