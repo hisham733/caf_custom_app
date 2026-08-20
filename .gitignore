@@ -27,3 +27,6 @@ caf/caf/page/production_schedule/UI_TEST_PLAN.md
 caf/caf/utils/test_waha.py
 Git-Workflow-Guide.pdf
 caf/caf/utils/WhatsApp*.jpeg
+
+# Operator Production Form (not committed)
+caf/caf/page/operator_production_form/
