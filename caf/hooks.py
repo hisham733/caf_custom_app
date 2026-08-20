@@ -28,6 +28,7 @@ doctype_js = {
     "Material Request":"public/js/material_request.js",
     "Task":"public/js/task.js"
 }
+calendars = ["Meeting Room Reservation"]
 override_whitelisted_methods = {
     "erpnext.manufacturing.doctype.production_plan.production_plan.combine_subassembly_items": "caf.caf.overrides.production_plan.combine_subassembly_items",
     "erpnext.manufacturing.doctype.production_plan.production_plan.get_raw_materials_of_sub_assembly_items": "caf.caf.overrides.production_plan.get_raw_materials_of_sub_assembly_items",
@@ -48,7 +49,7 @@ override_whitelisted_methods = {
 # ------------------
 
 # include js, css files in header of desk.html
-app_include_css = ["/assets/caf/css/ai_assistant.css"]
+app_include_css = ["/assets/caf/css/calendar.css"]
 app_include_js = ["/assets/caf/js/ai_assistant_widget.js"]
 
 # include js, css files in header of web template
