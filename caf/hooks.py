@@ -172,7 +172,7 @@ scheduler_events = {
         "0 9 * * *": [
             "caf.caf.overrides.work_order.send_work_order_daly_report"
         ],
-        "0 7,9,11 * * *": [
+        "0 8-18 * * *": [
             "caf.caf.utils.shortage_report.send_shortage_warning"
         ],
         "* 5-12 * * *": [
