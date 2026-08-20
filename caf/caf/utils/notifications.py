@@ -256,6 +256,8 @@ REPORT_CHANNEL_FIELDS = {
     "shortage": ("shortage_wa", "shortage_tg", "shortage_wa_chats", "shortage_tg_chats"),
     "dor": ("dor_wa", "dor_tg", "dor_wa_chats", "dor_tg_chats"),
     "wo": ("wo_wa", "wo_tg", "wo_wa_chats", "wo_tg_chats"),
+    "supplier": ("supplier_wa", "supplier_tg", "supplier_wa_chats", "supplier_tg_chats"),
+    "yield": ("yield_wa", "yield_tg", "yield_wa_chats", "yield_tg_chats"),
 }
 
 

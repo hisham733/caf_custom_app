@@ -174,6 +174,9 @@ scheduler_events = {
         ],
         "0 7,9,11 * * *": [
             "caf.caf.utils.shortage_report.send_shortage_warning"
+        ],
+        "* 5-12 * * *": [
+            "caf.caf.utils.morning_dispatcher.run_due_reports"
         ]
     }
 }

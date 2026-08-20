@@ -1,7 +1,9 @@
 /* Caf Settings — Reports (card layout) */
 .form-section[data-fieldname="shortage_section"],
 .form-section[data-fieldname="dor_section"],
-.form-section[data-fieldname="wo_section"] {
+.form-section[data-fieldname="wo_section"],
+.form-section[data-fieldname="supplier_section"],
+.form-section[data-fieldname="yield_section"] {
 	background: var(--bg-subtle);
 	border: 1px solid var(--border-color);
 	border-radius: var(--border-radius-md);
@@ -11,7 +13,9 @@
 
 .form-section[data-fieldname="shortage_section"] .section-head,
 .form-section[data-fieldname="dor_section"] .section-head,
-.form-section[data-fieldname="wo_section"] .section-head {
+.form-section[data-fieldname="wo_section"] .section-head,
+.form-section[data-fieldname="supplier_section"] .section-head,
+.form-section[data-fieldname="yield_section"] .section-head {
 	padding: 10px 0 6px;
 	margin-bottom: 4px;
 	font-size: var(--text-md);
