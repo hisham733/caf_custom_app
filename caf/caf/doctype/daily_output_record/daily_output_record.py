@@ -325,7 +325,18 @@ def _build_daily_output_failure_message(doc, row, exc):
 
 
 def _notify_daily_output_failure(doc, row, exc):
-    """Send a clear WhatsApp/Telegram warning for a Daily Output failure."""
+    """Send a clear WhatsApp/Telegram warning for a Daily Output failure.
+
+    Respects the 'dor_enabled' flag in Caf Settings.
+    """
+    try:
+        _st = frappe.get_single("Caf Settings")
+        _v = _st.get("dor_enabled")
+        if _v is not None and not _v:
+            return
+    except Exception:
+        pass
+
     _send_report_message("dor", _build_daily_output_failure_message(doc, row, exc))
 
 

@@ -28,10 +28,16 @@ class CafSettings(Document):
             )
 
         # A report with channels all disabled has no effect — require at least one channel.
-        self._require_channel(supplier_enabled="supplier_enabled", wa="supplier_wa", tg="supplier_tg",
+        self._require_channel(enabled="shortage_enabled", wa="shortage_wa", tg="shortage_tg",
+                              label="Check Raw Material for Work Orders")
+        self._require_channel(enabled="dor_enabled", wa="dor_wa", tg="dor_tg",
+                              label="Daily Output")
+        self._require_channel(enabled="wo_enabled", wa="wo_wa", tg="wo_tg",
+                              label="Work Order Report")
+        self._require_channel(enabled="supplier_enabled", wa="supplier_wa", tg="supplier_tg",
                               label="Missing Supplier")
-        self._require_channel(yield_enabled="yield_enabled", wa="yield_wa", tg="yield_tg",
-                              label="Yield Drop")
+        self._require_channel(enabled="yield_enabled", wa="yield_wa", tg="yield_tg",
+                              label="Yield Deviation")
 
     def _require_channel(self, **kw):
         enabled = self.get(kw.get("enabled"))

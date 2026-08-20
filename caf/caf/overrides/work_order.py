@@ -864,6 +864,15 @@ def update_workstation(work_order_name, changes):
 
 
 def send_work_order_daly_report():
+    # Respect the report's Enabled flag in Caf Settings.
+    try:
+        _st = frappe.get_single("Caf Settings")
+        _v = _st.get("wo_enabled")
+        if _v is not None and not _v:
+            return
+    except Exception:
+        pass
+
     report_date = add_days(today(), -1)
 
     # 1. Fetch data - Ensure field name is 'custom_item_type'

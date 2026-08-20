@@ -20,18 +20,21 @@
   "test_telegram",
   "reports_tab",
   "shortage_section",
+  "shortage_enabled",
   "shortage_wa",
   "shortage_wa_chats",
   "column_break_short",
   "shortage_tg",
   "shortage_tg_chats",
   "dor_section",
+  "dor_enabled",
   "dor_wa",
   "dor_wa_chats",
   "column_break_dor",
   "dor_tg",
   "dor_tg_chats",
   "wo_section",
+  "wo_enabled",
   "wo_wa",
   "wo_wa_chats",
   "column_break_wo",
@@ -422,6 +425,27 @@
    "fieldname": "ai_planner_webhook_token",
    "fieldtype": "Password",
    "label": "AI Planner Webhook Token"
+  },
+  {
+   "default": "1",
+   "description": "Enable the Check Raw Material for Work Orders report.",
+   "fieldname": "shortage_enabled",
+   "fieldtype": "Check",
+   "label": "Enabled"
+  },
+  {
+   "default": "1",
+   "description": "Enable Daily Output failure alerts.",
+   "fieldname": "dor_enabled",
+   "fieldtype": "Check",
+   "label": "Enabled"
+  },
+  {
+   "default": "1",
+   "description": "Enable the daily Work Order report.",
+   "fieldname": "wo_enabled",
+   "fieldtype": "Check",
+   "label": "Enabled"
   }
  ],
  "grid_page_length": 50,

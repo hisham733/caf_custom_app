@@ -103,11 +103,24 @@ def build_shortage_message(rows):
     return message
 
 
+def _is_enabled():
+    try:
+        st = frappe.get_single("Caf Settings")
+        val = st.get("shortage_enabled")
+        return bool(val if val is not None else 1)
+    except Exception:
+        return True
+
+
 def send_shortage_warning():
     """Scheduled entry point: warn via WhatsApp + Telegram when shortages exist.
 
-    Sends nothing when all active Work Orders have enough material.
+    Sends nothing when all active Work Orders have enough material, or when the
+    report is disabled in Caf Settings.
     """
+    if not _is_enabled():
+        return
+
     rows = get_material_shortages()
     if not rows:
         return
