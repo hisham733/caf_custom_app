@@ -30,3 +30,9 @@ caf/caf/utils/WhatsApp*.jpeg
 
 # Operator Production Form (not committed)
 caf/caf/page/operator_production_form/
+
+# Design / reference docs & local test (not committed)
+/STOCK_PROJECTED_QTY.md
+/BOM_QTY_CHANGE_PLAN.md
+/caf_server_vs_build_COMPARISON.md
+caf/caf/doctype/caf_settings/test_caf_settings.py
