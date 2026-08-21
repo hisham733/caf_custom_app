@@ -49,7 +49,7 @@ override_whitelisted_methods = {
 # ------------------
 
 # include js, css files in header of desk.html
-app_include_css = ["/assets/caf/css/calendar.css"]
+app_include_css = ["/assets/caf/css/ai_assistant.css", "/assets/caf/css/settings_cards.css", "/assets/caf/css/calendar.css"]
 app_include_js = ["/assets/caf/js/ai_assistant_widget.js"]
 
 # include js, css files in header of web template
@@ -172,6 +172,12 @@ scheduler_events = {
       "cron": {
         "0 9 * * *": [
             "caf.caf.overrides.work_order.send_work_order_daly_report"
+        ],
+        "0 8-18 * * *": [
+            "caf.caf.utils.shortage_report.send_shortage_warning"
+        ],
+        "* 5-12 * * *": [
+            "caf.caf.utils.morning_dispatcher.run_due_reports"
         ]
     }
 }

@@ -55,6 +55,76 @@ def _get_config():
     }
 
 
+def _get_telegram_config():
+    """Return Telegram config from Caf Settings, falling back to site_config.
+
+    If the Caf Settings record is populated (bot_token / chat_ids), those
+    values win. Otherwise the legacy "telegram_bot_token" /
+    "telegram_chat_id" keys in site_config are used.
+    """
+    try:
+        st = frappe.get_single("Caf Settings")
+    except Exception:
+        st = None
+
+    if st and (st.get("telegram_bot_token") or st.get("telegram_chat_ids")):
+        raw_ids = (st.get("telegram_chat_ids") or "").splitlines()
+        chat_ids = [c.strip() for c in raw_ids if c.strip()]
+        bot_token = st.get_password("telegram_bot_token") if st.get("telegram_bot_token") else ""
+        return {
+            "enabled": bool(st.get("telegram_enabled")),
+            "bot_token": bot_token,
+            "chat_ids": chat_ids,
+        }
+
+    cfg_token = frappe.conf.get("telegram_bot_token")
+    cfg_chat = frappe.conf.get("telegram_chat_id")
+    return {
+        "enabled": True,
+        "bot_token": cfg_token or "",
+        "chat_ids": [str(cfg_chat)] if cfg_chat else [],
+    }
+
+
+@frappe.whitelist()
+def send_test_telegram(bot_token=None, chat_ids=None):
+    """Send a test Telegram message using the given config values.
+
+    Used by the Caf Settings "Test Telegram" button — tests exactly the
+    values typed in the form (before saving). Uses a quick single
+    attempt per chat so the button does not hang on retries.
+    """
+    bot_token = (bot_token or "").strip()
+    if not bot_token or bot_token.strip("*") == "":
+        try:
+            bot_token = _get_telegram_config().get("bot_token") or ""
+        except Exception:
+            bot_token = ""
+
+    ids = [c.strip() for c in (chat_ids or "").splitlines() if c.strip()]
+    if not ids:
+        return {"success": False, "message": "At least one Telegram Chat ID is required."}
+    if not bot_token:
+        return {"success": False, "message": "Telegram Bot Token is required."}
+
+    text = "Test from CAF Settings"
+    ok = 0
+    errors = []
+    for chat_id in ids:
+        res = _send_telegram(chat_id, text, bot_token, quick=True)
+        if res is True:
+            ok += 1
+        else:
+            errors.append(f"{chat_id}: {res}")
+
+    if errors:
+        msg = (f"Sent to {ok} chat(s), but failed for:\n" if ok else "Failed to send the test message:\n")
+        msg += "\n".join(errors)
+        return {"success": False, "message": msg}
+
+    return {"success": True, "message": f"Test sent to {ok} chat(s)."}
+
+
 @frappe.whitelist()
 def send_test_whatsapp(base_url=None, chat_ids=None, api_key=""):
     """Send a test WhatsApp text message using the given config values.
@@ -158,6 +228,129 @@ def notify_simple(message):
             title="WhatsApp notification failed",
             message=frappe.get_traceback(),
         )
+
+
+def send_telegram(text):
+    """Send a text message to all configured Telegram chats."""
+    config = _get_telegram_config()
+    if not config["enabled"]:
+        return
+    if not config["bot_token"] or not config["chat_ids"]:
+        frappe.log_error(
+            "Telegram bot token or chat_id missing in Caf Settings / site_config.json",
+            "Telegram Report Error",
+        )
+        return
+
+    try:
+        for chat_id in config["chat_ids"]:
+            _send_telegram(chat_id, text, config["bot_token"])
+    except Exception:
+        frappe.log_error(
+            title="Telegram notification failed",
+            message=frappe.get_traceback(),
+        )
+
+
+REPORT_CHANNEL_FIELDS = {
+    "shortage": ("shortage_wa", "shortage_tg", "shortage_wa_chats", "shortage_tg_chats"),
+    "dor": ("dor_wa", "dor_tg", "dor_wa_chats", "dor_tg_chats"),
+    "wo": ("wo_wa", "wo_tg", "wo_wa_chats", "wo_tg_chats"),
+    "supplier": ("supplier_wa", "supplier_tg", "supplier_wa_chats", "supplier_tg_chats"),
+    "yield": ("yield_wa", "yield_tg", "yield_wa_chats", "yield_tg_chats"),
+}
+
+
+def _send_telegram_to(text, chat_ids):
+    """Send a Telegram message to the given chat IDs (falling back to all configured)."""
+    config = _get_telegram_config()
+    if not config["enabled"]:
+        return
+    if not config["bot_token"]:
+        frappe.log_error(
+            "Telegram bot token missing in Caf Settings / site_config.json",
+            "Telegram Report Error",
+        )
+        return
+
+    ids = chat_ids if chat_ids else config["chat_ids"]
+    try:
+        for chat_id in ids:
+            _send_telegram(chat_id, text, config["bot_token"])
+    except Exception:
+        frappe.log_error(
+            title="Telegram notification failed",
+            message=frappe.get_traceback(),
+        )
+
+
+def _send_whatsapp_to(message, chat_ids):
+    """Send a WhatsApp text message to the given chat IDs (falling back to all configured)."""
+    config = _get_config()
+    if not config["enabled"]:
+        return
+
+    ids = chat_ids if chat_ids else config["chat_ids"]
+    if not ids:
+        return
+
+    try:
+        for chat_id in ids:
+            _send_waha(chat_id, message, config)
+    except Exception:
+        frappe.log_error(
+            title="WhatsApp notification failed",
+            message=frappe.get_traceback(),
+        )
+
+
+def _parse_chat_list(value):
+    if not value:
+        return []
+    if isinstance(value, str):
+        return [c.strip() for c in value.splitlines() if c.strip()]
+    return list(value)
+
+
+def _send_report_message(report_key, message):
+    """Send a report message to WhatsApp and/or Telegram per Caf Settings toggles.
+
+    report_key must be a key in REPORT_CHANNEL_FIELDS. Each toggle defaults to
+    on (WhatsApp + Telegram). A channel is skipped when its toggle is off or
+    when its config is missing.
+
+    Per-report recipient lists: if the report's own WhatsApp/Telegram chat list
+    is filled in, the report is sent only to those recipients. If a list is
+    blank, the report falls back to the shared WhatsApp/Telegram chats.
+    """
+    wa_field, tg_field, wa_chats_field, tg_chats_field = REPORT_CHANNEL_FIELDS[report_key]
+
+    try:
+        st = frappe.get_single("Caf Settings")
+        send_wa = bool(st.get(wa_field, 1))
+        send_tg = bool(st.get(tg_field, 1))
+        wa_chats = _parse_chat_list(st.get(wa_chats_field))
+        tg_chats = _parse_chat_list(st.get(tg_chats_field))
+    except Exception:
+        send_wa = True
+        send_tg = True
+        wa_chats = []
+        tg_chats = []
+
+    if not send_wa and not send_tg:
+        return
+
+    if send_tg:
+        try:
+            _send_telegram_to(message, tg_chats)
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), "Report {0} Telegram failed".format(report_key))
+
+    if send_wa:
+        try:
+            _send_whatsapp_to(message, wa_chats)
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), "Report {0} WhatsApp failed".format(report_key))
 
 
 # ── Schedule formatter ───────────────────────────────────────────────────────
@@ -731,3 +924,47 @@ def _send_waha_image(chat_id, b64_image, caption, config):
         title="WAHA image connection failed",
         message=f"{last_error or 'unknown error'}\n\n{frappe.get_traceback()}",
     )
+
+
+# ── Telegram senders ──────────────────────────────────────────────────────────
+
+def _send_telegram(chat_id, text, bot_token, quick=False):
+    """Send a text message via the Telegram Bot API.
+
+    With quick=True, uses a single attempt and returns the error string on
+    failure instead of logging — used by the Caf Settings test button so the
+    real error can be shown to the user.
+    """
+    import requests
+
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+
+    def _post(parse_mode=None):
+        data = {"chat_id": chat_id, "text": text}
+        if parse_mode:
+            data["parse_mode"] = parse_mode
+        return requests.post(url, data=data, timeout=30)
+
+    last_error = None
+    try:
+        resp = _post(parse_mode="Markdown")
+        if resp.ok:
+            return True
+        last_error = f"HTTP {resp.status_code}: {resp.text[:200]}"
+        # Telegram rejects invalid Markdown; retry as plain text
+        if resp.status_code == 400:
+            resp_plain = _post()
+            if resp_plain.ok:
+                return True
+            last_error = f"HTTP {resp_plain.status_code}: {resp_plain.text[:200]}"
+    except requests.RequestException as e:
+        last_error = repr(e)
+
+    if quick:
+        return last_error or "Unknown error"
+
+    frappe.log_error(
+        title="Telegram connection failed",
+        message=f"{last_error or 'unknown error'}\n\n{frappe.get_traceback()}",
+    )
+    return False

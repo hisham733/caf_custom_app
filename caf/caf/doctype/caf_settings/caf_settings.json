@@ -1,25 +1,79 @@
 {
  "actions": [],
- "allow_rename": 0,
- "creation": "2026-08-04 12:00:00.000000",
+ "creation": "2026-08-04 12:00:00",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "waha_tab",
   "waha_section",
   "waha_enabled",
   "waha_base_url",
   "waha_chat_ids",
   "waha_api_key",
   "test_waha",
+  "telegram_tab",
+  "telegram_section",
+  "telegram_enabled",
+  "telegram_bot_token",
+  "telegram_chat_ids",
+  "test_telegram",
+  "reports_tab",
+  "shortage_section",
+  "shortage_enabled",
+  "shortage_wa",
+  "shortage_wa_chats",
+  "column_break_short",
+  "shortage_tg",
+  "shortage_tg_chats",
+  "dor_section",
+  "dor_enabled",
+  "dor_wa",
+  "dor_wa_chats",
+  "column_break_dor",
+  "dor_tg",
+  "dor_tg_chats",
+  "wo_section",
+  "wo_enabled",
+  "wo_wa",
+  "wo_wa_chats",
+  "column_break_wo",
+  "wo_tg",
+  "wo_tg_chats",
+  "supplier_section",
+  "supplier_enabled",
+  "supplier_send_time",
+  "supplier_missing_supplier",
+  "column_break_supplier",
+  "supplier_wa",
+  "supplier_wa_chats",
+  "supplier_tg",
+  "supplier_tg_chats",
+  "yield_section",
+  "yield_enabled",
+  "yield_send_time",
+  "yield_lookback_days",
+  "yield_limit",
+  "column_break_yield",
+  "yield_wa",
+  "yield_wa_chats",
+  "yield_tg",
+  "yield_tg_chats",
+  "dp_tab",
   "dp_whatsapp_section",
   "dp_whatsapp_template",
+  "ai_planner_tab",
   "ai_planner_section",
   "ai_planner_enabled",
   "ai_planner_chat_ids",
   "ai_planner_webhook_token"
  ],
  "fields": [
+  {
+   "fieldname": "waha_tab",
+   "fieldtype": "Tab Break",
+   "label": "WhatsApp"
+  },
   {
    "fieldname": "waha_section",
    "fieldtype": "Section Break",
@@ -54,6 +108,283 @@
    "label": "Test WhatsApp"
   },
   {
+   "fieldname": "telegram_tab",
+   "fieldtype": "Tab Break",
+   "label": "Telegram"
+  },
+  {
+   "fieldname": "telegram_section",
+   "fieldtype": "Section Break",
+   "label": "Telegram"
+  },
+  {
+   "default": "1",
+   "fieldname": "telegram_enabled",
+   "fieldtype": "Check",
+   "label": "Telegram Enabled"
+  },
+  {
+   "description": "Bot token from @BotFather, e.g. 123456:ABC-DEF...",
+   "fieldname": "telegram_bot_token",
+   "fieldtype": "Password",
+   "label": "Telegram Bot Token"
+  },
+  {
+   "description": "One Telegram chat ID per line. Can be a user ID or group ID.",
+   "fieldname": "telegram_chat_ids",
+   "fieldtype": "Small Text",
+   "label": "Telegram Chat IDs"
+  },
+  {
+   "fieldname": "test_telegram",
+   "fieldtype": "Button",
+   "label": "Test Telegram"
+  },
+  {
+   "fieldname": "reports_tab",
+   "fieldtype": "Tab Break",
+   "label": "Reports"
+  },
+  {
+   "collapsible": 1,
+   "description": "Checks today's Work Orders for raw materials with insufficient stock (required > available). Example: 'Recipe BBQ' needs 25kg of OS 4.3Kg but only 5.96kg is in stock \u2014 you get a warning.",
+   "fieldname": "shortage_section",
+   "fieldtype": "Section Break",
+   "label": "Check Raw Material for Work Orders"
+  },
+  {
+   "default": "1",
+   "description": "Send the missing-material warning via WhatsApp.",
+   "fieldname": "shortage_wa",
+   "fieldtype": "Check",
+   "label": "Check Raw Material \u2192 WhatsApp"
+  },
+  {
+   "fieldname": "column_break_short",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "description": "Send the missing-material warning via Telegram.",
+   "fieldname": "shortage_tg",
+   "fieldtype": "Check",
+   "label": "Check Raw Material \u2192 Telegram"
+  },
+  {
+   "description": "Optional: WhatsApp chat IDs for this report only (one per line). Leave blank to use the shared WhatsApp chats.",
+   "fieldname": "shortage_wa_chats",
+   "fieldtype": "Small Text",
+   "label": "This Report \u2192 WhatsApp Chats"
+  },
+  {
+   "description": "Optional: Telegram chat IDs for this report only (one per line). Leave blank to use the shared Telegram chats.",
+   "fieldname": "shortage_tg_chats",
+   "fieldtype": "Small Text",
+   "label": "This Report \u2192 Telegram Chats"
+  },
+  {
+   "collapsible": 1,
+   "description": "Alerts you when running the Daily Output (Process All) hits an error on a row or the whole record. Example: a Work Order fails to finish due to insufficient stock \u2014 the warning shows the row, link ID, and reason.",
+   "fieldname": "dor_section",
+   "fieldtype": "Section Break",
+   "label": "Daily Output"
+  },
+  {
+   "default": "1",
+   "description": "Send Daily Output failure alerts via WhatsApp.",
+   "fieldname": "dor_wa",
+   "fieldtype": "Check",
+   "label": "Daily Output \u2192 WhatsApp"
+  },
+  {
+   "fieldname": "column_break_dor",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "description": "Send Daily Output failure alerts via Telegram.",
+   "fieldname": "dor_tg",
+   "fieldtype": "Check",
+   "label": "Daily Output \u2192 Telegram"
+  },
+  {
+   "description": "Optional: WhatsApp chat IDs for this report only (one per line). Leave blank to use the shared WhatsApp chats.",
+   "fieldname": "dor_wa_chats",
+   "fieldtype": "Small Text",
+   "label": "This Report \u2192 WhatsApp Chats"
+  },
+  {
+   "description": "Optional: Telegram chat IDs for this report only (one per line). Leave blank to use the shared Telegram chats.",
+   "fieldname": "dor_tg_chats",
+   "fieldtype": "Small Text",
+   "label": "This Report \u2192 Telegram Chats"
+  },
+  {
+   "collapsible": 1,
+   "description": "Sends a summary each morning of Work Orders created the previous day, split by type (WIP / Cook / Pack) into Completed and Not Finished counts.",
+   "fieldname": "wo_section",
+   "fieldtype": "Section Break",
+   "label": "Work Order Report"
+  },
+  {
+   "default": "1",
+   "description": "Send the daily Work Order report via WhatsApp.",
+   "fieldname": "wo_wa",
+   "fieldtype": "Check",
+   "label": "Work Order Report \u2192 WhatsApp"
+  },
+  {
+   "fieldname": "column_break_wo",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "description": "Send the daily Work Order report via Telegram.",
+   "fieldname": "wo_tg",
+   "fieldtype": "Check",
+   "label": "Work Order Report \u2192 Telegram"
+  },
+  {
+   "description": "Optional: WhatsApp chat IDs for this report only (one per line). Leave blank to use the shared WhatsApp chats.",
+   "fieldname": "wo_wa_chats",
+   "fieldtype": "Small Text",
+   "label": "This Report \u2192 WhatsApp Chats"
+  },
+  {
+   "description": "Optional: Telegram chat IDs for this report only (one per line). Leave blank to use the shared Telegram chats.",
+   "fieldname": "wo_tg_chats",
+   "fieldtype": "Small Text",
+   "label": "This Report \u2192 Telegram Chats"
+  },
+  {
+   "collapsible": 1,
+   "description": "Alerts you to Purchase Receipts where the supplier is left as the 'missing' placeholder. Example: pick the 'SUPPLIER MISSING' supplier below and any Purchase Receipt linked to it gets flagged.",
+   "fieldname": "supplier_section",
+   "fieldtype": "Section Break",
+   "label": "Missing Supplier"
+  },
+  {
+   "default": "1",
+   "description": "Enable the missing supplier morning check.",
+   "fieldname": "supplier_enabled",
+   "fieldtype": "Check",
+   "label": "Enabled"
+  },
+  {
+   "default": "08:00:00",
+   "description": "Time of day (HH:MM) this report sends.",
+   "fieldname": "supplier_send_time",
+   "fieldtype": "Time",
+   "label": "Send Time"
+  },
+  {
+   "description": "Supplier treated as missing on Purchase Receipts.",
+   "fieldname": "supplier_missing_supplier",
+   "fieldtype": "Link",
+   "label": "Missing Supplier",
+   "options": "Supplier"
+  },
+  {
+   "default": "1",
+   "description": "Send the missing supplier warning via WhatsApp.",
+   "fieldname": "supplier_wa",
+   "fieldtype": "Check",
+   "label": "Missing Supplier \u2192 WhatsApp"
+  },
+  {
+   "fieldname": "column_break_supplier",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "description": "Send the missing supplier warning via Telegram.",
+   "fieldname": "supplier_tg",
+   "fieldtype": "Check",
+   "label": "Missing Supplier \u2192 Telegram"
+  },
+  {
+   "description": "Optional: WhatsApp chat IDs for this report only (one per line). Leave blank to use the shared WhatsApp chats.",
+   "fieldname": "supplier_wa_chats",
+   "fieldtype": "Small Text",
+   "label": "This Report \u2192 WhatsApp Chats"
+  },
+  {
+   "description": "Optional: Telegram chat IDs for this report only (one per line). Leave blank to use the shared Telegram chats.",
+   "fieldname": "supplier_tg_chats",
+   "fieldtype": "Small Text",
+   "label": "This Report \u2192 Telegram Chats"
+  },
+  {
+   "collapsible": 1,
+   "description": "Flags cooking runs whose actual yield deviates by more than the threshold from the recipe's expected (BOM) yield \u2014 in either direction. Example: expected 80%, actual 84% or 76% with threshold 3 \u2192 flagged.",
+   "fieldname": "yield_section",
+   "fieldtype": "Section Break",
+   "label": "Yield Deviation"
+  },
+  {
+   "default": "1",
+   "description": "Enable the yield drastic-drop morning check.",
+   "fieldname": "yield_enabled",
+   "fieldtype": "Check",
+   "label": "Enabled"
+  },
+  {
+   "default": "08:00:00",
+   "description": "Time of day (HH:MM) this report sends.",
+   "fieldname": "yield_send_time",
+   "fieldtype": "Time",
+   "label": "Send Time"
+  },
+  {
+   "default": "1",
+   "description": "How many days back the yield check should examine (1 = yesterday only).",
+   "fieldname": "yield_lookback_days",
+   "fieldtype": "Int",
+   "label": "Look Back (Days)"
+  },
+  {
+   "default": "3",
+   "description": "Threshold: flag yield when it deviates (higher or lower) by more than this many percentage points from the BOM expected yield.",
+   "fieldname": "yield_limit",
+   "fieldtype": "Float",
+   "label": "Yield Deviation Threshold"
+  },
+  {
+   "default": "1",
+   "description": "Send the yield drop warning via WhatsApp.",
+   "fieldname": "yield_wa",
+   "fieldtype": "Check",
+   "label": "Yield Drop \u2192 WhatsApp"
+  },
+  {
+   "fieldname": "column_break_yield",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "description": "Send the yield drop warning via Telegram.",
+   "fieldname": "yield_tg",
+   "fieldtype": "Check",
+   "label": "Yield Drop \u2192 Telegram"
+  },
+  {
+   "description": "Optional: WhatsApp chat IDs for this report only (one per line). Leave blank to use the shared WhatsApp chats.",
+   "fieldname": "yield_wa_chats",
+   "fieldtype": "Small Text",
+   "label": "This Report \u2192 WhatsApp Chats"
+  },
+  {
+   "description": "Optional: Telegram chat IDs for this report only (one per line). Leave blank to use the shared Telegram chats.",
+   "fieldname": "yield_tg_chats",
+   "fieldtype": "Small Text",
+   "label": "This Report \u2192 Telegram Chats"
+  },
+  {
+   "fieldname": "dp_tab",
+   "fieldtype": "Tab Break",
+   "label": "Daily Production"
+  },
+  {
    "fieldname": "dp_whatsapp_section",
    "fieldtype": "Section Break",
    "label": "Daily Production WhatsApp"
@@ -65,6 +396,11 @@
    "fieldtype": "Select",
    "label": "DP WhatsApp Template",
    "options": "New\nOld"
+  },
+  {
+   "fieldname": "ai_planner_tab",
+   "fieldtype": "Tab Break",
+   "label": "AI Planner"
   },
   {
    "fieldname": "ai_planner_section",
@@ -79,7 +415,7 @@
    "label": "AI Planner Enabled"
   },
   {
-   "description": "One WhatsApp chat ID per line — only these chats can talk to the AI planner.",
+   "description": "One WhatsApp chat ID per line \u2014 only these chats can talk to the AI planner.",
    "fieldname": "ai_planner_chat_ids",
    "fieldtype": "Small Text",
    "label": "AI Planner Chat IDs"
@@ -89,13 +425,34 @@
    "fieldname": "ai_planner_webhook_token",
    "fieldtype": "Password",
    "label": "AI Planner Webhook Token"
+  },
+  {
+   "default": "1",
+   "description": "Enable the Check Raw Material for Work Orders report.",
+   "fieldname": "shortage_enabled",
+   "fieldtype": "Check",
+   "label": "Enabled"
+  },
+  {
+   "default": "1",
+   "description": "Enable Daily Output failure alerts.",
+   "fieldname": "dor_enabled",
+   "fieldtype": "Check",
+   "label": "Enabled"
+  },
+  {
+   "default": "1",
+   "description": "Enable the daily Work Order report.",
+   "fieldname": "wo_enabled",
+   "fieldtype": "Check",
+   "label": "Enabled"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-08-04 12:00:00.000000",
+ "modified": "2026-08-19 15:59:22.262933",
  "modified_by": "Administrator",
  "module": "Caf",
  "name": "Caf Settings",
@@ -105,16 +462,15 @@
    "create": 1,
    "delete": 1,
    "email": 1,
-   "export": 1,
    "print": 1,
    "read": 1,
-   "report": 1,
    "role": "System Manager",
    "share": 1,
    "write": 1
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

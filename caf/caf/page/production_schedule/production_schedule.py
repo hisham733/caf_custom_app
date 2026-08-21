@@ -657,9 +657,6 @@ def save_move_item(item_id, source_date, target_date, target_cooker, target_roun
     target_nc.recipe_note = old_note
     target_nc.production_plane = old_prod_plane
     target_nc.custom_yield = old_yield
-    target_nc.required_date = target_date
-    target_nc.recipe_cook_workstaion = target_cooker
-    target_nc.recipe_cook_round = int(target_round)
     target_nc.produ_status = old_status
     for i in range(1, 8):
         suffix = "" if i == 1 else f"_{i}"

@@ -6,7 +6,6 @@ from erpnext.manufacturing.doctype.work_order.work_order import WorkOrder
 from frappe.utils import flt
 from caf.caf.overrides.stock_entry import CustomStockEntry
 from frappe import _
-import requests
 from frappe.utils import add_days, today, getdate
 
 class CustomWorkOrder(WorkOrder):
@@ -865,6 +864,15 @@ def update_workstation(work_order_name, changes):
 
 
 def send_work_order_daly_report():
+    # Respect the report's Enabled flag in Caf Settings.
+    try:
+        _st = frappe.get_single("Caf Settings")
+        _v = _st.get("wo_enabled")
+        if _v is not None and not _v:
+            return
+    except Exception:
+        pass
+
     report_date = add_days(today(), -1)
 
     # 1. Fetch data - Ensure field name is 'custom_item_type'
@@ -912,26 +920,6 @@ def send_work_order_daly_report():
             message += f"⏳ Not Finished: {counts['Pending']}\n"
             message += f"📈 Total: {total}\n\n"
 
-    send_to_telegram(message)
+    from caf.caf.utils.notifications import _send_report_message
 
-def send_to_telegram(msg):
-    # Fix: Ensure these keys exist in your site_config.json
-    token = frappe.conf.get("telegram_bot_token")
-    chat_id = frappe.conf.get("telegram_chat_id")
-    
-    if not token or not chat_id:
-        frappe.log_error("Telegram token or chat_id missing in site_config.json", "Telegram Report Error")
-        return
-
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-
-    try:
-        response = requests.post(url, data={
-            "chat_id": chat_id,
-            "text": msg,
-            "parse_mode": "Markdown" # Fix: changed "parse_made" to "parse_mode"
-        })
-        if response.status_code != 200:
-            frappe.log_error(response.text, "Telegram Report Error")
-    except Exception as e:
-        frappe.log_error(frappe.get_traceback(), "Telegram Connection Error")
+    _send_report_message("wo", message)
