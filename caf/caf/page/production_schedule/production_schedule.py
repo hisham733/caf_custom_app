@@ -775,7 +775,7 @@ def save_item_fields(item_id, fields):
 
 
 @frappe.whitelist()
-def send_day_schedule(week_monday, day_index):
+def send_day_schedule(week_monday, day_index, custom_message=""):
     """Send a selected day's DP schedule image to WhatsApp.
 
     Validates that Work Orders were already created for that day before
@@ -784,6 +784,7 @@ def send_day_schedule(week_monday, day_index):
     Args:
         week_monday: Date string of the Monday
         day_index: 0=Mon, 1=Tue, ..., 5=Sat
+        custom_message: Optional text appended to the WhatsApp image caption.
     """
     from datetime import timedelta
 
@@ -815,7 +816,7 @@ def send_day_schedule(week_monday, day_index):
 
     try:
         from caf.caf.utils.notifications import notify_dp_schedule
-        frappe.enqueue(notify_dp_schedule, dp_name=dp.name, queue="short")
+        frappe.enqueue(notify_dp_schedule, dp_name=dp.name, queue="short", caption_extra=custom_message)
     except Exception:
         frappe.log_error(title="Send day schedule failed", message=frappe.get_traceback())
         return {"success": False, "message": _("Failed to queue the WhatsApp message.")}

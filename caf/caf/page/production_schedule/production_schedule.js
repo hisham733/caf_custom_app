@@ -344,6 +344,12 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 					options: day_opts,
 					reqd: 1,
 				},
+				{
+					fieldname: "custom_message",
+					fieldtype: "Small Text",
+					label: __("Message"),
+					placeholder: __("Optional message to send with the schedule"),
+				},
 			],
 			primary_action_label: __("Send"),
 			primary_action: function () {
@@ -355,6 +361,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 					args: {
 						week_monday: me._fmt(me.state.week_monday),
 						day_index: values.day_index,
+						custom_message: values.custom_message,
 					},
 					freeze: true,
 					freeze_message: __("Sending schedule…"),

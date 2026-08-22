@@ -189,10 +189,11 @@ def _get_dp_whatsapp_template():
 
 # ── Main entry point ─────────────────────────────────────────────────────────
 
-def notify_dp_schedule(dp_name):
+def notify_dp_schedule(dp_name, caption_extra=""):
     """Send the DP schedule image to all configured WhatsApp chats.
 
     Call this after WO creation, submit week, or process_manual_updates.
+    caption_extra: optional text appended to the image caption.
     """
     config = _get_config()
     if not config["enabled"] or not config["chat_ids"]:
@@ -205,6 +206,8 @@ def notify_dp_schedule(dp_name):
         else:
             image_b64 = _format_schedule_image(dp)
         caption = f"{dp.name} | {dp.required_by}"
+        if caption_extra:
+            caption = f"{caption}\n{caption_extra}"
         for chat_id in config["chat_ids"]:
             _send_waha_image(chat_id, image_b64, caption, config)
     except Exception:
