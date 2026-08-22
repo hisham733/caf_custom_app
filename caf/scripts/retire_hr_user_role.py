@@ -63,12 +63,21 @@ MUST_KEEP = [
     ("Leave Application", "write"), ("Leave Application", "submit"),
     ("Appraisal", "write"), ("Appraisal", "create"),
     ("Finger Log", "read"), ("Attendance", "read"),
+    # 🔴 A REGRESSION THIS SCRIPT CAUSED, and the reason these are asserted.
+    # `OT Approval` had NO `Employee` permission — supervisors could file one only
+    # BECAUSE of HR User. Removing the role broke the "a dept rep files OT before
+    # the end of the work day" flow, silently, until it was checked.
+    # An `Employee` row now grants create + submit (MG's stated design: the rep
+    # changes often, so it must not depend on a named person or a special role).
+    ("OT Approval", "create"), ("OT Approval", "submit"),
 ]
 MUST_LOSE = [
     ("Shift Type", "write"), ("Employee", "write"), ("Leave Type", "write"),
     ("Attendance", "write"), ("Attendance", "submit"),
     ("Salary Structure", "write"), ("Salary Slip", "submit"),
     ("Leave Allocation", "submit"), ("Holiday List", "write"),
+    # Cancelling an OT approval stays HR Manager's — MG, item 4.
+    ("OT Approval", "cancel"),
 ]
 
 
