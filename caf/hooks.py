@@ -792,12 +792,21 @@ fixtures = [
         "dt": "Workflow",
         "filters": [["name", "in", ["CAF Appraisal Workflow"]]],
     },
+    # ⚠️ These two lists are HAND-MAINTAINED and the export does not check them
+    # against the workflow above. Add a state or an action to the workflow without
+    # adding it here and the fixture ships a reference to something that does not
+    # travel — the fresh-install failure the note above warns about.
+    #
+    # `Cancelled` and `Cancel` were added 2026-08-22 for the appraisal cancel
+    # state, and were missed by the first export precisely this way.
     {
         "dt": "Workflow State",
-        "filters": [["name", "in", ["Draft", "Pending HR Review", "Completed"]]],
+        "filters": [["name", "in", ["Draft", "Pending HR Review", "Completed",
+                                    "Cancelled"]]],
     },
     {
         "dt": "Workflow Action Master",
-        "filters": [["name", "in", ["Submit for Review", "Approve", "Reject"]]],
+        "filters": [["name", "in", ["Submit for Review", "Approve", "Reject",
+                                    "Cancel"]]],
     },
 ]

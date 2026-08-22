@@ -605,6 +605,31 @@ class CustomAppraisal(Appraisal):
         # time; this is what stops one being finalised before M has ended.
         self.validate_month_ended()
 
+    def on_cancel(self):
+        """A cancelled appraisal must stop saying "Completed".
+
+        🔴 MG, manual test Pass C5: after cancelling HR-APR-2026-00309 the form
+        still read *Completed*, and the list showed it in green beside its own
+        amendment — *"if status = Completed (green text) may be confusing"*.
+
+        It is worse than confusing. `workflow_state` is what the list view, the
+        appraisal dashboard and the supervisor page all read; `docstatus` is not on
+        screen anywhere. So a cancelled document was telling every surface the
+        opposite of the truth, with nothing to correct it.
+
+        Frappe's Cancel sets `docstatus = 2` directly — only `apply_workflow` moves
+        `workflow_state`. The workflow now carries a `Cancelled` state and a
+        `Completed → Cancel` transition, but this hook is the belt to that brace:
+        it fires whichever way the document was cancelled, including the standard
+        Cancel button and code (the test suites cancel directly, and so does the
+        amend route).
+
+        `db_set` rather than assignment: `on_cancel` runs after the write, so a
+        plain attribute set would not reach the database.
+        """
+        if self.get("workflow_state") != "Cancelled":
+            self.db_set("workflow_state", "Cancelled", update_modified=False)
+
     def before_update_after_submit(self):
         """OD-61 - the lock OD-44 claimed but never had.
 
