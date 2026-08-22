@@ -25,11 +25,15 @@ caf/caf/page/production_schedule/UI_TEST_PLAN.md
 
 # Test scripts & local assets (not committed)
 caf/caf/utils/test_waha.py
+caf/caf/utils/test_shortage_report.py
 Git-Workflow-Guide.pdf
 caf/caf/utils/WhatsApp*.jpeg
 
 # Operator Production Form (not committed)
 caf/caf/page/operator_production_form/
+
+# Procedure Table schema — ignored for now (monitoring fields not yet committed)
+caf/caf/doctype/procedure_table/procedure_table.json
 
 # Design / reference docs & local test (not committed)
 /STOCK_PROJECTED_QTY.md
