@@ -1,15 +1,19 @@
 """
 Material shortage warning report.
 
-Scheduled every 1.5 hours. Sends a WhatsApp + Telegram message only when an
+Scheduled every 1 hours. Sends a WhatsApp + Telegram message only when an
 active Work Order planned for today has a raw material shortage in its source
 warehouse.
 
-The query mirrors the "not enough material" Metabase report, with two
-differences requested by the user:
+The query mirrors the "not enough material" Metabase report, with these
+differences:
   - only Work Orders whose planned_start_date is today
   - items with no stock record (no bin row) are treated as a shortage
     (actual_qty = 0) instead of being silently skipped
+  - a short item is ignored when the same item is itself produced by another
+    Work Order under the same link id (in-house pre-step like a TIM/WIP
+    that runs before the recipe consumes it), so in-flight stock is not
+    reported as missing
 """
 
 import frappe
@@ -48,6 +52,37 @@ ORDER BY
 """
 
 
+def _get_items_with_producer_wo(rows):
+    """Return set of (custom_link_id, item_code) that have a producer Work Order.
+
+    A short item is ignored when the same item is itself produced by another
+    Work Order under the same link id (e.g. a TIM/WIP pre-step running before
+    the recipe consumes it), so the not-yet-on-hand stock is still in flight.
+    """
+    pairs = {(r["custom_link_id"], r["item_code"]) for r in rows if r.get("custom_link_id")}
+    if not pairs:
+        return set()
+
+    link_ids = {p[0] for p in pairs}
+    item_codes = {p[1] for p in pairs}
+    producers = frappe.db.sql(
+        """
+        SELECT DISTINCT wo.custom_link_id, wo.production_item
+        FROM `tabWork Order` wo
+        WHERE wo.custom_link_id IN %(link_ids)s
+          AND wo.production_item IN %(item_codes)s
+          AND wo.docstatus <> 2
+          AND IFNULL(wo.status, '') NOT IN ('Cancelled', 'Closed')
+        """,
+        {
+            "link_ids": list(link_ids),
+            "item_codes": list(item_codes),
+        },
+        as_dict=True,
+    )
+    return {(p["custom_link_id"], p["production_item"]) for p in producers}
+
+
 def get_material_shortages(planned_date=None):
     """Return Work Orders planned for the given date with insufficient material.
 
@@ -55,52 +90,53 @@ def get_material_shortages(planned_date=None):
     work_order, custom_link_id, production_item, planned_start_date, status,
     item_code, item_name, item_group, source_warehouse, required_qty,
     actual_qty, shortage.
+
+    Short items are skipped when the same item is produced by another Work
+    Order under the same link id (in-house pre-step), because that stock is
+    still in flight and will be available by the time the consuming WO runs.
     """
     rows = frappe.db.sql(
         SHORTAGE_SQL,
         {"planned_date": planned_date or today()},
         as_dict=True,
     )
+    if not rows:
+        return []
+
+    covered = _get_items_with_producer_wo(rows)
+    result = []
     for row in rows:
         row["shortage"] = flt(row["required_qty"]) - flt(row["actual_qty"])
-    return rows
+        if row.get("custom_link_id") and (row["custom_link_id"], row["item_code"]) in covered:
+            continue
+        result.append(row)
+    return result
 
 
 def build_shortage_message(rows):
-    """Format shortage rows into a readable message grouped by Work Order."""
+    """Format shortage rows into a short, readable message grouped by Work Order."""
     now = frappe.utils.now_datetime().strftime("%Y-%m-%d %H:%M")
 
     wo_map = {}
     for row in rows:
         wo_map.setdefault(row["work_order"], []).append(row)
 
-    message = "⚠️ *Material Shortage Warning*\n"
-    message += f"📅 {now}\n"
-    message += "--------------------------\n\n"
-    message += f"🔎 {len(wo_map)} Work Order(s) with insufficient material:\n\n"
+    lines = [f"🔴 Material Insufficient — {now}"]
+    lines.append(f"{len(wo_map)} WO(s), {len(rows)} item(s) short")
+    lines.append("")
 
-    for wo_name in wo_map:
-        first = wo_map[wo_name][0]
-        message += f"*{wo_name}* | {first.get('production_item') or ''}"
-        if first.get("custom_link_id"):
-            message += f" | 🔗 {first['custom_link_id']}"
-        message += "\n"
-        for row in wo_map[wo_name]:
-            message += f"  📦 {row.get('item_code') or ''}"
-            if row.get("item_name"):
-                message += f" ({row['item_name']})"
-            message += f" — {row.get('item_group') or ''}\n"
-            message += f"  🏭 {row.get('source_warehouse') or ''}\n"
-            message += (
-                f"  🆚 Required: {flt(row['required_qty'])} | "
-                f"Available: {flt(row['actual_qty'])} | "
-                f"Short: {flt(row['shortage'])}\n"
+    for wo_name, wo_rows in wo_map.items():
+        first = wo_rows[0]
+        prod = first.get("production_item") or "-"
+        lines.append(f"• 🏭 {prod}" + (f" | {first.get('custom_link_id') or ''}" if first.get("custom_link_id") else ""))
+        for row in wo_rows:
+            lines.append(
+                f"  ⚠️ {row.get('item_code') or '-'}: req {flt(row['required_qty'], 3)}, "
+                f"have {flt(row['actual_qty'], 3)}, short {flt(row['shortage'], 3)}"
             )
-        if first.get("planned_start_date"):
-            message += f"  🗓️ Planned: {first['planned_start_date']}\n"
-        message += "\n"
+        lines.append("")
 
-    return message
+    return "\n".join(lines)
 
 
 def _is_enabled():
