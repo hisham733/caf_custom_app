@@ -439,7 +439,7 @@ def _classify_workstation(ws_name):
         return "Kettle", f"K{m.group(1) if m else ''}"
     if "fryer" in lower:
         m = re.search(r"fryer\s*(\d+[A-Za-z]?)", ws_name or "", re.IGNORECASE)
-        return "Fryer", f"Fryer {m.group(1) if m else ''}"
+        return "Fryer", f"F{m.group(1) if m else ''}"
     return "Other", ws_name
 
 
@@ -499,12 +499,14 @@ def _render_schedule_image(dp, variant):
         header_font = ImageFont.truetype(f"{font_root}/DejaVuSans-Bold.ttf", 16)
         cell_font = ImageFont.truetype(f"{font_root}/DejaVuSans.ttf", 16)
         remark_font = ImageFont.truetype(f"{font_root}/DejaVuSans.ttf", 14)
+        line_font = ImageFont.truetype(f"{font_root}/DejaVuSans.ttf", 12)
     except Exception:
         title_font = ImageFont.load_default()
         group_font = ImageFont.load_default()
         header_font = ImageFont.load_default()
         cell_font = ImageFont.load_default()
         remark_font = ImageFont.load_default()
+        line_font = ImageFont.load_default()
 
     def _text_size(draw, text, font):
         bbox = draw.textbbox((0, 0), text, font=font)
@@ -554,12 +556,14 @@ def _render_schedule_image(dp, variant):
     header_h = 26
     group_h = 28
     title_h = 38
+    line_col_w = 52
     ws_col_w = 70
     prod_col_w = 100
     size_col_w = 55
     recipe_col_w = 80 if variant == "old" else 0
     round_col_w = recipe_col_w + prod_col_w + size_col_w
-    remark_col_w = 220
+    remark_col_w = 300
+    gap_h = 4
     cell_pad = 4
     remark_pad = 6
 
@@ -600,6 +604,19 @@ def _render_schedule_image(dp, variant):
                 lines[-1] += " " + word
         return lines
 
+    PACK_REMARK_FIELDS = (
+        "pack_remark", "pack_remark_2", "pack_remark_3",
+        "pack_remark_4", "pack_remark_5", "pack_remark_6", "pack_remark_7",
+    )
+
+    def _round_has_note(cell):
+        """True when a round cell carries any note (recipe or pack remark)."""
+        if not cell:
+            return False
+        if cell.get("recipe_note"):
+            return True
+        return any(cell.get(pf) for pf in PACK_REMARK_FIELDS)
+
     def _collect_round_cells(row_data, rn):
         cell = row_data.get(rn)
         if cell and cell.recipe_name and cell.recipe_name != "No Cooking":
@@ -624,21 +641,28 @@ def _render_schedule_image(dp, variant):
                              if recipe_col_w else [],
             "size": size,
             "product_lines": _wrap_lines(measurer, product, cell_font, prod_col_w - cell_pad * 2),
+            "has_note": _round_has_note(cell),
         }
 
     def _collect_remarks(row_data):
-        remarks = []
+        """Return per-round note blocks: [(round_no, wrapped_lines), ...]."""
+        blocks = []
         for rn in all_rounds:
             cell = row_data.get(rn)
-            if cell:
-                if cell.get("recipe_note"):
-                    remarks.append(cell.get("recipe_note"))
-                for pf in ("pack_remark", "pack_remark_2", "pack_remark_3",
-                           "pack_remark_4", "pack_remark_5", "pack_remark_6", "pack_remark_7"):
-                    val = cell.get(pf)
-                    if val:
-                        remarks.append(val)
-        return _wrap_lines(measurer, " / ".join(remarks), remark_font, remark_col_w - remark_pad * 2)
+            if not cell:
+                continue
+            parts = []
+            if cell.get("recipe_note"):
+                parts.append(cell.get("recipe_note"))
+            for pf in PACK_REMARK_FIELDS:
+                val = cell.get(pf)
+                if val:
+                    parts.append(val)
+            if parts:
+                lines = _wrap_lines(measurer, " / ".join(parts), remark_font, remark_col_w - remark_pad * 2)
+                if lines:
+                    blocks.append((rn, lines))
+        return blocks
 
     # Precompute per-row layout (grows to fit content, min fixed size)
     row_layout = {}
@@ -646,28 +670,27 @@ def _render_schedule_image(dp, variant):
         for ws_name, short_name in ws_groups[ws_type]:
             row_data = ws_rows[ws_name]
             rounds = {rn: _collect_round_cells(row_data, rn) for rn in all_rounds}
-            remark_lines = _collect_remarks(row_data)
+            remark_blocks = _collect_remarks(row_data)
             n_lines = 1
             for rn in all_rounds:
                 rc = rounds[rn]
                 n_lines = max(n_lines, len(rc["recipe_lines"]), len(rc["product_lines"]))
-            n_lines = max(n_lines, len(remark_lines))
-            height = max(n_lines * cell_line_h + 6, min_row_h)
+            body_h = n_lines * cell_line_h + 6
+            remark_h = sum(len(lines) * remark_line_h for _, lines in remark_blocks)
+            height = max(body_h, remark_h + 6, min_row_h)
             row_layout[(ws_type, ws_name)] = {
                 "short_name": short_name,
                 "height": height,
                 "rounds": rounds,
-                "remark_lines": remark_lines,
+                "remark_blocks": remark_blocks,
             }
 
-    img_w = pad + ws_col_w + (len(all_rounds) * round_col_w) + remark_col_w + pad
-    img_h = pad + title_h + pad
-    for ws_type in sorted_types:
-        group_h_total = sum(
-            row_layout[(ws_type, ws_name)]["height"] for ws_name, _ in ws_groups[ws_type]
-        )
-        img_h += group_h + (header_h * 2) + group_h_total + 4
-    img_h += pad
+    img_w = pad + line_col_w + ws_col_w + (len(all_rounds) * round_col_w) + remark_col_w + pad
+    img_h = pad + title_h + pad + (header_h * 2) + sum(
+        row_layout[(ws_type, ws_name)]["height"]
+        for ws_type in sorted_types
+        for ws_name, _ in ws_groups[ws_type]
+    ) + gap_h * (len(sorted_types) - 1) + pad
 
     # Colors
     bg = (255, 255, 255)
@@ -692,6 +715,56 @@ def _render_schedule_image(dp, variant):
 
     def _round_color(rn):
         return ROUND_COLORS[(int(rn) - 1) % len(ROUND_COLORS)]
+
+    TYPE_LABELS = {
+        "Cooker": "Paste",
+        "Kettle": "Kaya",
+        "Fryer": "Chicken floss",
+    }
+
+    def _draw_vertical_label(group_top, group_bot, label):
+        """Draw a group label rotated 90° (top-to-bottom) in the LINE column.
+
+        Shrinks the font (12px down to 8px) until the rotated text fits the
+        group height; falls back to horizontally stacked words if even 8px
+        does not fit.
+        """
+        if not label:
+            return
+        cw = line_col_w
+        cx = pad + cw // 2
+        avail = group_bot - group_top - 2
+
+        def _label_font(size):
+            try:
+                return ImageFont.truetype(f"{font_root}/DejaVuSans.ttf", size)
+            except Exception:
+                return line_font
+
+        txt_font = None
+        for size in (12, 11, 10, 9, 8):
+            fnt = _label_font(size)
+            td = ImageDraw.Draw(Image.new("RGB", (4, 4)))
+            tw, th = _text_size(td, label, fnt)
+            if tw <= avail and th <= cw - 2:
+                txt_font = (fnt, tw, th)
+                break
+
+        if txt_font:
+            fnt, tw, th = txt_font
+            txt_img = Image.new("RGBA", (tw + 4, th + 4), (255, 255, 255, 0))
+            tdr = ImageDraw.Draw(txt_img)
+            tdr.text((2, 2), label, font=fnt, fill=(0, 0, 0, 255))
+            rot = txt_img.rotate(90, expand=True)
+            img.paste(rot, (cx - rot.size[0] // 2, group_top + (avail - rot.size[1]) // 2), rot)
+        else:
+            lines = label.split()
+            total_h = len(lines) * cell_line_h
+            ty = group_top + max((avail - total_h) // 2, 2)
+            for wd in lines:
+                wtw = draw.textlength(wd, font=line_font)
+                draw.text((pad + (cw - wtw) // 2, ty), wd, font=line_font, fill=text)
+                ty += cell_line_h
 
     img = Image.new("RGB", (img_w, img_h), bg)
     draw = ImageDraw.Draw(img)
@@ -722,71 +795,55 @@ def _render_schedule_image(dp, variant):
     )
     y += title_h + pad
 
-    # Group sections
-    for ws_type in sorted_types:
-        group_rows = ws_groups[ws_type]
+    # Companion columns (LINE + WS)
+    side_cols = line_col_w + ws_col_w
+    side_x0 = pad
 
-        # Group header
-        draw.rectangle([pad, y, img_w - pad, y + group_h], fill=group_bg, outline=grid)
-        tw, th = _text_size(draw, ws_type, group_font)
-        draw.text((pad + 10, y + (group_h - th) // 2), ws_type, font=group_font, fill=text)
-        y += group_h
+    # Subheader columns per round (variant determines order/content)
+    if variant == "old":
+        columns = [("recipe", recipe_col_w, "Recipe"),
+                   ("size", size_col_w, "Size"),
+                   ("product", prod_col_w, "Product")]
+    else:
+        columns = [("product", prod_col_w, "Product"),
+                   ("size", size_col_w, "Size")]
 
-        # Round headers
-        x = pad + ws_col_w
-        for rn in all_rounds:
-            rn_color = _round_color(rn)
-            ordinal = {1: "1st", 2: "2nd", 3: "3rd"}.get(int(rn), f"{rn}th")
-            label = f"{ordinal} Round"
-            draw.rectangle([x, y, x + round_col_w, y + header_h], fill=rn_color, outline=grid)
+    # Single header row 1: round ordinals + Remarks (drawn once)
+    draw.rectangle([side_x0, y, side_x0 + side_cols, y + header_h], fill=header_bg, outline=grid)
+    x = side_x0 + side_cols
+    for rn in all_rounds:
+        rn_color = _round_color(rn)
+        ordinal = {1: "1st", 2: "2nd", 3: "3rd"}.get(int(rn), f"{rn}th")
+        label = f"{ordinal} Round"
+        draw.rectangle([x, y, x + round_col_w, y + header_h], fill=rn_color, outline=grid)
+        tw, th = _text_size(draw, label, header_font)
+        draw.text((x + (round_col_w - tw) // 2, y + (header_h - th) // 2),
+                  label, font=header_font, fill=text)
+        x += round_col_w
+    draw.rectangle([x, y, x + remark_col_w, y + header_h], fill=header_bg, outline=grid)
+    tw, th = _text_size(draw, "Remarks", header_font)
+    draw.text((x + (remark_col_w - tw) // 2, y + (header_h - th) // 2),
+              "Remarks", font=header_font, fill=text)
+    y += header_h
+
+    # Single header row 2: per-round Product/Size subheaders
+    draw.rectangle([side_x0, y, side_x0 + side_cols, y + header_h], fill=header_bg, outline=grid)
+    x = side_x0 + side_cols
+    for rn in all_rounds:
+        rn_color = _round_color(rn)
+        for kind, w, label in columns:
+            draw.rectangle([x, y, x + w, y + header_h], fill=rn_color, outline=grid)
             tw, th = _text_size(draw, label, header_font)
-            draw.text(
-                (x + (round_col_w - tw) // 2, y + (header_h - th) // 2),
-                label,
-                font=header_font,
-                fill=text,
-            )
-            x += round_col_w
+            draw.text((x + (w - tw) // 2, y + (header_h - th) // 2),
+                      label, font=header_font, fill=text)
+            x += w
+    draw.rectangle([x, y, x + remark_col_w, y + header_h], fill=header_bg, outline=grid)
+    y += header_h
 
-        # Remarks header
-        draw.rectangle([x, y, x + remark_col_w, y + header_h], fill=header_bg, outline=grid)
-        tw, th = _text_size(draw, "Remarks", header_font)
-        draw.text(
-            (x + (remark_col_w - tw) // 2, y + (header_h - th) // 2),
-            "Remarks",
-            font=header_font,
-            fill=text,
-        )
-        y += header_h
-
-        # Subheaders per round (variant determines order/content)
-        if variant == "old":
-            columns = [("recipe", recipe_col_w, "Recipe"),
-                       ("size", size_col_w, "Size"),
-                       ("product", prod_col_w, "Product")]
-        else:
-            columns = [("product", prod_col_w, "Product"),
-                       ("size", size_col_w, "Size")]
-
-        x = pad + ws_col_w
-        for rn in all_rounds:
-            rn_color = _round_color(rn)
-            for kind, w, label in columns:
-                draw.rectangle([x, y, x + w, y + header_h], fill=rn_color, outline=grid)
-                tw, th = _text_size(draw, label, header_font)
-                draw.text(
-                    (x + (w - tw) // 2, y + (header_h - th) // 2),
-                    label,
-                    font=header_font,
-                    fill=text,
-                )
-                x += w
-
-        draw.rectangle([x, y, x + remark_col_w, y + header_h], fill=header_bg, outline=grid)
-        x += remark_col_w
-        y += header_h
-
-        # Workstation rows
+    # Workstation rows (grouped by type, no bands, vertical line labels)
+    for gi, ws_type in enumerate(sorted_types):
+        group_rows = ws_groups[ws_type]
+        group_top = y
         for row_idx, (ws_name, short_name) in enumerate(group_rows):
             layout = row_layout[(ws_type, ws_name)]
             row_h = layout["height"]
@@ -794,23 +851,27 @@ def _render_schedule_image(dp, variant):
             y += row_h
             fill = alt_row if row_idx % 2 else bg
 
+            # LINE cell
+            draw.rectangle([pad, row_y, pad + line_col_w, row_y + row_h], fill=fill, outline=grid)
+
             # Workstation cell
-            draw.rectangle([pad, row_y, pad + ws_col_w, row_y + row_h], fill=fill, outline=grid)
+            draw.rectangle([pad + line_col_w, row_y, pad + line_col_w + ws_col_w, row_y + row_h], fill=fill, outline=grid)
             tw, th = _text_size(draw, layout["short_name"], cell_font)
             draw.text(
-                (pad + (ws_col_w - tw) // 2, row_y + (row_h - th) // 2),
+                (pad + line_col_w + (ws_col_w - tw) // 2, row_y + (row_h - th) // 2),
                 layout["short_name"],
                 font=cell_font,
                 fill=text,
             )
 
-            x = pad + ws_col_w
+            x = side_x0 + side_cols
             for rn in all_rounds:
                 rc = layout["rounds"][rn]
+                cell_fill = _round_color(rn) if rc["has_note"] else fill
 
                 for kind, w, _label in columns:
                     if kind == "size":
-                        draw.rectangle([x, row_y, x + w, row_y + row_h], fill=fill, outline=grid)
+                        draw.rectangle([x, row_y, x + w, row_y + row_h], fill=cell_fill, outline=grid)
                         if rc["size"]:
                             tw, th = _text_size(draw, rc["size"], cell_font)
                             draw.text(
@@ -821,17 +882,26 @@ def _render_schedule_image(dp, variant):
                             )
                     else:
                         lines = rc["recipe_lines"] if kind == "recipe" else rc["product_lines"]
-                        draw.rectangle([x, row_y, x + w, row_y + row_h], fill=fill, outline=grid)
+                        draw.rectangle([x, row_y, x + w, row_y + row_h], fill=cell_fill, outline=grid)
                         _draw_lines(draw, x, row_y, w, row_h,
                                     lines, cell_font, cell_line_h, cell_pad)
                     x += w
 
-            # Remarks
+            # Remarks — one color-coded block per round note
             draw.rectangle([x, row_y, x + remark_col_w, row_y + row_h], fill=fill, outline=grid)
-            _draw_lines(draw, x, row_y, remark_col_w, row_h,
-                        layout["remark_lines"], remark_font, remark_line_h, remark_pad, align_left=True)
+            by = row_y
+            for rn, lines in layout["remark_blocks"]:
+                block_h = len(lines) * remark_line_h
+                draw.rectangle([x, by, x + remark_col_w, by + block_h], fill=_round_color(rn), outline=grid)
+                _draw_lines(draw, x, by, remark_col_w, block_h, lines,
+                            remark_font, remark_line_h, remark_pad, align_left=True)
+                by += block_h
 
-        y += 4
+        group_bot = y
+        _draw_vertical_label(group_top, group_bot, TYPE_LABELS.get(ws_type, ""))
+
+        if gi != len(sorted_types) - 1:
+            y += gap_h
 
     # Export to base64
     buffer = io.BytesIO()
