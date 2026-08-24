@@ -7,8 +7,34 @@ from frappe import _
 from frappe.utils import getdate, add_days
 from frappe.model.naming import make_autoname
 
+from erpnext.setup.doctype.holiday_list.holiday_list import is_holiday
+
 NO_COOKING = "No Cooking"
 CHILD_DOCTYPE = "Create ProExl Items"
+
+
+@frappe.request_cache
+def _get_caf_holiday_list() -> str:
+    """Return the Holiday List configured in Caf Settings (empty if none).
+
+    Cached per request so repeated _is_holiday() calls inside one request only
+    read the single value once; still re-read fresh on every request.
+    """
+    try:
+        return frappe.db.get_single_value("Caf Settings", "holiday_list") or ""
+    except Exception:
+        return ""
+
+
+def _is_holiday(day) -> bool:
+    """True if the given day is a holiday per Caf Settings' Holiday List."""
+    holiday_list = _get_caf_holiday_list()
+    if not holiday_list:
+        return False
+    try:
+        return bool(is_holiday(holiday_list, getdate(day)))
+    except Exception:
+        return False
 
 
 def _log_schedule_change(action_type, day=None, dp_name=None, child_row_name=None,
@@ -264,6 +290,8 @@ def get_week_data(year, week_number, mode):
         date_obj = getdate(day)
         day_labels.append(f"{date_obj.strftime('%a')} {date_obj.day}")
 
+    holiday_days = [d for d in days if _is_holiday(d)]
+
     # Get workstations in the same order as the Metabase view
     workstations = get_workstations()
 
@@ -376,6 +404,7 @@ def get_week_data(year, week_number, mode):
         "workstations": workstations,
         "days": days,
         "day_labels": day_labels,
+        "holiday_days": holiday_days,
         "dp_names": dp_names,
         "dp_submit_refs": dp_submit_refs,
         "schedule": schedule,
@@ -778,8 +807,9 @@ def save_item_fields(item_id, fields):
 def send_day_schedule(week_monday, day_index, custom_message=""):
     """Send a selected day's DP schedule image to WhatsApp.
 
-    Validates that Work Orders were already created for that day before
-    sending. Returns a JSON response.
+    Requires the DP to be Submitted and to have at least one recipe scheduled
+    for that day — Work Orders do not need to be created yet. Returns a JSON
+    response.
 
     Args:
         week_monday: Date string of the Monday
@@ -807,11 +837,14 @@ def send_day_schedule(week_monday, day_index, custom_message=""):
             "message": _("Daily Production for {0} is not Submitted yet. Please Submit it first.").format(str(day)),
         }
 
-    has_mr = any(row.mr_reference for row in dp.production_table)
-    if not dp.custom_submit_ref or not has_mr:
+    has_recipe = any(
+        row.recipe_name and row.recipe_name != "No Cooking"
+        for row in dp.production_table
+    )
+    if not has_recipe:
         return {
             "success": False,
-            "message": _("Work Orders are not created for {0} yet. Please Create WO first.").format(str(day)),
+            "message": _("No recipe is scheduled for {0}. Please add a recipe first.").format(str(day)),
         }
 
     try:
@@ -843,6 +876,9 @@ def process_day_dp(week_monday, day_index):
 
     monday = getdate(week_monday)
     day = monday + timedelta(days=int(day_index))
+
+    if _is_holiday(str(day)):
+        return {"success": False, "message": _("Holiday — no Work Orders for {0}.").format(str(day))}
 
     dp_name = frappe.db.get_value(
         "Daily Production",
@@ -908,12 +944,17 @@ def submit_week(week_monday):
 
     submitted = 0
     skipped_past = 0
+    skipped_holiday = 0
     skipped_no_dp = 0
     skipped_empty = 0
 
     for day in days:
         if day < today:
             skipped_past += 1
+            continue
+
+        if _is_holiday(str(day)):
+            skipped_holiday += 1
             continue
 
         dp_name = frappe.db.get_value(
@@ -948,11 +989,12 @@ def submit_week(week_monday):
 
     _log_schedule_change("Submit Week", day=str(monday), old_data={},
                          new_data={"submitted": submitted, "skipped_past": skipped_past,
+                                   "skipped_holiday": skipped_holiday,
                                    "skipped_empty": skipped_empty})
 
     return {
         "success": True,
-        "message": _("Submitted {0} DP(s). Skipped {1} past, {2} empty.").format(submitted, skipped_past, skipped_empty),
+        "message": _("Submitted {0} DP(s). Skipped {1} past, {2} holiday, {3} empty.").format(submitted, skipped_past, skipped_holiday, skipped_empty),
     }
 
 
@@ -976,10 +1018,15 @@ def edit_week(week_monday):
     edited = 0
     created = 0
     skipped_past = 0
+    skipped_holiday = 0
 
     for day in days:
         if day < today:
             skipped_past += 1
+            continue
+
+        if _is_holiday(str(day)):
+            skipped_holiday += 1
             continue
 
         # Check if DP already exists for this date
@@ -1018,8 +1065,8 @@ def edit_week(week_monday):
 
     return {
         "success": True,
-        "message": _("Switched {0} DP(s) to Edit mode, created {1} new DP(s). Skipped {2} past.").format(
-            edited, created, skipped_past
+        "message": _("Switched {0} DP(s) to Edit mode, created {1} new DP(s). Skipped {2} past, {3} holiday.").format(
+            edited, created, skipped_past, skipped_holiday
         ),
     }
 

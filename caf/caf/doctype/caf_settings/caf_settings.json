@@ -59,10 +59,11 @@
   "yield_wa_chats",
   "yield_tg",
   "yield_tg_chats",
-  "dp_tab",
-  "dp_whatsapp_section",
-  "dp_whatsapp_template",
-  "ai_planner_tab",
+"dp_tab",
+   "dp_whatsapp_section",
+   "dp_whatsapp_template",
+   "holiday_list",
+   "ai_planner_tab",
   "ai_planner_section",
   "ai_planner_enabled",
   "ai_planner_chat_ids",
@@ -396,6 +397,13 @@
    "fieldtype": "Select",
    "label": "DP WhatsApp Template",
    "options": "New\nOld"
+  },
+  {
+   "description": "Holiday List used by WDP to lock holiday days (like past days). Leave blank to disable.",
+   "fieldname": "holiday_list",
+   "fieldtype": "Link",
+   "label": "Holiday List",
+   "options": "Holiday List"
   },
   {
    "fieldname": "ai_planner_tab",
