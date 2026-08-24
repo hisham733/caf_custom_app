@@ -8,4 +8,7 @@ frappe.views.calendar["Meeting Room Reservation"] = {
 	},
 	get_events_method:
 		"caf.caf.utils.meeting_room_reservation.get_meeting_room_reservation_events",
+	options: {
+		eventTimeFormat: "HH:mm",
+	},
 };
