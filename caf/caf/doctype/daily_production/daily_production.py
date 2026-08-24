@@ -577,13 +577,6 @@ class DailyProduction(Document):
                 frappe.db.commit()
                 self.reload()
 
-            # WhatsApp notification (async — don't block)
-            try:
-                from caf.caf.utils.notifications import notify_dp_schedule
-                frappe.enqueue(notify_dp_schedule, dp_name=self.name, queue="short")
-            except Exception:
-                pass
-
             return True
 
         except Exception as e:

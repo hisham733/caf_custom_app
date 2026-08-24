@@ -27,6 +27,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			schedule: {},
 			day_round_keys: {},
 			past_days: [],
+			holiday_days: [],
 			ws_problems: [],
 			last_action: null,
 		};
@@ -231,7 +232,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			var slot = this.closest(".round-slot");
 			var row = slot ? slot.closest("tr") : null;
 			var ws = row ? row.dataset.workstation : "";
-			if (slot && (me.state.past_days.indexOf(slot.dataset.day) !== -1 || me.state.mode === "View Schedule" || me.state.ws_problems.indexOf(ws) !== -1)) {
+			if (slot && (me._is_locked_day(slot.dataset.day) || me.state.mode === "View Schedule" || me.state.ws_problems.indexOf(ws) !== -1)) {
 				me._show_edit_dialog(this, true);
 				return;
 			}
@@ -252,7 +253,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			if (!slot) return;
 			var row = slot.closest("tr");
 			var ws = row ? row.dataset.workstation : "";
-			if (me.state.past_days.indexOf(slot.dataset.day) !== -1 || me.state.ws_problems.indexOf(ws) !== -1) return;
+			if (me._is_locked_day(slot.dataset.day) || me.state.ws_problems.indexOf(ws) !== -1) return;
 			if (me.state.paste_mode) {
 				me._paste_to_slot(slot);
 				return;
@@ -266,7 +267,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			var day = cell.dataset.day;
 			var row = cell.closest("tr");
 			var ws = row ? row.dataset.workstation : "";
-			if (me.state.past_days.indexOf(day) !== -1 || me.state.ws_problems.indexOf(ws) !== -1) return;
+			if (me._is_locked_day(day) || me.state.ws_problems.indexOf(ws) !== -1) return;
 			var items = $(cell.closest("tr")).find(".schedule-item[data-wo-status='Processing']");
 			if (items.length) {
 				frappe.show_alert({ message: __("Work Orders are being processed. Please wait…"), indicator: "orange" });
@@ -344,6 +345,12 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 					options: day_opts,
 					reqd: 1,
 				},
+				{
+					fieldname: "custom_message",
+					fieldtype: "Small Text",
+					label: __("Message"),
+					placeholder: __("Optional message to send with the schedule"),
+				},
 			],
 			primary_action_label: __("Send"),
 			primary_action: function () {
@@ -355,6 +362,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 					args: {
 						week_monday: me._fmt(me.state.week_monday),
 						day_index: values.day_index,
+						custom_message: values.custom_message,
 					},
 					freeze: true,
 					freeze_message: __("Sending schedule…"),
@@ -396,6 +404,13 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 	// ══════════════════════════════════════════════════════════════
 	//  WEEK HELPERS
 	// ══════════════════════════════════════════════════════════════
+
+	_is_locked_day(day) {
+		if (!day) return false;
+		if (this.state.past_days && this.state.past_days.indexOf(day) !== -1) return true;
+		if (this.state.holiday_days && this.state.holiday_days.indexOf(day) !== -1) return true;
+		return false;
+	}
 
 	_compute_iso_week(date) {
 		var d = new Date(date);
@@ -462,6 +477,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 						me.state.dp_submit_refs = r.message.dp_submit_refs || {};
 						me.state.schedule = r.message.schedule || {};
 						me.state.day_round_keys = r.message.day_round_keys || {};
+						me.state.holiday_days = r.message.holiday_days || [];
 
 						var today_str = me._fmt(new Date());
 						me.state.past_days = [];
@@ -533,7 +549,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			var day = this.state.days[di];
 			var has_dp = this.state.dp_names[day] !== null;
 			var cls = has_dp ? " schedule-has-dp" : " schedule-no-dp";
-			var is_past = me.state.past_days.indexOf(day) !== -1;
+			var is_past = me._is_locked_day(day);
 			var past_cls = is_past ? " schedule-past-day" : "";
 			var label_html = this.state.day_labels[di];
 
@@ -591,7 +607,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 
 			for (var di = 0; di < this.state.days.length; di++) {
 				var day = this.state.days[di];
-				var is_past_cell = me.state.past_days.indexOf(day) !== -1;
+				var is_past_cell = me._is_locked_day(day);
 				var past_cell_cls = is_past_cell ? " schedule-past-day" : "";
 				var day_rk = me.state.day_round_keys[day] || ["1"];
 				var info = ws_schedule[day] || (function() {
