@@ -1,13 +1,14 @@
 """
 Missing supplier morning report.
 
-Finds Purchase Receipts whose supplier is set to the configured "missing"
-supplier (default a Supplier document named 'SUPPLIER MISSING'). Cancelled
-Purchase Receipts are excluded. Configurable in Caf Settings (enabled, send
-time, which supplier counts as missing, and per-channel recipients).
+Finds Purchase Receipts posted YESTERDAY whose supplier is set to the configured
+"missing" supplier (default a Supplier document named 'SUPPLIER MISSING').
+Cancelled Purchase Receipts are excluded. Configurable in Caf Settings (enabled,
+send time, which supplier counts as missing, and per-channel recipients).
 """
 
 import frappe
+from frappe.utils import add_days, today
 
 from caf.caf.utils.notifications import _send_report_message
 
@@ -20,15 +21,18 @@ def _get_settings():
     return st
 
 
-def get_missing_supplier_prs(supplier=None):
+def get_missing_supplier_prs(supplier=None, for_date=None):
     """Return non-cancelled Purchase Receipts for the given (missing) supplier.
 
     Falls back to the supplier configured in Caf Settings, then to a literal
-    'SUPPLIER MISSING' default.
+    'SUPPLIER MISSING' default. Only Purchase Receipts posted yesterday are
+    returned (or posted on the given for_date when provided).
     """
     if not supplier:
         st = _get_settings()
         supplier = (st.get("supplier_missing_supplier") if st else None) or "SUPPLIER MISSING"
+
+    post_date = for_date or add_days(today(), -1)
 
     return frappe.db.sql(
         """
@@ -44,9 +48,10 @@ def get_missing_supplier_prs(supplier=None):
         FROM `tabPurchase Receipt`
         WHERE supplier = %(supplier)s
             AND docstatus <> 2
+            AND DATE(posting_date) = %(post_date)s
         ORDER BY posting_date DESC, creation DESC
         """,
-        {"supplier": supplier},
+        {"supplier": supplier, "post_date": post_date},
         as_dict=True,
     )
 
