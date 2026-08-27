@@ -45,6 +45,7 @@ class DailyOutputRecord(Document):
         all_wos = frappe.get_all("Work Order", filters={
             "custom_link_id": link_id,
             "docstatus": ["!=", 2],
+            "status": ["not in", ("Cancelled", "Closed")],
         }, fields=["name", "custom_item_type", "status", "docstatus", "production_item"])
 
         if not all_wos:
@@ -151,7 +152,7 @@ class DailyOutputRecord(Document):
             wo.submit()
             wo.reload()
 
-        if wo.status == "Completed":
+        if wo.status in ("Completed", "Closed"):
             return
 
         if wo.status in ("Not Started", "Pending"):
@@ -191,7 +192,7 @@ class DailyOutputRecord(Document):
         if wo.docstatus == 0:
             wo.submit()
             wo.reload()
-        if wo.status == "Completed":
+        if wo.status in ("Completed", "Closed"):
             return
 
         if wo.status in ("Not Started", "Pending"):
@@ -362,7 +363,6 @@ def background_process_all(doc_name):
                 return
 
         doc._update_parent_status()
-        doc.save(ignore_permissions=True)
         frappe.db.set_value("Daily Output Record", doc_name, "custom_process_status", "Completed")
     except Exception as e:
         frappe.db.set_value("Daily Output Record", doc_name, "custom_process_status", "Failed")

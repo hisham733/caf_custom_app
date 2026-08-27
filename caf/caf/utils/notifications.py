@@ -903,9 +903,15 @@ def _render_schedule_image(dp, variant):
         if gi != len(sorted_types) - 1:
             y += gap_h
 
-    # Export to base64
+    # Export to base64 — downscale very wide images (NEAREST keeps this flat-color
+    # table art crisp and PNG-compressible) to keep the payload small, so
+    # WhatsApp image uploads don't time out on large files.
+    max_w = 1200
+    if img.width > max_w:
+        h = round(img.height * max_w / img.width)
+        img = img.resize((max_w, h), Image.NEAREST)
     buffer = io.BytesIO()
-    img.save(buffer, format="PNG")
+    img.save(buffer, format="PNG", optimize=True)
     buffer.seek(0)
     return base64.b64encode(buffer.read()).decode("utf-8")
 
