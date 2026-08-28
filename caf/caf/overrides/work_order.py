@@ -6,7 +6,6 @@ from erpnext.manufacturing.doctype.work_order.work_order import WorkOrder
 from frappe.utils import flt
 from caf.caf.overrides.stock_entry import CustomStockEntry
 from frappe import _
-from frappe.utils import add_days, today, getdate
 
 class CustomWorkOrder(WorkOrder):
 
@@ -863,63 +862,3 @@ def update_workstation(work_order_name, changes):
     }
 
 
-def send_work_order_daly_report():
-    # Respect the report's Enabled flag in Caf Settings.
-    try:
-        _st = frappe.get_single("Caf Settings")
-        _v = _st.get("wo_enabled")
-        if _v is not None and not _v:
-            return
-    except Exception:
-        pass
-
-    report_date = add_days(today(), -1)
-
-    # 1. Fetch data - Ensure field name is 'custom_item_type'
-    work_orders = frappe.get_all("Work Order",
-        filters={
-            "creation": ["between", [f"{report_date} 00:00:00", f"{report_date} 23:59:59"]]
-        },
-        fields=["name", "status", "custom_item_type"]
-    )
-
-    if not work_orders:
-        return
-
-    # 2. Initialize with CORRECT spelling (WIP, not WOP / Pending, not Panding)
-    report_data = {
-        "WIP":  {"Completed": 0, "Pending": 0},
-        "Pack": {"Completed": 0, "Pending": 0},
-        "Cook": {"Completed": 0, "Pending": 0},
-    } 
-
-    for wo in work_orders:
-        # Use .get to safely handle the field name
-        tipe = wo.get("custom_item_type") or "Other"
-        
-        # If a new type appears (like 'Other'), initialize it
-        if tipe not in report_data:
-            report_data[tipe] = {"Completed": 0, "Pending": 0}
-            
-        # Count based on status
-        if wo.status == "Completed":
-            report_data[tipe]["Completed"] += 1
-        else:
-            report_data[tipe]["Pending"] += 1
-
-    # 3. Format Message
-    message = f"📊 *Daily Work Order Report*\n"
-    message += f"📅 Date: {report_date}\n"
-    message += "--------------------------\n\n"
-
-    for tipe, counts in report_data.items():
-        total = counts["Completed"] + counts["Pending"]
-        if total > 0:
-            message += f"*{tipe} Summary:*\n"
-            message += f"✅ Completed: {counts['Completed']}\n"
-            message += f"⏳ Not Finished: {counts['Pending']}\n"
-            message += f"📈 Total: {total}\n\n"
-
-    from caf.caf.utils.notifications import _send_report_message
-
-    _send_report_message("wo", message)
