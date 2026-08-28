@@ -169,13 +169,13 @@ page_js = {"ai-assistant" : "public/js/ai_assistant.js"}
 # ---------------
 scheduler_events = {
       "cron": {
-        "0 9 * * *": [
-            "caf.caf.overrides.work_order.send_work_order_daly_report"
+        "30 10 * * *": [
+            "caf.caf.utils.work_order_report.send_work_order_daly_report"
         ],
         "0 8-18 * * *": [
             "caf.caf.utils.shortage_report.send_shortage_warning"
         ],
-        "* 5-12 * * *": [
+        "* * * * *": [
             "caf.caf.utils.morning_dispatcher.run_due_reports"
         ]
     }
