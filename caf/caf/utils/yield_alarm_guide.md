@@ -213,7 +213,9 @@ few resulting rows against the BOM yield and formats the message.
 
 Frappe cron is static, so the send time is handled by a dispatcher:
 
-- A periodic cron (`0,30 5-12 * * *`) calls `morning_dispatcher.run_due_reports()`.
+- A periodic cron (`* * * * *`, every minute) calls `morning_dispatcher.run_due_reports()`.
+  The dispatcher matches against each report's configured **Send Time**, so a send
+  time set to any minute of the day fires correctly.
 - The dispatcher reads each report's **Enabled** flag and **Send Time** from
   Caf Settings.
 - When the current time matches a report's configured **Send Time**, it queues that
