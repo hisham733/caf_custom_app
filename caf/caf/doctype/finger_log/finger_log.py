@@ -227,6 +227,22 @@ class FingerLog(Document):
             self.caf_work_hours = 0
             self.short = round(work_hours.net_minutes(params) / 60.0, 4) \
                 if self.day_type == "Workday" else 0
+        elif work is None and work_hours.is_single_punch_shift(params):
+            # 🔴 "In OR Out only" — MG, 2026-08-22. One tap on a scheduled day
+            # credits the FULL contracted day.
+            #
+            # `compute()` cannot help here: it needs both ends and returns None,
+            # and the branch below would then store 0 hours and 0 short — a WRONG
+            # number replacing a missing one, which flows straight into the
+            # appraisal. So the rule is stated explicitly instead.
+            #
+            # This is an ASSUMPTION, not a measurement, and that is precisely why
+            # `overrides/shift_type.py` forbids overtime on such a shift: crediting
+            # a whole day from one tap is defensible for salaried staff whose hours
+            # are not really measured; paying overtime on top of it would not be.
+            self.caf_work_hours = round(work_hours.net_minutes(params) / 60.0, 4) \
+                if self.day_type == "Workday" else 0
+            self.short = 0
         else:
             # Not computable and not all-zero = an incomplete record. Leave both
             # at 0 rather than inventing a number; caf_not_full_day carries the

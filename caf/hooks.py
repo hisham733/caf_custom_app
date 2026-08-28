@@ -601,6 +601,13 @@ doc_events = {
     # row and every test fixture predates the form, so an ungated version would
     # refuse the whole existing dataset. It is keyed on the WORK DATE's month,
     # never on today.
+    # A shift that credits a whole day from one punch may not also pay overtime
+    # (MG, 2026-08-22). Server-side because the form lock is escapable — the API,
+    # a Data Import and `bench execute` all bypass form scripts, and this is a
+    # money rule.
+    "Shift Type": {
+        "validate": "caf.caf.overrides.shift_type.validate",
+    },
     "Finger Log": {
         "before_submit": "caf.caf.doctype.monthly_roster_confirmation"
                          ".monthly_roster_confirmation.require_confirmed_month",

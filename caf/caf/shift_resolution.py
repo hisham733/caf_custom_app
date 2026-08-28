@@ -100,9 +100,13 @@ def get_shift_params(shift: str) -> frappe._dict:
     """The CAF rules hanging off a Shift Type. CAF_BUILD_SPEC.md §8."""
     p = frappe.db.get_value(
         "Shift Type", shift,
+        # ⚠️ `caf_required_punches` must be in this list or every shift reads as
+        # unset and silently falls back to the old `caf_lunch_minutes` gate — the
+        # exact shape of the `_c` bug earlier in this project, where the SELECT
+        # and the consumer disagreed and nothing failed.
         ["name", "start_time", "end_time", "holiday_list",
          "caf_allow_ot", "caf_ot_gate_minutes", "caf_ot_round_minutes",
-         "caf_lunch_minutes"] + list(_DOW_FIELD),
+         "caf_lunch_minutes", "caf_required_punches"] + list(_DOW_FIELD),
         as_dict=True,
     )
     return p or frappe._dict()

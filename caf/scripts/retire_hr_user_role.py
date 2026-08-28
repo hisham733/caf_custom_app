@@ -113,6 +113,17 @@ KEEP = {
     "natalie@caffood.com": "Chen Xiao Natalie (HR-EMP-00006) — HR Manager",
     "fiza@caffood.com": "Afiza binti Mustafa (HR-EMP-00004) — HR Manager",
     "Administrator": "the system account; bypasses permissions anyway",
+    # 🔴 The suites' HR User fixture. Stripping it broke C75-ROLE in
+    # test_chunk7_roster, which asserts that an HR User CAN see the roster (MG,
+    # 2026-08-12: they already hold `read` on Shift Assignment, so withholding it
+    # told them nothing the list view would not).
+    #
+    # Missed on the first pass even though `hr.manager.test@` was explicitly
+    # protected — a fixture user is not obviously a fixture from its role list
+    # alone. Any account named *.test@ is scaffolding until proven otherwise.
+    "hr.user.test@caffood.com": "🔴 the suites' HR User fixture — C75-ROLE asserts "
+                                "AS this user. Removing it breaks the gate, not "
+                                "the product",
 }
 
 

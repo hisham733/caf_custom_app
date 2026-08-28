@@ -104,16 +104,53 @@ def compute(time_in, break_, resume, out, params):
     return round(work / 60.0, 4), round((net - work) / 60.0, 4)
 
 
+# The three shapes a working day may take — MG, 2026-08-22. Stored on
+# `Shift Type.caf_required_punches`.
+PUNCH_FULL = "In + Out + Lunch pair"
+PUNCH_IN_OUT = "In + Out only"
+PUNCH_EITHER = "In OR Out only"
+
+
 def required_punches(params) -> tuple:
     """Which punches this shift must have for a day to be COMPLETE — OD-58.
 
-    The lunch pair is required only where the shift actually has a lunch:
-    `special` and `8:30am no Sat` carry `caf_lunch_minutes = 0`, and demanding a
-    lunch punch there would manufacture a false miss-punch on every single row.
+    🔴 Read from `caf_required_punches`, NOT from `caf_lunch_minutes` any more.
+
+    That field used to answer two different questions with one number — *"how much
+    lunch do I deduct?"* and *"must there be a lunch punch?"* — and for 8 employees
+    the answers differ: they take lunch, they simply never tap for it. The only way
+    to say the second was `caf_lunch_minutes = 0`, which also stopped the
+    DEDUCTION and inflated their hours by an hour a day.
+
+    Cost of the old shape, measured: 214 days held across those 8, none able to
+    become an Attendance record, and a worklist so full of them that the six
+    genuine miss-punches inside it were invisible.
+
+    ⚠️ The fallback is `caf_lunch_minutes` for any shift where the new field is
+    unset — every existing shift keeps behaving exactly as before until somebody
+    chooses otherwise.
     """
+    rule = (params.get("caf_required_punches") or "").strip()
+
+    if rule == PUNCH_EITHER:
+        # Handled by the caller: one punch is enough to PASS, but neither
+        # `compute()` nor anything else can measure such a day — see
+        # `is_single_punch_day`.
+        return ()
+    if rule == PUNCH_IN_OUT:
+        return ("time_in", "out")
+    if rule == PUNCH_FULL:
+        return ("time_in", "break", "resume", "out")
+
+    # Unset — the pre-2026-08-22 behaviour, kept so nothing changes by surprise.
     if cint(params.get("caf_lunch_minutes")) > 0:
         return ("time_in", "break", "resume", "out")
     return ("time_in", "out")
+
+
+def is_single_punch_shift(params) -> bool:
+    """Does this shift credit a whole day from one tap?"""
+    return (params.get("caf_required_punches") or "").strip() == PUNCH_EITHER
 
 
 def is_all_zero(doc) -> bool:
@@ -129,4 +166,14 @@ def missing_punches(doc, params) -> list:
     """The punches this shift needed and did not get. Empty means complete."""
     if is_all_zero(doc):
         return []
+
+    # "In OR Out only": ANY single punch completes the day. `required_punches`
+    # returns () for this rule, so the comprehension below would call it complete
+    # even on an all-zero row — which `is_all_zero` above has already handled, but
+    # the intent is worth stating rather than relying on ordering.
+    if is_single_punch_shift(params):
+        return [] if any(has_punch(doc.get(f))
+                         for f in ("time_in", "break", "resume", "out")) \
+            else ["a punch"]
+
     return [f for f in required_punches(params) if not has_punch(doc.get(f))]
