@@ -280,67 +280,108 @@ class FingerLog(Document):
 
 
 
+    def _who(self):
+        """The person as HR knows them, never the docname.
+
+        FBR61 — the ID-vs-name family. Every message below used to say
+        `HR-EMP-00052`, which is the one identifier the supervisor reading it
+        does not have.
+        """
+        return self.employee_name or self.employee
+
     def check_ot_approval(self):
-        # debug
-        # print(self.__dict__)  # Print the attributes of self
-        # print(self.ot_in_hour)  # Print the value of ot_in_hour
+        """Does a submitted OT Approval cover this day's overtime? FBR11.
 
-        # Search for OT Approval Table records (child table)
-        ot_childList = frappe.get_all('OT Approval Table',
-                                        filters={
-                                            "emp_id": self.employee,
-                                            "work_date": self.work_date,
-                                            "docstatus": 1
-                                        },
-                                        # get name of child record + parent of child record + ot_end
-                                        fields=['name', 'parent',
-                                                'ot_end', 'ot_duration'],
-                                        # order by creation date in descending order
-                                        order_by='creation desc'
-                                        )
+        🔴 MESSAGES REWRITTEN 2026-09-01, MG's manual-test finding: *"the OT
+        message does not name the blocking OT Approval."* They said things like
+        `"No OT Approval records found, HR-EMP-00052"` — an employee id, no date,
+        no hours, no document, and nothing about what to do. The supervisor who
+        hits this at 6pm has to go and work all of that out.
 
-        if not ot_childList:
-            # if FLog has no OT Approval records found in the child table, then raise an exception
-            frappe.throw(_("No OT Approval records found, {0}").format(self.employee))
-        # debug
-        print(len(ot_childList))
-        print(ot_childList)
+        Every refusal now names **the person, the date, the hours, the document
+        and the next step**, because this is the one guard that stands between a
+        clocked hour and an unapproved payment.
+        """
+        rows = frappe.get_all(
+            "OT Approval Table",
+            filters={"emp_id": self.employee, "work_date": self.work_date,
+                     "docstatus": 1},
+            fields=["name", "parent", "ot_end", "ot_duration"],
+            order_by="creation desc")
 
-        # if OT Approval Table records > 0, then set ot_childList to the first record. First record = most recent record
-        ot_child = ot_childList[0]
+        if not rows:
+            frappe.throw(
+                _("<b>{0}</b> worked <b>{1} h</b> of overtime on <b>{2}</b>, and "
+                  "no approved <b>OT Approval</b> covers that day."
+                  "<br><br>Overtime is only paid when it was approved before it "
+                  "was worked (FBR11). Ask the department representative to file "
+                  "an OT Approval for {2} and submit it, then submit this log "
+                  "again."
+                  "<br><br>The clocked hours are safe — this log stays as a draft "
+                  "until the approval exists, and nothing is lost."
+                  ).format(self._who(), self.ot_in_hour, self.work_date),
+                title=_("Overtime has no approval"))
 
-        # Fetch additional details from OT Approval record (parent table)
-        parent_details = frappe.get_all('OT Approval',
-                                        filters={
-                                            "name": ot_child['parent']
-                                        },
-                                        # get fields from parent table
-                                        fields=["name", "type",
-                                                "docstatus", "work_date"],
-                                        # order by creation date in descending order
-                                        order_by='creation desc'
-                                        )
+        ot_child = rows[0]
+        parent = frappe.db.get_value(
+            "OT Approval", ot_child["parent"],
+            ["name", "type", "docstatus", "work_date"], as_dict=True)
 
-        if not parent_details:
-            # if parent_details is empty (no approval), then raise an exception
-            frappe.throw(_("No OT Approval found,{0}").format(self.employee))
-        
-        parent = parent_details[0]
+        if not parent:
+            frappe.throw(
+                _("The OT Approval <b>{0}</b> that covers {1} on {2} no longer "
+                  "exists, although its row is still there. This is a data "
+                  "problem, not a decision — tell whoever maintains the system."
+                  ).format(ot_child["parent"], self._who(), self.work_date),
+                title=_("OT Approval is missing"))
 
-        # if parent work_date is not equal to FLog work_date and docstatus is not submitted, then raise an exception
-        if parent["work_date"] != self.work_date and parent["docstatus"] != 1:
-            frappe.throw(_("OT Approval for {0} has issue").format(self.employee))
+        # 🔴 The parent's own `work_date` is deliberately NOT compared. Measured
+        # 2026-09-01: **77 submitted child rows carry a work_date that differs
+        # from their parent's header**, and genuine multi-date approvals exist
+        # (one document covering two dates). The header date is the day the
+        # approval was RAISED; the row's date is the day being approved, and the
+        # row is already matched on it above.
+        #
+        # This line previously read:
+        #
+        #     if parent["work_date"] != self.work_date and parent["docstatus"] != 1:
+        #
+        # — an `and` where only the second half is a real condition, so it could
+        # never fire. ⚠️ And "fixing" it to `or` would have been far worse than
+        # leaving it: it would have refused all 77 of those legitimate rows.
+        if parent.docstatus != 1:
+            frappe.throw(
+                _("OT Approval <b>{0}</b> is <b>{1}</b>, so it cannot authorise "
+                  "the {2} h {3} worked on {4}."
+                  "<br><br>Submit that approval, or file a new one for the day."
+                  ).format(parent.name,
+                           {0: _("still a draft"), 2: _("cancelled")}.get(
+                               parent.docstatus, _("not submitted")),
+                           self.ot_in_hour, self._who(), self.work_date),
+                title=_("OT Approval is not submitted"))
 
-        # verifying logic between OT Approval and Finger Log
-        # 1. Submit - has overtime, has approval, and overtime duration <= approved OT. final_ot = FLog overtime
-        if parent["type"] == "normal" and self.ot_in_hour <= ot_child['ot_duration']:
-            self.ot_approval_id = parent["name"]
+        if parent.type == "normal" and self.ot_in_hour <= ot_child["ot_duration"]:
+            self.ot_approval_id = parent.name
             self.final_ot = self.ot_in_hour
-        # 2. Reject - has overtime, has approval, but overtime duration > approved OT
-        elif parent["type"] == "normal" and self.ot_in_hour > ot_child['ot_duration']:
-            frappe.throw(_("{0} OT duration is greater than approved OT").format(self.employee))
-        # 3. Submit - has overtime and with special_approve. final_ot = overtime duration stated in OT Approval record (child). Could be = 0 or > 0
-        elif parent["type"] == "special_approve":
-            self.ot_approval_id = parent["name"]
-            self.final_ot = ot_child['ot_duration']
+
+        elif parent.type == "normal":
+            frappe.throw(
+                _("<b>{0}</b> clocked <b>{1} h</b> of overtime on <b>{2}</b>, but "
+                  "OT Approval <b>{3}</b> only approved <b>{4} h</b> — "
+                  "<b>{5} h more</b> than was authorised."
+                  "<br><br>Two ways forward, and they are different decisions:"
+                  "<br>• the extra hours were genuinely worked and should be paid "
+                  "— amend {3} to the actual hours, or file a "
+                  "<b>special approval</b> for the day;"
+                  "<br>• the clock is wrong — correct the punches in Ingress and "
+                  "re-import."
+                  "<br><br>Until then this log stays a draft and nothing is paid."
+                  ).format(self._who(), self.ot_in_hour, self.work_date,
+                           parent.name, ot_child["ot_duration"],
+                           round(flt(self.ot_in_hour) - flt(ot_child["ot_duration"]), 2)),
+                title=_("More overtime than was approved"))
+
+        elif parent.type == "special_approve":
+            self.ot_approval_id = parent.name
+            self.final_ot = ot_child["ot_duration"]
             self.has_overwrite = 1

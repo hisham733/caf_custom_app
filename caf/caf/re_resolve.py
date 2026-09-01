@@ -34,7 +34,7 @@ by whether the punches are all-zero. Spec §6.7.
 
 import frappe
 from frappe import _
-from frappe.utils import add_days, getdate, nowdate
+from frappe.utils import add_days, flt, getdate, nowdate
 
 from caf.caf import work_hours
 from caf.caf.attendance_verdict import (
@@ -51,25 +51,53 @@ def _ot_coverage(doc):
     if not doc.ot_in_hour:
         return 0.0, None, 0, None
 
+    # 🔴 The wording is kept deliberately close to `check_ot_approval`'s, because
+    # HR meets the two in the same worklist — one as a refusal at submit, one as a
+    # note on a flagged row. Two descriptions of one problem is how a person ends
+    # up believing they are two problems.
+    who = frappe.db.get_value("Employee", doc.employee, "employee_name") or doc.employee
+
     rows = frappe.get_all("OT Approval Table",
                           filters={"emp_id": doc.employee, "work_date": doc.work_date,
                                    "docstatus": 1},
                           fields=["parent", "ot_duration"], order_by="creation desc")
     if not rows:
-        return 0.0, None, 0, _("OT of {0}h has no OT Approval (FBR11)").format(doc.ot_in_hour)
+        return 0.0, None, 0, _(
+            "{0} now has {1}h of overtime on {2} and no approved OT Approval "
+            "covers that day (FBR11). File one for {2}, or correct the punches."
+        ).format(who, doc.ot_in_hour, doc.work_date)
 
     child = rows[0]
-    parent = frappe.db.get_value("OT Approval", child.parent, ["name", "type"], as_dict=True)
+    parent = frappe.db.get_value("OT Approval", child.parent,
+                                 ["name", "type", "docstatus"], as_dict=True)
     if not parent:
-        return 0.0, None, 0, _("OT Approval {0} is missing").format(child.parent)
+        return 0.0, None, 0, _(
+            "OT Approval {0} covering {1} on {2} no longer exists, although its "
+            "row remains. A data problem, not a decision."
+        ).format(child.parent, who, doc.work_date)
+
+    # Parity with `check_ot_approval`: a draft or cancelled approval authorises
+    # nothing. The parent's own work_date is NOT compared — 77 submitted child
+    # rows legitimately differ from their header, and multi-date approvals exist.
+    if parent.docstatus != 1:
+        return 0.0, None, 0, _(
+            "OT Approval {0} is {1}, so it cannot authorise {2}h for {3} on {4}."
+        ).format(parent.name,
+                 {0: _("still a draft"), 2: _("cancelled")}.get(
+                     parent.docstatus, _("not submitted")),
+                 doc.ot_in_hour, who, doc.work_date)
 
     if parent.type == "special_approve":
         return child.ot_duration, parent.name, 1, None
     if doc.ot_in_hour <= child.ot_duration:
         return doc.ot_in_hour, parent.name, 0, None
 
-    return 0.0, None, 0, _("OT is now {0}h but only {1}h is approved ({2})").format(
-        doc.ot_in_hour, child.ot_duration, parent.name)
+    return 0.0, None, 0, _(
+        "{0} now has {1}h of overtime on {2} but OT Approval {3} approved only "
+        "{4}h — {5}h more than authorised. Amend {3}, file a special approval, or "
+        "correct the punches."
+    ).format(who, doc.ot_in_hour, doc.work_date, parent.name, child.ot_duration,
+             round(flt(doc.ot_in_hour) - flt(child.ot_duration), 2))
 
 
 def reconcile_attendance(doc):
