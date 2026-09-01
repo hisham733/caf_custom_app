@@ -298,6 +298,58 @@ class _Batch:
 
 # ────────────────────────────────────────────────────────────── the importer
 
+def unmapped_employees() -> list:
+    """Active employees who will receive NO attendance, and have not said so.
+
+    🔴 **MG's insight, 2026-09-01, and it is better than the alternative.** The
+    obvious thing to report after an import is the Ingress ids that matched
+    nobody — but measured, that is **220 names of ex-staff** whose accounts were
+    never suspended, all of them punchless. A list that long, that is always
+    there, is one nobody reads.
+
+    The question worth answering points the OTHER WAY: *which of OUR people will
+    silently receive nothing?* MG: *"the list is for emp where field is empty, not
+    did not import."* That list is normally **empty**, so its presence means
+    something — and it is the list that catches a mistyped or missing device id
+    before a month of attendance quietly fails to exist (FBR41).
+
+    `caf_no_clocking` excludes the people somebody has deliberately decided about,
+    so a genuine exception does not train HR to ignore the message.
+    """
+    return frappe.get_all(
+        "Employee",
+        filters={"status": "Active",
+                 "attendance_device_id": ("in", ["", None]),
+                 "caf_no_clocking": 0},
+        fields=["name", "employee_name"], order_by="employee_name")
+
+
+def _note_unmapped_employees(batch):
+    """Record the answer on the batch, whichever way it comes out.
+
+    The clean case is recorded too, and deliberately: *"every active employee is
+    mapped"* is a statement HR can rely on, whereas silence is indistinguishable
+    from the check not having run.
+    """
+    gaps = unmapped_employees()
+    exempt = frappe.db.count("Employee", {"status": "Active", "caf_no_clocking": 1})
+
+    if gaps:
+        who = ", ".join(f"{g.employee_name} ({g.name})" for g in gaps[:10])
+        batch.note(
+            f"🔴 {len(gaps)} ACTIVE EMPLOYEE(S) HAVE NO ATTENDANCE DEVICE ID and "
+            f"will receive no attendance at all — not from this run and not from "
+            f"any future one: {who}"
+            f"{' …and more' if len(gaps) > 10 else ''}. "
+            f"Either give them an Attendance Device ID, or tick 'Does Not Clock "
+            f"In' if they genuinely never clock.")
+    else:
+        batch.note(
+            f"Every active employee carries an Attendance Device ID"
+            f"{f' ({exempt} deliberately exempt)' if exempt else ''} — nobody is "
+            f"silently receiving no attendance.")
+
+
 def _import(batch, rows, by_device, submit, allow_recreate):
     """The row loop. Shared by every entry point so the rules cannot diverge."""
     for row in rows:
@@ -552,6 +604,7 @@ def manual_import(from_date, to_date, employees=None, submit=False,
     try:
         _import(batch, reader.read(from_date, to_date, ftag_ids), by_device,
                 submit, allow_recreate)
+        _note_unmapped_employees(batch)
         doc = batch.finish("Completed")
     except Exception as e:
         batch.note(f"RUN FAILED: {e}")

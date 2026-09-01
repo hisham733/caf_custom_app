@@ -550,7 +550,14 @@ doc_events = {
     "Employee": {
         # D15/D51 - reports_to is what decides who may appraise whom, so it is
         # mandatory except for the org roots
-        "validate": "caf.caf.overrides.employee.ensure_reports_to"
+        "validate": [
+            "caf.caf.overrides.employee.ensure_reports_to",
+            # MG, 2026-09-01. A blank attendance_device_id means no Finger Log and
+            # no Attendance, EVER (FBR41) - and a deliberate exception looks
+            # exactly like a typo. A caution, never a throw: HR creates the
+            # employee before the person is enrolled on the machine.
+            "caf.caf.overrides.employee.warn_no_attendance_device",
+        ]
     },
     "HR Settings": {
         # D69 - reject leave codes that do not exist in live Finger Log data

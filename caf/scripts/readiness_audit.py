@@ -193,6 +193,29 @@ def check_missing_annual():
 ORG_ROOTS = {"HR-EMP-00001", "HR-EMP-00002"}
 
 
+def check_attendance_device():
+    """🔴 An active employee with no device id receives NO attendance, ever.
+
+    FBR41. `active_by_device()` is the only link between Ingress and ERPNext, so
+    somebody absent from it is never matched by any punch row — and nothing
+    reports it, because there is no row to report. The correct case (a director
+    who does not clock) and a typo are both just an empty field.
+
+    `caf_no_clocking` is what separates them: ticked means somebody decided.
+    Measured 2026-09-01 — 1 of 89 blank, and it is the director MG confirmed.
+    """
+    blank = frappe.get_all(
+        "Employee", filters={"status": "Active",
+                             "attendance_device_id": ("in", ["", None])},
+        fields=["name", "employee_name", "caf_no_clocking"])
+    bad = [e for e in blank if not e.caf_no_clocking]
+    exempt = len(blank) - len(bad)
+    return _row("BLOCK" if bad else "ok",
+                "active employees who will get NO attendance", len(bad),
+                ", ".join(e.employee_name for e in bad[:5])
+                or f"everyone is mapped to a device ({exempt} deliberately exempt)")
+
+
 def check_org_chart():
     """🔴 Every active employee must name BOTH a manager and a leave approver.
 
@@ -250,7 +273,8 @@ def check_approver_matches_manager():
 
 
 CHECKS = [check_naming, check_default_shift, check_holiday_list, check_shift_lists,
-          check_alt_pairs, check_manager_logins, check_org_chart,
+          check_alt_pairs, check_manager_logins, check_attendance_device,
+          check_org_chart,
           check_approver_matches_manager, check_leave_period,
           check_next_year_holidays, check_missing_mc, check_missing_annual]
 

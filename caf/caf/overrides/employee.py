@@ -48,3 +48,46 @@ def ensure_reports_to(doc, method=None):
         ).format(frappe.bold(doc.get("employee_name") or doc.get("name") or _("This employee"))),
         title=_("Supervisor required"),
     )
+
+
+def warn_no_attendance_device(doc, method=None):
+    """Caution — never a throw — when an active employee has no device id.
+
+    MG, 2026-09-01, after the import-manifest work: *"every emp must have
+    erp.attendance_device_id (except the director)."*
+
+    🔴 **What a blank field actually costs.** `active_by_device()` maps Ingress
+    `userid` → Employee, and it is the ONLY link between the two systems. An
+    employee absent from that map is never matched by any Ingress row, so they
+    receive **no Finger Log and no Attendance, ever** — and nothing reports it,
+    because there is no row to report. **FBR41.** The correct case (a director who
+    does not clock) and a typo look identical: both are simply an empty field.
+
+    So the flag is what separates them. `caf_no_clocking` means *somebody
+    decided*; blank-and-unflagged means *nobody has looked*, and that is what this
+    says out loud.
+
+    ⚠️ **A message, not a throw, and that is deliberate.** HR creates an employee
+    before the person is enrolled on the fingerprint machine — the device id
+    genuinely does not exist yet. Refusing the save would make the normal order of
+    work impossible, which is the same reasoning as
+    `shift_type.warn_on_mixed_population`. The loud version lives where it can be
+    acted on in bulk: the readiness audit, and the note on every import batch.
+    """
+    if doc.get("status") != "Active":
+        return
+    if (doc.get("attendance_device_id") or "").strip():
+        return
+    if doc.get("caf_no_clocking"):
+        return
+
+    frappe.msgprint(
+        _("{0} has no <b>Attendance Device ID</b>, so they will receive no "
+          "attendance at all — no Finger Log, no Attendance record, and no line "
+          "in any import."
+          "<br><br>That is fine if they have not been enrolled on the fingerprint "
+          "machine <i>yet</i>. If they genuinely never clock in, tick <b>Does Not "
+          "Clock In</b> so this stops being reported as a gap."
+          ).format(frappe.bold(doc.get("employee_name") or doc.get("name")
+                               or _("This employee"))),
+        title=_("No fingerprint device linked"), indicator="orange")

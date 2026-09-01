@@ -24,11 +24,42 @@ from frappe.utils import add_days, getdate, nowdate
 from caf.caf.ingress import sync
 
 RESULTS = []
+SKIPPED = []
 
 
 def check(tid, ok, detail):
     RESULTS.append((tid, bool(ok), detail))
     print(f"{tid:26s} {'PASS' if ok else 'FAIL'}  {detail}")
+
+
+def skip(tid, why):
+    """The third state — copied from `test_ingress_import`, which had it and this
+    suite did not.
+
+    🔴 Found 2026-09-01: C3 onwards call `manual_import` against the real machine,
+    and the Ingress PC is a desktop that sleeps and auto-locks (FBR44 / T-11). With
+    it off, this suite did not fail cleanly — it died with a traceback that
+    `bench execute` then masked behind its own fake `NameError` (quirks §18), so
+    the visible symptom was an error naming the wrong thing entirely.
+
+    An unreachable machine is a NORMAL operational state here, not a defect. It
+    must skip loudly and be counted separately: never silently dropped, and never
+    counted as a pass.
+    """
+    SKIPPED.append((tid, why))
+    print(f"{tid:26s} SKIP  {why}")
+
+
+def live_available():
+    """Is the machine reachable right now? Asked once, cheaply — the same probe
+    `test_ingress_import.live_available()` uses, so the two suites cannot
+    disagree about whether Natalie is awake."""
+    try:
+        from caf.caf.ingress import source as isrc
+        isrc.get_source("Live MySQL").describe()
+        return True
+    except Exception:
+        return False
 
 
 def run():
@@ -60,62 +91,77 @@ def run():
               "trimmed to yesterday — HR retypes one date and knows exactly what "
               "they asked for")
 
-    # ── C3 — the holiday catch-up: 3 days, EVERY employee, one call ────────
-    start = add_days(yesterday, -2)
-    t0 = time.time()
-    out = sync.manual_import(start, yesterday, purpose="Test", submit=False)
-    elapsed = time.time() - t0
-    c = out["counts"]
-    doc = frappe.get_doc("Ingress Import Batch", out["batch"])
+    # ══ C3 – C5 need the real machine. Everything else runs either way. ══════
+    # 🔴 The Ingress PC is HR's own desktop: it sleeps, and it auto-locks after a
+    # few minutes (FBR44, T-11). Unreachable is a normal operational state, so
+    # these SKIP rather than fail — but they are printed and counted separately,
+    # because a skipped row is not a pass and the summary must not pretend it is.
+    if not live_available():
+        for tid, why in (
+            ("C3-CATCHUP-3-DAYS", "needs the live machine — Natalie unreachable"),
+            ("C3b-NO-PARTIAL-COLLAPSE", "needs the live machine"),
+            ("C4-CATCHUP-IDEMPOTENT", "needs the live machine"),
+            ("C5-CATCHUP-FULLY-REVERSIBLE", "needs the live machine"),
+        ):
+            skip(tid, why)
+    else:
+        # ── C3 — the holiday catch-up: 3 days, EVERY employee, one call ────
+        start = add_days(yesterday, -2)
+        t0 = time.time()
+        out = sync.manual_import(start, yesterday, purpose="Test", submit=False)
+        elapsed = time.time() - t0
+        c = out["counts"]
+        doc = frappe.get_doc("Ingress Import Batch", out["batch"])
 
-    check("C3-CATCHUP-3-DAYS",
-          doc.status == "Completed" and c["failed"] == 0,
-          f"3 work dates × every active employee in ONE call: read={doc.read_rows} "
-          f"created={c['created']} held={c['held']} already={c['already_present']} "
-          f"drift={c['drift']} failed={c['failed']} in {elapsed:.1f}s — status "
-          f"{doc.status}. This is the shape of HR's Monday after a long weekend")
+        check("C3-CATCHUP-3-DAYS",
+              doc.status == "Completed" and c["failed"] == 0,
+              f"3 work dates × every active employee in ONE call: "
+              f"read={doc.read_rows} created={c['created']} held={c['held']} "
+              f"already={c['already_present']} drift={c['drift']} "
+              f"failed={c['failed']} in {elapsed:.1f}s — status {doc.status}. "
+              f"This is the shape of HR's Monday after a long weekend")
 
-    check("C3b-NO-PARTIAL-COLLAPSE",
-          doc.read_rows > 0 and len(doc.rows) > 0,
-          f"the batch recorded {len(doc.rows)} manifest row(s) for "
-          f"{doc.read_rows} machine row(s) — a multi-day run leaves a full "
-          f"account of itself, so if HR clicks once for three days she can still "
-          f"see what happened to each one")
+        check("C3b-NO-PARTIAL-COLLAPSE",
+              doc.read_rows > 0 and len(doc.rows) > 0,
+              f"the batch recorded {len(doc.rows)} manifest row(s) for "
+              f"{doc.read_rows} machine row(s) — a multi-day run leaves a full "
+              f"account of itself, so if HR clicks once for three days she can "
+              f"still see what happened to each one")
 
-    # ── C4 — the catch-up is idempotent: clicking twice is harmless ─────────
-    out2 = sync.manual_import(start, yesterday, purpose="Test", submit=False)
-    c2 = out2["counts"]
-    check("C4-CATCHUP-IDEMPOTENT",
-          c2["created"] == 0 and c2["failed"] == 0,
-          f"clicking the same catch-up again created {c2['created']} and failed "
-          f"{c2['failed']} — already_present={c2['already_present']} "
-          f"updated={c2['updated']}. HR who is unsure whether she already "
-          f"imported can just click again, which is what she will actually do")
+        # ── C4 — the catch-up is idempotent: clicking twice is harmless ────
+        out2 = sync.manual_import(start, yesterday, purpose="Test", submit=False)
+        c2 = out2["counts"]
+        check("C4-CATCHUP-IDEMPOTENT",
+              c2["created"] == 0 and c2["failed"] == 0,
+              f"clicking the same catch-up again created {c2['created']} and "
+              f"failed {c2['failed']} — already_present={c2['already_present']} "
+              f"updated={c2['updated']}. HR who is unsure whether she already "
+              f"imported can just click again, which is what she will actually do")
 
-    # ── cleanup: both batches are Test, so revert removes everything ───────
-    removed = 0
-    for name in (out["batch"], out2["batch"]):
-        try:
-            r = sync.revert_batch(name, force=True)
-            removed += r.get("removed", 0)
-            frappe.delete_doc("Ingress Import Batch", name,
-                              ignore_permissions=True, force=True,
-                              delete_permanently=True)
-        except Exception as e:
-            print(f"  cleanup {name}: {e}")
-    frappe.db.commit()
+        # ── cleanup: both batches are Test, so revert removes everything ───
+        removed = 0
+        for name in (out["batch"], out2["batch"]):
+            try:
+                r = sync.revert_batch(name, force=True)
+                removed += r.get("removed", 0)
+                frappe.delete_doc("Ingress Import Batch", name,
+                                  ignore_permissions=True, force=True,
+                                  delete_permanently=True)
+            except Exception as e:
+                print(f"  cleanup {name}: {e}")
+        frappe.db.commit()
 
-    # A dict cannot hold work_date twice — the second key silently won and this
-    # counted the whole table. Filters that need two bounds on one field go as a
-    # list of tuples.
-    leftover = frappe.db.count("Finger Log",
-                               [["work_date", ">=", start],
-                                ["work_date", "<=", yesterday]])
-    check("C5-CATCHUP-FULLY-REVERSIBLE", True,
-          f"both catch-up batches reverted, {removed} Finger Log(s) removed. A "
-          f"test import of the whole company across three days has to be as "
-          f"removable as a one-row one, or nobody will risk running it "
-          f"(remaining logs in range: {leftover})")
+        # A dict cannot hold work_date twice — the second key silently won and
+        # this counted the whole table. Filters that need two bounds on one field
+        # go as a list of tuples.
+        leftover = frappe.db.count("Finger Log",
+                                   [["work_date", ">=", start],
+                                    ["work_date", "<=", yesterday]])
+        check("C5-CATCHUP-FULLY-REVERSIBLE", True,
+              f"both catch-up batches reverted, {removed} Finger Log(s) removed. "
+              f"A test import of the whole company across three days has to be as "
+              f"removable as a one-row one, or nobody will risk running it "
+              f"(remaining logs in range: {leftover})")
 
     # ── C6 — the live SQL must select the columns EDIT_FLAGS keys on ────────
     # 🔴 Regression guard for a bug that went green. When EDIT_FLAGS moved from
@@ -162,5 +208,11 @@ def run():
 
     failed = [t for t, ok, _d in RESULTS if not ok]
     print(f"\n{len(RESULTS) - len(failed)}/{len(RESULTS)} passed"
+          + (f" · {len(SKIPPED)} skipped" if SKIPPED else "")
           + (f" — FAILED: {failed}" if failed else ""))
+    if SKIPPED:
+        print("⚠️  Skipped rows are NOT passes. Wake the Ingress PC and re-run "
+              "before treating this suite as a full gate:")
+        for tid, why in SKIPPED:
+            print(f"     {tid} — {why}")
     return not failed
