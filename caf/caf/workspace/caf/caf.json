@@ -1,6 +1,6 @@
 {
  "charts": [],
- "content": "[{\"id\":\"a-ye929j6T\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">CAF</span>\",\"col\":12}},{\"id\":\"gxIM-tFDrP\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Dashboard \",\"col\":12}},{\"id\":\"fW9_q_voLX\",\"type\":\"card\",\"data\":{\"card_name\":\"OT Finger Log\",\"col\":3}},{\"id\":\"9e6YTjVdro\",\"type\":\"card\",\"data\":{\"card_name\":\"Planner\",\"col\":3}},{\"id\":\"DQpknSTbzE\",\"type\":\"card\",\"data\":{\"card_name\":\"Operator\",\"col\":3}},{\"id\":\"V68z7nlH5p\",\"type\":\"card\",\"data\":{\"card_name\":\"Quality Control \",\"col\":3}}]",
+ "content": "[{\"id\":\"a-ye929j6T\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">CAF</span>\",\"col\":12}},{\"id\":\"gxIM-tFDrP\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Dashboard \",\"col\":12}},{\"id\":\"9e6YTjVdro\",\"type\":\"card\",\"data\":{\"card_name\":\"Planner\",\"col\":3}},{\"id\":\"DQpknSTbzE\",\"type\":\"card\",\"data\":{\"card_name\":\"Operator\",\"col\":3}},{\"id\":\"V68z7nlH5p\",\"type\":\"card\",\"data\":{\"card_name\":\"Quality Control \",\"col\":3}},{\"id\":\"k2pNhkhfXl\",\"type\":\"card\",\"data\":{\"card_name\":\"CAF HR\",\"col\":6}}]",
  "creation": "2025-02-25 11:27:34.409631",
  "custom_blocks": [],
  "docstatus": 0,
@@ -134,45 +134,6 @@
   {
    "hidden": 0,
    "is_query_report": 0,
-   "label": "OT Finger Log",
-   "link_count": 3,
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Card Break"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "OT Approval",
-   "link_count": 0,
-   "link_to": "OT Approval",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Finger Log",
-   "link_count": 0,
-   "link_to": "Finger Log",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Leave Application",
-   "link_count": 0,
-   "link_to": "Leave Application",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
    "label": "Planner",
    "link_count": 9,
    "link_type": "DocType",
@@ -268,10 +229,159 @@
    "link_type": "Page",
    "onboard": 0,
    "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "CAF HR",
+   "link_count": 14,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "HR appraisal",
+   "link_count": 0,
+   "link_to": "hr-appraisal-dashboard",
+   "link_type": "Page",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "CAF Org chart",
+   "link_count": 0,
+   "link_to": "organizational-chart",
+   "link_type": "Page",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Supervisor Appraisal",
+   "link_count": 0,
+   "link_to": "supervisor-appraisal",
+   "link_type": "Page",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Shift & Sat roster",
+   "link_count": 0,
+   "link_to": "shift-roster",
+   "link_type": "Page",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "CAF HR setting",
+   "link_count": 0,
+   "link_to": "HR Settings",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Shift Type",
+   "link_count": 0,
+   "link_to": "Shift Type",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Leave Apply",
+   "link_count": 0,
+   "link_to": "Leave Application",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Leave Allocate",
+   "link_count": 0,
+   "link_to": "Leave Allocation",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Finger Log",
+   "link_count": 0,
+   "link_to": "Finger Log",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Attendance",
+   "link_count": 0,
+   "link_to": "Attendance",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "OT Approval",
+   "link_count": 0,
+   "link_to": "OT Approval",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Employee",
+   "link_count": 0,
+   "link_to": "Employee",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "User",
+   "link_count": 0,
+   "link_to": "User",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Ingress",
+   "link_count": 0,
+   "link_to": "Ingress Import Batch",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
   }
  ],
- "modified": "2026-08-05 11:04:29.334147",
- "modified_by": "Administrator",
+ "modified": "2026-08-18 15:49:28.990716",
+ "modified_by": "natalie@caffood.com",
  "module": "Caf",
  "name": "CAF",
  "number_cards": [],
@@ -288,13 +398,6 @@
    "label": "Dashboard ",
    "type": "URL",
    "url": "http://192.168.0.251:1111/public/dashboard/d09e6c34-c5be-49b5-962b-6e85f40a3ed1"
-  },
-  {
-   "color": "Green",
-   "doc_view": "",
-   "label": "Appraisal Dashboard",
-   "link_to": "hr-appraisal-dashboard",
-   "type": "Page"
   }
  ],
  "title": "CAF"
