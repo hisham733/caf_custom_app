@@ -61,14 +61,30 @@ def run():
         # ----------------------------------------------------------- RDY-KNOWN
         # The audit must already be finding the two things measured by hand
         # today, or it is not reading what I read.
+        #
+        # 🔴 BASELINE MOVED 2026-09-01, and it moved the RIGHT WAY. This asserted
+        # `mgr["count"] == 22` from the 2026-08-14 hand count. The true figure is
+        # now **0**: verified independently by SQL over all 87 active employees who
+        # have a manager, every one of those managers can log in. **OD-76 is
+        # resolved on this site** — MG imported and corrected `reports_to` and
+        # `leave_approver` for the whole workforce (FBR56).
+        #
+        # Asserting 0 is not a weaker test than asserting 22. It now fails the
+        # moment a new employee is given a manager with no user account, which is
+        # exactly the condition OD-76 cares about; RDY-DETECT separately proves the
+        # check can still find its own target when one exists.
+        #
+        # ⚠️ Production is NOT in this state — GO_LIVE_TODO T-10 records that its
+        # role and org-chart data is the copy still needing correction.
         mgr = by_name(base, "manager has no login")
         mc = by_name(base, "NO medical entitlement")
-        check("RDY-KNOWN", mgr and mgr["count"] == 22 and mgr["severity"] == "BLOCK"
+        check("RDY-KNOWN", mgr and mgr["count"] == 0 and mgr["severity"] == "ok"
               and mc and mc["count"] == 2 and mc["severity"] == "BLOCK",
               f"it finds what was measured by hand: {mgr['count'] if mgr else '?'} "
-              f"employees whose manager cannot log in (OD-76), and "
+              f"employees whose manager cannot log in (OD-76 — was 22, now clear "
+              f"after MG's org-chart import), and "
               f"{mc['count'] if mc else '?'} holding leave with no medical "
-              f"entitlement — the same two the HR document names")
+              f"entitlement — the one the HR document still names")
 
         # -------------------------------------------------------- RDY-SEVERITY
         # 🔴 The distinction that keeps the list readable. 8 people have MC and

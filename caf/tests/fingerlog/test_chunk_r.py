@@ -45,11 +45,46 @@ from frappe.utils import add_to_date, getdate
 
 from caf.caf import appraisal_refresh as ar
 
-SUP = "HR-EMP-00001"                      # 22 direct reports
-REP = "HR-EMP-00075"                      # reports to SUP, 8am Schedule (Mon–Sat)
+REP = "HR-EMP-00075"                      # Seriramulu A/L Apanah
 REP_USER = "seriramulu@caffood.com"       # role: Employee
-APPROVER = "quality@caffood.com"          # roles: Employee + Leave Approver
 HRM = "hr.manager.test@caffood.com"       # role: HR Manager
+
+# 🔴 SUP and APPROVER are READ FROM THE EMPLOYEE, never typed here.
+#
+# They used to be hardcoded as `HR-EMP-00001` and `quality@caffood.com`, and both
+# went stale: measured 2026-09-01, REP reports to **HR-EMP-00008** (Ow Yong Nin
+# Geet) and his leave approver is **production1@** — Nin Geet's own login. ✅ MG
+# confirmed both the same day, and confirmed the DATA is the authority: *"I have
+# already imported and corrected all emp.reports_to and emp.leave_approver in this
+# test server."*
+#
+# The cost of hardcoding was four red assertions (R1a, R1b, R2, R4) that looked
+# like a permission-model failure and were an org-chart change. `quality@` IS a
+# real Leave Approver — for nine other people — so the failure was a PermissionError
+# rather than anything that pointed at the actual cause.
+#
+# Reading the fields also makes the suite say what CAF's rule actually is: a leave
+# application is handled by the person named on the employee (FBR56), and the whole
+# active population satisfies `leave_approver == reports_to.user_id` with zero
+# exceptions.
+# Resolved in `run()`, not at import: reading the DB while the module loads would
+# make this file unimportable outside a site context.
+SUP = None
+APPROVER = None
+
+
+def resolve_org():
+    """Set SUP and APPROVER from REP's own record. Called first thing in `run()`."""
+    global SUP, APPROVER
+    row = frappe.db.get_value("Employee", REP,
+                              ["reports_to", "leave_approver"], as_dict=True)
+    if not row or not row.reports_to or not row.leave_approver:
+        frappe.throw(f"{REP} has no reports_to / leave_approver — this suite needs "
+                     f"both. Only the two org roots may be blank (FBR50).")
+    SUP, APPROVER = row.reports_to, row.leave_approver
+    print(f"org read from {REP}: reports_to={SUP} "
+          f"({frappe.db.get_value('Employee', SUP, 'employee_name')}) "
+          f"leave_approver={APPROVER}")
 
 CYCLE = "2026-06"
 TEMPLATE = "CAF Monthly Appraisal"
@@ -185,6 +220,7 @@ def tamper_log(name):
 
 def run():
     try:
+        resolve_org()
         cleanup()
         log = make_log(D_ABS)
         app = make_appraisal()

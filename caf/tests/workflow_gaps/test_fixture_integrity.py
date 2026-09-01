@@ -21,9 +21,52 @@ from caf.scripts.naming_series_audit import _gaps
 
 EMP_USER = "mohd@caffood.com"               # HR-EMP-00013, Employee role
 EMP_NAME = "HR-EMP-00013"
-APPROVER = "mursyid@caffood.com"            # HR-EMP-00011 - supervisor AND leave approver
 HRM = "hr.manager.test@caffood.com"         # HR Manager
-STRANGER = "production.c.caf@gmail.com"     # pure Leave Approver, NOT mohd's approver
+
+# 🔴 APPROVER and STRANGER are DERIVED, not typed. Both hardcoded values went
+# stale — measured 2026-09-01:
+#
+#   mursyid@ (HR-EMP-00011)    approves for 0 people and holds only `Employee`.
+#                              EMP_NAME's real approver is **too@** (Too Poh Chin,
+#                              HR-EMP-00003), who is also who he reports to.
+#   production.c.caf@gmail.com is Rohit Kamat (HR-EMP-00023) and holds no
+#                              `Leave Approver` role at all, so it could not play
+#                              "a pure Leave Approver who is the WRONG one".
+#
+# ✅ MG confirmed the same day that the DATA is the authority — *"I have already
+# imported and corrected all emp.reports_to and emp.leave_approver in this test
+# server"* — and the whole active population satisfies
+# `leave_approver == reports_to.user_id` with zero exceptions (FBR56).
+#
+# So the suite reads the org chart instead of remembering a snapshot of it. The
+# four assertions this file was failing were all this one cause, and none of them
+# was a product defect.
+APPROVER = None      # EMP_NAME's own leave approver
+STRANGER = None      # a real Leave Approver who is NOT EMP_NAME's
+
+
+def resolve_fixture_users():
+    """Read the two approver identities out of the live org chart."""
+    global APPROVER, STRANGER
+    APPROVER = frappe.db.get_value("Employee", EMP_NAME, "leave_approver")
+    if not APPROVER:
+        frappe.throw(f"{EMP_NAME} has no leave_approver — only the two org roots "
+                     f"may be blank (FBR50)")
+
+    # Somebody who really does hold the role, really does approve for people, and
+    # really is not this employee's approver. Deriving it means the assertion keeps
+    # meaning "the wrong approver is refused" however HR reorganises.
+    others = {e.leave_approver for e in frappe.get_all(
+        "Employee", filters={"status": "Active", "leave_approver": ("!=", "")},
+        fields=["leave_approver"]) if e.leave_approver != APPROVER}
+    STRANGER = next((u for u in sorted(others)
+                     if "Leave Approver" in frappe.get_roles(u)
+                     and not {"HR Manager", "HR User"} & set(frappe.get_roles(u))), None)
+    if not STRANGER:
+        frappe.throw("no second Leave Approver without HR roles — I3-STRANGER "
+                     "cannot distinguish 'wrong approver' from 'HR bypass'")
+    print(f"fixture users read from the org chart: approver of {EMP_NAME} = "
+          f"{APPROVER}; unrelated Leave Approver = {STRANGER}")
 
 RESULTS = []
 
@@ -41,6 +84,8 @@ class _Doc:
 
 
 def run():
+    resolve_fixture_users()
+
     # I4 - workflow record matches the builder script
     wf = frappe.db.exists("Workflow", "CAF Leave Approval")
     check("I4-WF", bool(wf), f"workflow exists: {wf}")

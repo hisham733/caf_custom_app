@@ -186,8 +186,72 @@ def check_missing_annual():
                 or "everyone allocated has annual leave")
 
 
+# The two org roots. `reports_to` and `leave_approver` are blank on these by
+# definition — FBR50: `HR-EMP-00001` Ow Yong Mian Fatt and `HR-EMP-00002` Yow Kwee
+# Chin are the only employees with nobody above them. Named rather than tolerated
+# by count, the same discipline as EXEMPT above (OD-24 / RDY-EXEMPT).
+ORG_ROOTS = {"HR-EMP-00001", "HR-EMP-00002"}
+
+
+def check_org_chart():
+    """🔴 Every active employee must name BOTH a manager and a leave approver.
+
+    MG, 2026-09-01: *"moving forward in this test server, we will use both emp
+    reports_to and leave_approver — these 2 fields for all emp should already be
+    filled up."* They are what CAF reads to decide who opens an appraisal (OD-76)
+    and who may act on a leave application (FBR56).
+
+    A blank is silent in both directions: an employee with no `leave_approver`
+    files an application **nobody can act on**, and one with no `reports_to` has no
+    appraisal opened for them at all. Neither produces an error anywhere.
+
+    ✅ Measured 2026-09-01 on this site: 0 blanks outside the two roots.
+    ⚠️ Production is the copy that still needs this — GO_LIVE_TODO T-10.
+    """
+    bad = [r for r in frappe.get_all(
+        "Employee", filters={"status": "Active"},
+        fields=["name", "employee_name", "reports_to", "leave_approver"])
+        if r.name not in ORG_ROOTS and (not r.reports_to or not r.leave_approver)]
+    return _row("BLOCK" if bad else "ok",
+                "active employees missing manager or approver", len(bad),
+                ", ".join(f"{r.employee_name} ("
+                          f"{'no manager' if not r.reports_to else 'no approver'})"
+                          for r in bad[:5])
+                or f"all filled; only the {len(ORG_ROOTS)} org roots are blank (FBR50)")
+
+
+def check_approver_matches_manager():
+    """A NOTE, not a block — the approver is usually the manager, but need not be.
+
+    Measured 2026-09-01: all 87 active employees who have a manager satisfy
+    `leave_approver == reports_to.user_id`, with zero exceptions. That is a strong
+    pattern and worth surfacing when it breaks, because a divergence is almost
+    always a data-entry slip rather than a decision.
+
+    ⚠️ Deliberately **not** a BLOCK. HR may legitimately route somebody's leave to
+    a person other than their line manager — during cover, or where a manager is
+    also the subject. Refusing that would encode a convention as a rule, and the
+    convention is not what CAF actually reads: `has_permission` reads
+    `leave_approver`, nothing else.
+    """
+    bad = []
+    for r in frappe.get_all("Employee", filters={"status": "Active",
+                                                 "reports_to": ("!=", "")},
+                            fields=["name", "employee_name", "reports_to",
+                                    "leave_approver"]):
+        mgr_login = frappe.db.get_value("Employee", r.reports_to, "user_id")
+        if (r.leave_approver or "") != (mgr_login or ""):
+            bad.append(f"{r.employee_name} → {r.leave_approver or '—'} "
+                       f"(manager logs in as {mgr_login or '—'})")
+    return _row("note" if bad else "ok",
+                "leave approver is not the line manager", len(bad),
+                ", ".join(bad[:4])
+                or "every approver is the employee's own manager")
+
+
 CHECKS = [check_naming, check_default_shift, check_holiday_list, check_shift_lists,
-          check_alt_pairs, check_manager_logins, check_leave_period,
+          check_alt_pairs, check_manager_logins, check_org_chart,
+          check_approver_matches_manager, check_leave_period,
           check_next_year_holidays, check_missing_mc, check_missing_annual]
 
 

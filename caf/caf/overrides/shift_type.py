@@ -24,13 +24,19 @@ def validate(doc, method=None):
 def _hhmm(value):
     """`08:30` from whatever a Time field happens to be holding.
 
-    🔴 Frappe hands a `Time` field back as a **`datetime.timedelta`**, not a
-    `datetime.time` — `str()` on it gives `'8:30:00'` with **no leading zero**, so
-    the obvious `str(t)[:5]` produces `'8:30:'`. Measured 2026-09-01, on the first
-    dry run: every one of the 14 shifts got a label like `6:00:-14:30 · 60`.
-    A `datetime.time` (what a freshly-typed form value is) *does* stringify as
-    `'08:30:00'`, which is why the bug survives casual testing — it depends on
-    whether the value came from the database or from the form.
+    🔴 Every READ path hands a `Time` field back as a **`datetime.timedelta`** —
+    `get_value`, `get_doc` and `get_all` alike, because MariaDB `TIME` is a signed
+    duration (the same fact that lets it hold 838 h, quirks §17). `str()` on a
+    timedelta gives `'8:30:00'` with **no leading zero**, so the obvious
+    `str(t)[:5]` produces `'8:30:'`. Measured 2026-09-01 on the first dry run:
+    every one of the 14 shifts got a label like `6:00:-14:30 · 60`.
+
+    An **un-persisted** document still holds the plain `str` the client sent —
+    Frappe does not cast `Time` on the way in — and that stringifies correctly.
+    So the answer depends on whether the value has been through the database, and
+    a test that builds its own doc in memory never sees the bug. Measured, not
+    assumed: `new_doc` → `str`, every read → `timedelta`, `frappe.utils.get_time`
+    → `datetime.time`. All three are handled here.
     """
     if value is None:
         return "??:??"

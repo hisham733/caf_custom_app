@@ -37,18 +37,32 @@ def run():
     made = []
     try:
         # ── SF1 — 🔴 the bug that shipped in the first dry run ──────────────
-        td = _hhmm(timedelta(hours=6))
-        check("SF1-TIMEDELTA-PADS", td == "06:00",
-              f"a Time field read from the DATABASE arrives as a timedelta, whose "
-              f"str() is '6:00:00' with NO leading zero — so str(t)[:5] gives "
-              f"'6:00:'. _hhmm gives {td!r}. Measured 2026-09-01: this produced "
-              f"'6:00:-14:30 · 60' on all 14 shifts before it was fixed")
+        # Read from the DATABASE, not constructed: get_value/get_doc/get_all all
+        # return timedelta, and asserting against a real round trip is the whole
+        # point — a hand-built fixture is on the str path and never sees this.
+        live = frappe.db.get_value("Shift Type", {"start_time": ("<", "10:00:00")},
+                                   ["name", "start_time"], as_dict=True)
+        raw = str(live.start_time)
+        check("SF1-TIMEDELTA-PADS",
+              isinstance(live.start_time, timedelta)
+              and raw[:5] != _hhmm(live.start_time)
+              and _hhmm(live.start_time) == f"0{raw[:4]}",
+              f"{live.name}.start_time reads back as "
+              f"{type(live.start_time).__name__} — str() is {raw!r} with NO "
+              f"leading zero, so the obvious str(t)[:5] gives {raw[:5]!r} while "
+              f"_hhmm gives {_hhmm(live.start_time)!r}. Measured 2026-09-01: this "
+              f"labelled all 14 shifts '6:00:-14:30 · 60' before it was fixed")
 
-        # ── SF2 — …and a form value still works ────────────────────────────
-        check("SF2-TIME-OBJECT-WORKS", _hhmm(time(8, 30)) == "08:30",
-              "a datetime.time — what a freshly-typed form value is — still gives "
-              "'08:30'. This is WHY SF1's bug survives casual testing: the answer "
-              "depends on whether the value came from the DB or the form")
+        # ── SF2 — …and the other two shapes a Time value takes ─────────────
+        unsaved = frappe.new_doc("Shift Type")
+        unsaved.start_time = "08:30:00"
+        check("SF2-OTHER-SHAPES",
+              _hhmm(unsaved.start_time) == "08:30" and _hhmm(time(8, 30)) == "08:30",
+              f"an UNPERSISTED doc still holds the client's plain str "
+              f"({type(unsaved.start_time).__name__}), and frappe.utils.get_time "
+              f"yields datetime.time — both already pad. This is WHY SF1's bug "
+              f"survives casual testing: only the DB round trip is broken, and "
+              f"only for hours < 10")
 
         # ── SF3 — the label is start · end · lunch, and nothing else ────────
         label = derive_family(frappe._dict({
