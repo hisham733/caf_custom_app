@@ -231,7 +231,14 @@ class _Batch:
     rows nobody can trace.
     """
 
+    _name_cache = None
+
     def __init__(self, run_type, purpose, from_date, to_date, employees, source_label):
+        # One lookup per batch, not one per row: a whole-company week is ~600
+        # manifest rows over ~88 people, so per-row `get_value` calls would be
+        # ~600 queries to answer 88 questions.
+        _Batch._name_cache = {e.name: e.employee_name for e in frappe.get_all(
+            "Employee", fields=["name", "employee_name"])}
         self.doc = frappe.new_doc("Ingress Import Batch")
         self.doc.run_type = run_type
         self.doc.purpose = purpose
@@ -263,6 +270,13 @@ class _Batch:
             ftag_id=None, edited=None, reason=""):
         self.doc.append("rows", {
             "action": action, "employee": employee, "work_date": work_date,
+            # 🔴 Set EXPLICITLY, not left to `fetch_from`. The field carries
+            # `fetch_from: employee.employee_name` as well, but a manifest is a
+            # RECORD OF WHAT HAPPENED — if the employee were later renamed or
+            # deleted, a fetched value would follow it and the batch would stop
+            # describing the run it reports on. Writing it here freezes the name
+            # as it was at import time, which is what an audit trail is for.
+            "employee_name": (_Batch._name_cache or {}).get(employee) or "",
             "finger_log": finger_log, "ftag_id": ftag_id,
             "adjusted_in_ingress": 1 if edited else 0,
             "reason": (reason or "")[:400],

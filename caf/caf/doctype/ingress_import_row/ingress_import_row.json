@@ -7,6 +7,7 @@
  "engine": "InnoDB",
  "field_order": [
   "action",
+  "employee_name",
   "employee",
   "work_date",
   "finger_log",
@@ -26,10 +27,20 @@
   },
   {
    "columns": 2,
-   "fieldname": "employee",
-   "fieldtype": "Link",
+   "description": "The searchable copy of the employee's name. 🔴 The grid's own column filter compares the STORED value, and for a Link that is the docname (HR-EMP-00054) - so typing a person's NAME matched nothing, even though the grid displays the name. Measured 2026-09-01 on a 615-row manifest: 'Harun' -> 0 rows, 'HR-EMP-00054' -> 7. This Data field holds the name itself, so the filter finally answers the question HR actually asks.",
+   "fetch_from": "employee.employee_name",
+   "fieldname": "employee_name",
+   "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Employee",
+   "read_only": 1
+  },
+  {
+   "columns": 2,
+   "description": "Kept out of the grid's columns so the searchable name can take its place - the Link rendered the same name but could not be searched. Still a real Link: open the row to reach the employee record.",
+   "fieldname": "employee",
+   "fieldtype": "Link",
+   "label": "Employee ID",
    "options": "Employee",
    "read_only": 1
   },
