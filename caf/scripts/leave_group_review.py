@@ -231,6 +231,110 @@ def _table(rows, show_action=True):
     return f"<div class='wrap'><table>{head}{''.join(body)}</table></div>"
 
 
+def _entitlement_section():
+    """The numbers and the formula, for HR to confirm in the same sitting.
+
+    MG, 2026-09-01: *"include this number and formula for AL and MC calculation
+    for < 2 years into the .html that you have created, for verification with HR
+    manager."*
+
+    🔴 Everything here is **deduced from CAF's own past allocations**, not given by
+    HR — `leave_policy_seed` says so plainly, and the under-2-year policy is even
+    titled *ANNUAL PROVISIONAL*. So this is not a summary of policy; it is a set of
+    questions with the working shown.
+
+    Read live from the Leave Policy documents rather than restated, so the page
+    cannot drift from what the system would actually allocate.
+    """
+    from caf.scripts import leave_formula as lf
+
+    policies = []
+    for p in frappe.get_all("Leave Policy", fields=["name", "title", "docstatus"],
+                            order_by="name"):
+        detail = {d.leave_type: d.annual_allocation for d in frappe.get_all(
+            "Leave Policy Detail", filters={"parent": p.name},
+            fields=["leave_type", "annual_allocation"])}
+        policies.append((p, detail))
+
+    rows = "".join(
+        f"<tr><td><b>{frappe.utils.escape_html(p.title)}</b>"
+        f"<div class='small'>{p.name}"
+        f"{' &middot; <b>DRAFT</b>' if not p.docstatus else ''}</div></td>"
+        f"<td>{d.get('Annual', '—'):g}</td><td>{d.get('MC', '—'):g}</td></tr>"
+        for p, d in policies)
+
+    # The pro-rated curve, computed the way the system would.
+    curve = "".join(
+        f"<tr><td>{m}</td>"
+        f"<td>{lf.floor_half(m / 12 * lf.AL_CONSTANT):g}</td>"
+        f"<td>{min(lf.floor_half(m / 12 * lf.MC_CONSTANT), lf.MC_BAND_CAP):g}</td></tr>"
+        for m in (6, 9, 12, 15, 18, 21, 23))
+
+    return f"""
+<h2>0. First, please confirm the entitlement numbers</h2>
+<div class="note stop">
+<b>None of this came from HR.</b> Every figure below was <i>deduced</i> from CAF's
+own past leave allocations in August 2026, so that the system could be built and
+tested before your table was available. The under-2-year policy is even titled
+<b>"ANNUAL PROVISIONAL"</b> for that reason. <b>Please correct anything that is
+wrong</b> — the numbers live in three documents, not in code, so changing them is
+editing three records.
+</div>
+
+<h3>The three service bands</h3>
+<div class="wrap"><table>
+<tr><th>Leave Policy</th><th>Annual (days)</th><th>MC (days)</th></tr>
+{rows}
+</table></div>
+<p class="small">MC follows the Malaysian Employment Act table exactly
+(14 / 18 / 22). Annual was matched to what CAF has actually been giving.</p>
+
+<h3>Under 2 years — the pro-rating formula</h3>
+<p>Service is counted from the joining date to <b>31 December of the year being
+allocated</b> &mdash; not to the start of the year. Somebody who joined in July
+2025 therefore has 17 months of credit in the 2026 cycle, not 5.</p>
+<pre style="background:#f7f7f8;padding:10px 14px;border-radius:6px;font-size:13px">
+months = completed months from joining date to 31 Dec of the cycle year
+
+Annual  = months / 12 &times; {lf.AL_CONSTANT}      MC = months / 12 &times; {lf.MC_CONSTANT}
+
+then rounded DOWN to the nearest HALF day
+</pre>
+<div class="wrap"><table>
+<tr><th>Months of service</th><th>Annual</th><th>MC</th></tr>
+{curve}
+</table></div>
+<p class="small">The half-day rounding was derived, not given: two employees at 22
+months hold exactly <b>14.5</b> days, which whole-day rounding cannot produce.
+Counting completed <i>months</i> rather than days was derived the same way.</p>
+
+<div class="note warn">
+<b>Three things we could not settle from the data &mdash; please rule on them.</b>
+<ol>
+<li><b>Does MC stop at 14 for anyone under 2 years?</b> Everyone with 12+ months
+holds exactly 14, although the formula would give 19, 21 or 26. Only one employee
+(at 8 months) sits below that ceiling and holds the formula's own answer. We have
+assumed a cap of 14 &mdash; is that right?</li>
+<li>🔴 <b>Annual appears to DROP as service passes two years.</b> At 23 months the
+formula gives <b>15</b> days; the moment service reaches 24 months the flat band
+gives <b>12</b>. Somebody would lose 3 days of annual leave by staying longer.
+That is very likely not intended &mdash; which figure is wrong?</li>
+<li><b>Two employees do not fit any rule.</b> Both have 27 months of service, so
+the 2&ndash;5 year band says 12 annual and 18 MC. One actually holds
+<b>18 annual / 14 MC</b> and the other <b>8 annual / 14 MC</b>. Were these
+individual decisions, or mistakes?</li>
+</ol>
+</div>
+
+<div class="note">
+<b>Separately &mdash; and this is about USING leave, not allocating it:</b> an
+employee with under one year of service may not <i>take</i> annual leave, only MC
+or unpaid. The number allocated and the number usable are two different things.
+Please confirm that is still the rule.
+</div>
+"""
+
+
 def html(path=None):
     """Three sections, because 46 names is a chore and 33 is a task.
 
@@ -316,6 +420,8 @@ classifying by department would be wrong for the exceptions, and the exceptions 
 exactly the people worth getting right. Department is shown only to help you place
 the name.
 </div>
+
+{_entitlement_section()}
 
 <h2>1. Please decide these {len(decide)}</h2>
 <p class="sub">Nothing in the system can settle these. Almost all of them have taken
