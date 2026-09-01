@@ -6,8 +6,11 @@
 Hooked as `doc_events["Shift Type"]["validate"]`.
 """
 
+from datetime import timedelta
+
 import frappe
 from frappe import _
+from frappe.utils import cint
 
 from caf.caf.work_hours import PUNCH_EITHER
 
@@ -15,6 +18,70 @@ from caf.caf.work_hours import PUNCH_EITHER
 def validate(doc, method=None):
     guard_single_punch_has_no_ot(doc)
     warn_on_mixed_population(doc)
+    fill_shift_family(doc)
+
+
+def _hhmm(value):
+    """`08:30` from whatever a Time field happens to be holding.
+
+    🔴 Frappe hands a `Time` field back as a **`datetime.timedelta`**, not a
+    `datetime.time` — `str()` on it gives `'8:30:00'` with **no leading zero**, so
+    the obvious `str(t)[:5]` produces `'8:30:'`. Measured 2026-09-01, on the first
+    dry run: every one of the 14 shifts got a label like `6:00:-14:30 · 60`.
+    A `datetime.time` (what a freshly-typed form value is) *does* stringify as
+    `'08:30:00'`, which is why the bug survives casual testing — it depends on
+    whether the value came from the database or from the form.
+    """
+    if value is None:
+        return "??:??"
+    if isinstance(value, timedelta):
+        total = int(value.total_seconds())
+        return f"{total // 3600:02d}:{total % 3600 // 60:02d}"
+    text = str(value)
+    return text[:5] if len(text) >= 5 and text[2] == ":" else f"{text:0>8}"[:5]
+
+
+def derive_family(row):
+    """The CONTRACTED DAY — `start · end · lunch` — as one label.
+
+    MG + HR, 2026-09-01: *"shift_type not a 'tree' but cheaply group by start +
+    end + lunch duration."* Chosen because it is what actually drives the
+    arithmetic: `net_minutes()` is exactly `end - start - lunch`. Two shifts in
+    one family therefore produce the same contracted hours, so moving somebody
+    between them changes the RULES and never the pay basis — which is what makes
+    a family a safe unit to reason about, and why each of the four punch-rule
+    shifts sits in the same family as the shift its people left.
+
+    Takes a document or a plain row, so the setup script and this hook share one
+    definition rather than two that can disagree.
+    """
+    return "{0}-{1} · {2}".format(
+        _hhmm(row.get("start_time")), _hhmm(row.get("end_time")),
+        cint(row.get("caf_lunch_minutes")))
+
+
+def fill_shift_family(doc):
+    """Label a family-less shift with its CONTRACTED DAY — `start · end · lunch`.
+
+    MG + HR, 2026-09-01: *"shift_type not a 'tree' but cheaply group by start +
+    end + lunch duration."* The family is what drives the arithmetic —
+    `net_minutes()` is exactly `end - start - lunch` — so two shifts in one family
+    produce the same contracted hours, and moving somebody between them changes
+    the rules without touching the pay basis.
+
+    ⚠️ **Only when BLANK.** A stored derivation drifts — that is the objection
+    that killed `shift_type.work_hour` (design §8 item 7), and it applies here
+    too: change `start_time` later and this label goes stale. It is stored anyway
+    because HR must be able to override it with their own wording, and
+    overwriting a typed value on every save would make that impossible. So the
+    column is a DEFAULT, never an authority: anything that needs the true family
+    derives it live from the three fields.
+    """
+    if doc.get("caf_shift_family"):
+        return
+    if doc.get("start_time") is None or doc.get("end_time") is None:
+        return
+    doc.caf_shift_family = derive_family(doc)
 
 
 def guard_single_punch_has_no_ot(doc):
