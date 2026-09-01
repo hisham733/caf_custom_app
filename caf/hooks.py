@@ -605,8 +605,12 @@ doc_events = {
     # (MG, 2026-08-22). Server-side because the form lock is escapable — the API,
     # a Data Import and `bench execute` all bypass form scripts, and this is a
     # money rule.
+    # `on_update` completes a half-configured alternating pair — HR names the
+    # mirror on one shift, and the other side is written back so the pair can
+    # never be one-directional (design §5, 2026-09-01).
     "Shift Type": {
         "validate": "caf.caf.overrides.shift_type.validate",
+        "on_update": "caf.caf.overrides.shift_type.on_update",
     },
     "Finger Log": {
         "before_submit": "caf.caf.doctype.monthly_roster_confirmation"

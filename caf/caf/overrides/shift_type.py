@@ -17,8 +17,171 @@ from caf.caf.work_hours import PUNCH_EITHER
 
 def validate(doc, method=None):
     guard_single_punch_has_no_ot(doc)
+    guard_alt_sat_pairing(doc)
     warn_on_mixed_population(doc)
     fill_shift_family(doc)
+
+
+def on_update(doc, method=None):
+    complete_alt_sat_pairing(doc)
+
+
+# ------------------------------------------------------- alternating Saturdays
+
+# The three fields that only mean anything together. `caf_alt_sat` alone says
+# "this shift alternates" and answers none of: alternates WITH WHAT, from WHEN,
+# and starting on WHICH side.
+PAIR_FIELDS = (("caf_sat_mirror", "Mirror Shift"),
+               ("caf_sat_anchor_date", "Anchor Date"),
+               ("caf_sat_anchor", "Anchor"))
+
+# What a mirror pair must share, or a swap silently moves somebody's contracted
+# day. `net_minutes()` is `end - start - lunch`, so these three ARE the pay basis
+# (FBR53).
+SAME_CONTRACTED_DAY = ("start_time", "end_time", "caf_lunch_minutes")
+
+
+def guard_alt_sat_pairing(doc):
+    """🔴 A half-configured alternating pair must not be saveable.
+
+    **Design §5, built 2026-09-01 — and it is the ONLY part of §5 that was still
+    missing.** The proposal asked for a `caf_mirror_shift` link so the swap code
+    would read data instead of inferring from the shift name. Measured first, and
+    the field already exists (`caf_sat_mirror`) and every consumer already reads
+    it: `shift_swap.mirror_of()` (the swap itself), `shift_roster.alt_shifts()`,
+    `holiday_lists`, and `Monthly Roster Confirmation` all select on
+    `caf_alt_sat` / `caf_sat_mirror` and none of them parses a name. So MG's Pass
+    C8 message — *"8am Schedule is not an alternating shift, so there is nothing
+    to trade"* — was already data-driven and already correct; a NEW pair created
+    by HR works the moment the fields are filled.
+
+    What was missing is that nothing **enforced** the fields being filled
+    correctly. `readiness_audit.check_alt_pairs` reports a broken pair, but only
+    when somebody runs the audit — so a half-configured pair can sit there,
+    and its failure mode is silent:
+
+      mirror blank        the swap dialog refuses every trade on that shift, with
+                          a message that says the shift does not alternate — which
+                          is indistinguishable from an ordinary non-alternating one
+      anchor blank        `generate_holiday_lists` skips the shift's alternation
+                          entirely (it keys on anchor_date + anchor), so the pair
+                          collapses into ONE calendar and nobody alternates at all
+      anchors the same    both halves rest on the same Saturdays. Nobody covers,
+                          and it reads as a roster mistake rather than a config one
+      different hours     🔴 a swap moves somebody between the two, so mismatched
+                          start/end/lunch silently changes their contracted day —
+                          a pay-basis change nobody decided (FBR53)
+
+    Each of those is refused here, at the point where a person can still fix it.
+    """
+    if not doc.get("caf_alt_sat"):
+        return
+
+    missing = [label for field, label in PAIR_FIELDS if not doc.get(field)]
+    if missing:
+        frappe.throw(
+            _("An alternating-Saturday shift needs {0}."
+              "<br><br><b>Alternating</b> means two shifts trade Saturdays with "
+              "each other, so the shift has to say <i>which</i> shift, from "
+              "<i>which Saturday</i>, and <i>which side</i> it starts on. Without "
+              "all three the calendar generator cannot build the pattern and the "
+              "swap dialog will refuse every trade."
+              "<br><br>Untick <b>Alternate Saturdays</b> if this shift does not "
+              "alternate.").format(frappe.bold(", ".join(missing))),
+            title=_("Incomplete alternating pair"))
+
+    mirror = doc.caf_sat_mirror
+    if mirror == doc.name:
+        frappe.throw(_("A shift cannot be its own mirror. The mirror is the "
+                       "<b>other</b> shift it trades Saturdays with."),
+                     title=_("Incomplete alternating pair"))
+
+    other = frappe.db.get_value(
+        "Shift Type", mirror,
+        ["name", "caf_alt_sat", "caf_sat_mirror", "caf_sat_anchor",
+         "caf_sat_anchor_date"] + list(SAME_CONTRACTED_DAY), as_dict=True)
+    if not other:
+        frappe.throw(_("Mirror shift {0} does not exist.").format(frappe.bold(mirror)),
+                     title=_("Incomplete alternating pair"))
+
+    if not other.caf_alt_sat:
+        frappe.throw(
+            _("{0} is not marked as an alternating shift, so it cannot be a "
+              "mirror. Tick <b>Alternate Saturdays</b> on it first.")
+            .format(frappe.bold(mirror)), title=_("Incomplete alternating pair"))
+
+    # Already spoken for. Silently re-pointing would leave a THIRD shift naming a
+    # partner that no longer names it back.
+    if other.caf_sat_mirror and other.caf_sat_mirror != doc.name:
+        frappe.throw(
+            _("{0} is already the mirror of {1}. A pair is exactly two shifts — "
+              "clear that link first if you mean to re-pair them.")
+            .format(frappe.bold(mirror), frappe.bold(other.caf_sat_mirror)),
+            title=_("Incomplete alternating pair"))
+
+    # 🔴 The money rule. A swap moves a person from one half to the other for a
+    # day, so the two halves must contract the same day (FBR53).
+    differs = [f for f in SAME_CONTRACTED_DAY
+               if str(doc.get(f)) != str(other.get(f))]
+    if differs:
+        frappe.throw(
+            _("{0} and {1} must contract the SAME day to be mirrors — they differ "
+              "on {2}."
+              "<br><br>A Saturday swap moves somebody from one to the other for "
+              "the day. If the two run different hours or lunch, the swap quietly "
+              "changes what that person's day is worth, and nobody decided that.")
+            .format(frappe.bold(doc.name), frappe.bold(mirror),
+                    frappe.bold(", ".join(differs))),
+            title=_("Mirrors must contract the same day"))
+
+    # The two must start on OPPOSITE sides of the same Saturday, or they do not
+    # alternate against each other — they alternate in step.
+    if str(doc.caf_sat_anchor_date) != str(other.caf_sat_anchor_date):
+        frappe.throw(
+            _("{0} and {1} must share an <b>Anchor Date</b> — the alternation is "
+              "counted from it, so two different dates describe two unrelated "
+              "patterns that happen to be linked.")
+            .format(frappe.bold(doc.name), frappe.bold(mirror)),
+            title=_("Incomplete alternating pair"))
+
+    if doc.caf_sat_anchor == other.caf_sat_anchor:
+        frappe.throw(
+            _("Both {0} and {1} are set to <b>{2}</b> on {3}, so they do not "
+              "alternate against each other — they rest and work in step, and "
+              "nobody ever covers."
+              "<br><br>One side must be <b>Work</b> and the other <b>Rest</b>.")
+            .format(frappe.bold(doc.name), frappe.bold(mirror),
+                    doc.caf_sat_anchor, doc.caf_sat_anchor_date),
+            title=_("A mirror pair must be opposite"))
+
+
+def complete_alt_sat_pairing(doc, method=None):
+    """Fill in the other half of a new pair, so it is never asymmetric.
+
+    HR configures a pair one shift at a time: A names B, save; B names A, save.
+    Between those two saves the pairing is one-directional, and if HR stops there
+    — or forgets — the audit reports a broken pair and the swap only works from
+    one side.
+
+    So the second half is written automatically, and ONLY when it is blank.
+    `validate` has already refused the case where B names somebody else, so the
+    only reachable states here are "blank" (fill it) and "already correct"
+    (nothing to do). `db.set_value` rather than a save, to avoid recursing back
+    into this hook through B's own `on_update`.
+    """
+    if not doc.get("caf_alt_sat") or not doc.get("caf_sat_mirror"):
+        return
+    other = frappe.db.get_value("Shift Type", doc.caf_sat_mirror,
+                                "caf_sat_mirror")
+    if other:
+        return
+    frappe.db.set_value("Shift Type", doc.caf_sat_mirror, "caf_sat_mirror",
+                        doc.name, update_modified=False)
+    frappe.msgprint(
+        _("{0} now names {1} as its mirror too — a pair has to point both ways "
+          "or the swap only works from one side.").format(
+              frappe.bold(doc.caf_sat_mirror), frappe.bold(doc.name)),
+        title=_("Pair completed"), indicator="green")
 
 
 def _hhmm(value):
