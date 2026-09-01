@@ -149,12 +149,62 @@ def run():
               f"{'rest' if actual else 'work'}; its mirror does the opposite")
 
         # ------------------------------------------------------------- ALT-IDEM
+        # 🔴 `repoint=False` — T-15, 2026-09-01. This line used to call
+        # `generate_holiday_lists(2026)`, whose `repoint` DEFAULTS TO TRUE, so
+        # running the suite rewrote every 2026 Holiday List **and re-pointed every
+        # Shift Type** at the list for its own pattern. Two things were wrong with
+        # that, and the second is the serious one:
+        #
+        #   1. it silently changed live configuration that somebody may have set
+        #      deliberately — measured: all 4 alternating shifts moved from their
+        #      2027 lists to 2026 ones during a single session;
+        #   2. 🔴 **it repaired the very thing ALT-ANCHOR asserts, eight lines
+        #      above.** So a first run could fail and the next one pass with no
+        #      code change. A gate that cannot stay red is worse than one that is
+        #      red, because a real failure vanishes on the retry — which is
+        #      exactly what happened on 2026-09-01 and cost an hour to explain.
+        #
+        # The idempotency claim does not need the repoint: it is about the LIST
+        # CONTENT being stable across regenerations. Repointing is asserted
+        # separately below, and put back.
         before_rows = frappe.db.count("Holiday", {"parent": "CAF Alt Sat 1st-3rd 2026"})
-        holiday_lists.generate_holiday_lists(2026)
+        holiday_lists.generate_holiday_lists(2026, repoint=False)
         after_rows = frappe.db.count("Holiday", {"parent": "CAF Alt Sat 1st-3rd 2026"})
         check("ALT-IDEM", before_rows == after_rows and before_rows > 0,
               f"regenerating is stable: {before_rows} rows ➜ {after_rows}. "
               f"January's re-run must not shift anybody's Saturdays")
+
+        # ---------------------------------------------------------- ALT-REPOINT
+        # Repointing IS worth testing — it is what stops a shift keeping a stale
+        # list name after a Saturday holiday swings the label (OD-74). So it is
+        # tested here, deliberately, with the pointers snapshotted first and put
+        # back immediately: the suite may exercise the behaviour, it may not keep
+        # the consequences.
+        alt = frappe.get_all("Shift Type", filters={"caf_alt_sat": 1},
+                             fields=["name", "holiday_list"])
+        snapshot = {s.name: s.holiday_list for s in alt}
+        try:
+            holiday_lists.generate_holiday_lists(2026, repoint=True)
+            after = {s.name: frappe.db.get_value("Shift Type", s.name, "holiday_list")
+                     for s in alt}
+            # Every alternating shift must end up on a list that exists and whose
+            # own name carries the alternation — never on the plain Mon-Sat list,
+            # which would silently give it its MIRROR's Saturdays.
+            wrong = [n for n, hl in after.items()
+                     if not hl or "Alt Sat" not in hl
+                     or not frappe.db.exists("Holiday List", hl)]
+            check("ALT-REPOINT", len(alt) > 0 and not wrong,
+                  f"repointing put all {len(alt)} alternating shift(s) on a real "
+                  f"alternating calendar ({wrong or 'none wrong'}) — a shift left "
+                  f"on a stale or plain list would silently receive its MIRROR's "
+                  f"Saturdays (OD-74)")
+        finally:
+            # 🔴 Put every pointer back, whatever happened. This is the whole
+            # point of T-15: the gate must not be able to change the site.
+            for name, hl in snapshot.items():
+                frappe.db.set_value("Shift Type", name, "holiday_list", hl,
+                                    update_modified=False)
+            frappe.db.commit()
 
         # ------------------------------------------------------------- ALT7 🔴
         # Stock's daily job flips an expired assignment to Inactive with a raw

@@ -79,12 +79,13 @@ RULINGS = [
      "REPORT ONLY — no change. ERP 2025-08-04 equals BOTH the first raw tap and "
      "the account creation date. Ingress's 2025-12-01 is again the first "
      "materialised attendance day. ERPNext is right"),
-    ("HR-EMP-00xxx", "1029", "Md Uzzal Hossan", None,
-     "🔴 REPORT ONLY — needs HR. NEITHER side is credible: ERP holds the "
-     "2024-01-01 placeholder, Ingress says 2025-12-01 (the first materialised "
-     "day). The machine says he was created 2023-08-29 and FIRST TAPPED "
-     "2023-09-02, with 1,541 taps since — so he has worked here since Sept 2023 "
-     "and both stored dates are wrong"),
+    ("HR-EMP-00xxx", "1029", "Md Uzzal Hossan", "2023-09-02",
+     "✅ MG's decision, 2026-09-01: 2023-09-02. NEITHER stored side was credible — "
+     "ERP held the 2024-01-01 placeholder and Ingress said 2025-12-01 (the first "
+     "materialised day, FBR49). The date used is the machine's own FIRST RAW TAP, "
+     "corroborated by his account being created 2023-08-29 and 1,541 taps since. "
+     "This is the only one of the nine decided on machine evidence rather than on "
+     "either stored value"),
 ]
 
 # Resolved by DEVICE ID rather than trusting the employee ids typed above —
