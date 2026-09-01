@@ -82,10 +82,23 @@ def assert_no_clash(doc):
                  "from_date": ("<=", doc.work_date), "to_date": (">=", doc.work_date)},
         fields=["name", "leave_type"], limit=1)
     if leave:
+        # MG, 2026-09-01: name the person, and make the leave clickable. The
+        # employee id was the only identifier here, and the Leave Application was
+        # named but not reachable — so HR read the message, then went looking.
+        # ⚠️ The FIRST line is what the import manifest keeps (`strip_html`, one
+        # line, 280 chars), so it has to carry who / when / why on its own; the
+        # rest is for the dialog.
+        who = frappe.db.get_value("Employee", doc.employee, "employee_name") \
+            or doc.employee
         frappe.throw(_(
-            "{0} has approved leave on {1} ({2}, {3}). A Finger Log may not overwrite "
-            "an approved absence — resolve the leave application first."
-        ).format(doc.employee, doc.work_date, leave[0].leave_type, leave[0].name))
+            '<a href="/app/employee/{0}">{1}</a> has approved leave on {2} '
+            '(<b>{3}</b>, <a href="/app/leave-application/{4}">{4}</a>).'
+            "<br><br>A Finger Log may not overwrite an approved absence — cancel "
+            "or amend the leave application first, and the day is restored from "
+            "this log automatically."
+        ).format(doc.employee, frappe.utils.escape_html(who), doc.work_date,
+                 leave[0].leave_type, leave[0].name),
+            title=_("The day is already decided by leave"))
 
     clash = existing_attendance(doc.employee, doc.work_date)
     if clash:

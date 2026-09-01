@@ -49,6 +49,21 @@ def overtime_to_minutes(overtime):
     return hours * 60 + minutes
 
 
+def _link(route, label):
+    """A desk hyperlink for a message that will be rendered as HTML.
+
+    MG asked for the person, the day and the approval to be clickable. Frappe
+    renders `frappe.throw` / `msgprint` content as HTML, so an anchor works and
+    saves the reader a search — which is the whole point of naming them.
+
+    ⚠️ Only for HTML surfaces. Anywhere the text lands in a Data/Small Text field
+    shown in a grid — the import manifest's `reason`, for one — the markup is
+    escaped and the reader sees the tag. Those surfaces get plain wording and rely
+    on their own Link columns instead.
+    """
+    return f'<a href="{route}">{frappe.utils.escape_html(str(label))}</a>'
+
+
 def apply_ot_rules(overtime, params):
     # The three per-shift settings, in the order they apply. Kept a module-level
     # function of plain values so it can be tested without a document.
@@ -281,13 +296,32 @@ class FingerLog(Document):
 
 
     def _who(self):
-        """The person as HR knows them, never the docname.
+        """The person as HR knows them, never the docname — and clickable.
 
         FBR61 — the ID-vs-name family. Every message below used to say
         `HR-EMP-00052`, which is the one identifier the supervisor reading it
         does not have.
+
+        MG, 2026-09-01: *"emp.name is good, but name with hyperlink even
+        better."* ⚠️ These render as links only where the message is shown as
+        HTML — `frappe.throw`/`msgprint` dialogs. In the import manifest the
+        reason is a plain-text grid cell, so the markup would be escaped: there,
+        the links are the COLUMNS (`employee_name`, `finger_log`), which is why
+        the manifest wording is kept short. See `_reason()`.
         """
-        return self.employee_name or self.employee
+        return _link(f"/app/employee/{self.employee}",
+                     self.employee_name or self.employee)
+
+    def _day(self):
+        """The work date, linked to this log — MG asked for it.
+
+        The date IS this document's own `work_date`, so the link goes to the
+        Finger Log. On a refusal at submit the reader is already looking at it;
+        the link matters when the same wording is reused elsewhere.
+        """
+        if self.name and not self.is_new():
+            return _link(f"/app/finger-log/{self.name}", self.work_date)
+        return f"<b>{self.work_date}</b>"
 
     def check_ot_approval(self):
         """Does a submitted OT Approval cover this day's overtime? FBR11.
@@ -311,15 +345,14 @@ class FingerLog(Document):
 
         if not rows:
             frappe.throw(
-                _("<b>{0}</b> worked <b>{1} h</b> of overtime on <b>{2}</b>, and "
-                  "no approved <b>OT Approval</b> covers that day."
-                  "<br><br>Overtime is only paid when it was approved before it "
-                  "was worked (FBR11). Ask the department representative to file "
-                  "an OT Approval for {2} and submit it, then submit this log "
-                  "again."
-                  "<br><br>The clocked hours are safe — this log stays as a draft "
+                _("{0} has <b>{1} h</b> of overtime on {2}, and no submitted "
+                  "<b>OT Approval</b> covers that day."
+                  "<br><br>Ask the department representative to file one for "
+                  "{3} and submit it, then submit this log again."
+                  "<br><br>The clocked hours are safe — this log stays a draft "
                   "until the approval exists, and nothing is lost."
-                  ).format(self._who(), self.ot_in_hour, self.work_date),
+                  ).format(self._who(), self.ot_in_hour, self._day(),
+                           self.work_date),
                 title=_("Overtime has no approval"))
 
         ot_child = rows[0]
@@ -351,13 +384,13 @@ class FingerLog(Document):
         # leaving it: it would have refused all 77 of those legitimate rows.
         if parent.docstatus != 1:
             frappe.throw(
-                _("OT Approval <b>{0}</b> is <b>{1}</b>, so it cannot authorise "
-                  "the {2} h {3} worked on {4}."
+                _("OT Approval {0} is <b>{1}</b>, so it cannot authorise the "
+                  "overtime {2} worked on {3}."
                   "<br><br>Submit that approval, or file a new one for the day."
-                  ).format(parent.name,
+                  ).format(_link(f"/app/ot-approval/{parent.name}", parent.name),
                            {0: _("still a draft"), 2: _("cancelled")}.get(
                                parent.docstatus, _("not submitted")),
-                           self.ot_in_hour, self._who(), self.work_date),
+                           self._who(), self._day()),
                 title=_("OT Approval is not submitted"))
 
         if parent.type == "normal" and self.ot_in_hour <= ot_child["ot_duration"]:
@@ -366,19 +399,16 @@ class FingerLog(Document):
 
         elif parent.type == "normal":
             frappe.throw(
-                _("<b>{0}</b> clocked <b>{1} h</b> of overtime on <b>{2}</b>, but "
-                  "OT Approval <b>{3}</b> only approved <b>{4} h</b> — "
-                  "<b>{5} h more</b> than was authorised."
-                  "<br><br>Two ways forward, and they are different decisions:"
-                  "<br>• the extra hours were genuinely worked and should be paid "
-                  "— amend {3} to the actual hours, or file a "
-                  "<b>special approval</b> for the day;"
-                  "<br>• the clock is wrong — correct the punches in Ingress and "
-                  "re-import."
+                _("{0} clocked <b>{1} h</b> of overtime on {2}, but OT Approval "
+                  "{3} approved <b>{4} h</b>."
+                  "<br><br>Either the approval needs to cover the hours actually "
+                  "worked — amend {3}, or file a <b>special approval</b> for the "
+                  "day — or the punches are wrong and should be corrected in "
+                  "Ingress."
                   "<br><br>Until then this log stays a draft and nothing is paid."
-                  ).format(self._who(), self.ot_in_hour, self.work_date,
-                           parent.name, ot_child["ot_duration"],
-                           round(flt(self.ot_in_hour) - flt(ot_child["ot_duration"]), 2)),
+                  ).format(self._who(), self.ot_in_hour, self._day(),
+                           _link(f"/app/ot-approval/{parent.name}", parent.name),
+                           ot_child["ot_duration"]),
                 title=_("More overtime than was approved"))
 
         elif parent.type == "special_approve":

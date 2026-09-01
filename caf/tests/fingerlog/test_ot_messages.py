@@ -31,6 +31,11 @@ from frappe.utils import strip_html
 
 RESULTS = []
 DAY = "2026-06-11"          # a Thursday in June — no imported Finger Logs (F4d)
+# ⚠️ A SECOND day for OT6/OT7. `has_previous_submission()` refuses a second
+# approval for the same employee AND date, and OT5 leaves a submitted special
+# approval on DAY — so the server-side sync assertions need a clean date rather
+# than an unpicking of the fixture above.
+DAY2 = "2026-06-12"
 
 
 def check(tid, ok, detail):
@@ -46,7 +51,8 @@ def _facts(msg, *needles):
 
 def _cleanup(emp):
     for dt, field in (("Finger Log", "work_date"), ("OT Approval", "work_date")):
-        for r in frappe.get_all(dt, filters={field: DAY}, fields=["name"]):
+        for r in frappe.get_all(dt, filters={field: ("in", [DAY, DAY2])},
+                                fields=["name"]):
             doc = frappe.get_doc(dt, r.name)
             if doc.docstatus == 1:
                 doc.flags.ignore_permissions = True
@@ -213,6 +219,69 @@ def run():
               f"a special approval still overrides the clock: final_ot="
               f"{log.final_ot} from {log.ot_approval_id}, has_overwrite="
               f"{log.has_overwrite}. The messages changed; the money rules did not")
+
+        # ── OT6 — 🔴 the invariant is now SERVER-side, not JavaScript ──────
+        # MG, 2026-09-01: the intended design is that a row's work_date equals
+        # the header's — `ot_approval.js` says so — and it was enforced only in
+        # the browser. Measured: every human-created approval satisfies it; all
+        # 77 rows that violate it were imported by Administrator on one day.
+        #
+        # The cost of JS-only: an approval created by API, Data Import or bench
+        # gets BLANK row dates, so `check_ot_approval` matches nothing and the
+        # overtime is refused as "no approval" — while a submitted approval sits
+        # there looking correct. Built here without the form, which is exactly
+        # the path that used to break.
+        shift = frappe.db.get_value("Employee", emp.name, "default_shift")
+        st = frappe.db.get_value("Shift Type", shift, ["start_time", "end_time"],
+                                 as_dict=True)
+
+        def _m(v):
+            return int(v.total_seconds() // 60) if hasattr(v, "total_seconds") \
+                else int(str(v)[:2]) * 60 + int(str(v)[3:5])
+
+        def _s(m):
+            return f"{m // 60:02d}:{m % 60:02d}:00"
+
+        api = frappe.new_doc("OT Approval")
+        api.type = "normal"
+        api.work_date = DAY2
+        api.ot_department = frappe.db.get_value("Employee", emp.name, "department")
+        api.append("emp_list", {"emp_id": emp.name,
+                                "start_work": _s(_m(st.start_time)),
+                                "ot_end": _s(_m(st.end_time) + 60),
+                                "ot_duration": 1.0})
+        api.flags.ignore_permissions = True
+        api.insert(ignore_permissions=True)
+        check("OT6-SERVER-SETS-ROW-DATE",
+              str(api.emp_list[0].work_date) == DAY2,
+              f"an OT Approval built WITHOUT the form still gets its row date "
+              f"({api.emp_list[0].work_date}) — the sync moved from "
+              f"ot_approval.js into validate(). Before this, such a row carried "
+              f"no date at all, matched no Finger Log, and the employee's OT was "
+              f"refused as 'no approval' while the approval sat there submitted")
+
+        # ── OT7 — and a future work_date is refused server-side too ───────
+        future = frappe.new_doc("OT Approval")
+        future.type = "normal"
+        future.work_date = frappe.utils.add_days(frappe.utils.nowdate(), 7)
+        future.ot_department = api.ot_department
+        future.append("emp_list", {"emp_id": emp.name,
+                                   "start_work": _s(_m(st.start_time)),
+                                   "ot_end": _s(_m(st.end_time) + 60),
+                                   "ot_duration": 1.0})
+        future.flags.ignore_permissions = True
+        refused = ""
+        try:
+            future.insert(ignore_permissions=True)
+        except Exception as e:
+            refused = strip_html(str(e))
+        check("OT7-NO-FUTURE-APPROVAL", "future" in refused.lower(),
+              f"approving overtime for a day that has not happened is refused "
+              f"server-side — {refused[:90]!r}. That guard was also JavaScript "
+              f"only, so a script could authorise next month's overtime today")
+
+        frappe.delete_doc("OT Approval", api.name, force=True,
+                          ignore_permissions=True)
 
     finally:
         frappe.set_user("Administrator")

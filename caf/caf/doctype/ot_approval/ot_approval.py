@@ -26,7 +26,55 @@ class OTApproval(Document):
         print("name =", self.name)
     
 
+    def sync_child_work_dates(self):
+        """🔴 Copy the header date onto every row, SERVER-SIDE. MG, 2026-09-01.
+
+        **The intended invariant is that a row's `work_date` equals the header's**
+        — `ot_approval.js` says so in as many words (*"Batch Sync: Force child
+        table dates to match parent"*) and MG confirmed it is the design.
+
+        It was enforced **only in JavaScript**, which means it held for the desk
+        form and nowhere else. Measured 2026-09-01:
+
+          · every OT Approval created by a PERSON (`production1@`) has row date ==
+            header date — the invariant does hold in practice;
+          · all **77** rows where they differ, and all **4** approvals spanning
+            more than one date, were created by `Administrator` in a single import
+            on 2026-08-08. Legacy data, not a workflow.
+
+        ⚠️ **The consequence of the JS-only version is worse than an untidy date.**
+        `check_ot_approval()` matches rows on `work_date = <the log's date>`, so an
+        approval created by API, Data Import or `bench execute` gets **blank** row
+        dates, matches nothing, and the employee's overtime is refused as *"no
+        approval"* — while an approval sits there, submitted, looking correct.
+        This is the trap the dev protocol has warned about since 2026-08-04.
+
+        Kept alongside the JS rather than replacing it: the form still updates the
+        rows as the user types, which is visible feedback. This is the guarantee.
+        """
+        if not self.work_date:
+            frappe.throw(_("Fill in the <b>Work Date</b> before saving — every "
+                           "row is approved against it."),
+                         title=_("Work Date is required"))
+
+        from frappe.utils import getdate, nowdate
+        if getdate(self.work_date) > getdate(nowdate()):
+            frappe.throw(
+                _("<b>{0}</b> is in the future. Overtime is approved for a day "
+                  "that has been worked, or is being worked today — not for one "
+                  "that has not happened.").format(self.work_date),
+                title=_("Work Date is in the future"))
+
+        for row in self.emp_list:
+            if str(row.work_date or "") != str(self.work_date):
+                row.work_date = self.work_date
+
     def validate(self):
+        # Server-side, and OUTSIDE the `docstatus == 0` guard below: an amendment
+        # or a resubmit must not be able to leave a row pointing at a different
+        # day from the document approving it.
+        self.sync_child_work_dates()
+
         if self.docstatus == 0:
             # print("\n", self.__dict__)
 

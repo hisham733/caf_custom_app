@@ -448,10 +448,20 @@ def _import(batch, rows, by_device, submit, allow_recreate):
                 # OD-58 — an incomplete punch record may not become a verdict.
                 # Left in draft for HR. Not an error.
                 batch.counts.held += 1
+                # MG, 2026-09-01: *"'left as draft for HR (OD-58)' = redundant"* —
+                # and he is right twice over. Every row in this manifest with
+                # action `Held` is by definition left as a draft for HR, so the
+                # clause repeats the column beside it; and `OD-58` is a decision
+                # id that means nothing to the person reading the screen.
+                #
+                # What was missing is the only thing HR actually needs: WHICH
+                # punch. `_missing` already knows, and was being thrown away.
+                missing = getattr(doc, "_missing", None)
                 batch.row("Held", emp.name, day, doc.name, row["ftag_id"],
                           row["edited"],
                           (reason + " · " if reason else "") +
-                          _("not a full day — left as draft for HR (OD-58)"))
+                          (_("missing {0}").format(", ".join(missing)) if missing
+                           else _("incomplete punches")))
             elif submit:
                 sp2 = f"{sp}_sub"
                 frappe.db.savepoint(sp2)
