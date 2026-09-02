@@ -284,6 +284,13 @@ def _check_docperm_drift(doctype):
     Role Permissions Manager. When they disagree, every permission result above
     is true *here* and unproven *there* — which is the whole risk T-18 exists to
     retire.
+
+    ⚠️ **Do not assume the narrower side is the correct one.** On Finger Log the
+    `.json` is the narrower and it is the WRONG one: `create` is what actually
+    gates amendment (`insert()` checks `create`, never `amend` — OD-48 · A1), so
+    shipping `create = 0` would silently kill cancel-and-amend, the sanctioned
+    route for correcting a submitted log. Resolve each row on what the permission
+    DOES, not on which side grants less.
     """
     slug = doctype.lower().replace(" ", "_")
     path = frappe.get_app_path("caf", "caf", "doctype", slug, f"{slug}.json")
