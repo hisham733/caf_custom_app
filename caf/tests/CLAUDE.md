@@ -76,8 +76,8 @@ ot_messages 8/8 · shift_family 7/7 · alt_pair_guard 8/8 · required_punches 7/
 chunk3 21/21 · chunk4 10/10 · chunk5 23/23 · chunk7_swap 12/12
 alt_saturday 16/16 · monthly_roster 11/11 · readiness 6/6 · chunk_r 12/12
 manifest_search 8/8 · unmapped_employee 6/6 · fixture_integrity 18/18
-finger_log_title 8/8 · leave_service_bar 9/9 · leave_allocation 18/18
-basic_validation 10/10 · role_matrix 18/18 · data_scripts 6/6 (+2 skipped)
+leave_service_bar 9/9 · leave_allocation 18/18
+basic_validation 14/14 · role_matrix 18/18 · data_scripts 6/6 (+2 skipped)
 amend 13/13 · chunk3 21/21               ← both now suspend the roster gate
 ingress_import 23/23 · catchup 8/8      (both need the Ingress PC awake)
 chunk7_roster 22/23                      ← C75-LIVE, parked by MG
