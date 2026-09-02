@@ -85,6 +85,21 @@ def make(emp, day, **punches):
 
 
 def run():
+    # 🔴 2026-09-02 — the roster gate went live from 2026-09-01 (T-26), and this
+    # suite's fixtures are in 2026-10, chosen to sit past the seeded OT
+    # Approvals. Every submit below would now hit `require_confirmed_month`.
+    # Suspended for the run and restored by MEANING; C3-GATE-RESTORE asserts it.
+    from caf.tests.roster_gate import restored, suspended
+
+    with suspended() as gate_before:
+        result = _run_body()
+
+    ok, detail = restored(gate_before)
+    check("C3-GATE-RESTORE", ok, detail)
+    return result and ok
+
+
+def _run_body():
     cleanup()
 
     # ---------------------------------------------------------------- OD-57

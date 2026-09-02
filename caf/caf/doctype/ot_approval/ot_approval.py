@@ -69,11 +69,46 @@ class OTApproval(Document):
             if str(row.work_date or "") != str(self.work_date):
                 row.work_date = self.work_date
 
+    def guard_special_approve(self):
+        """🔴 `special_approve` is the FINAL ARBITER, so it is the one type that
+        needs a role. MG, 2026-09-02.
+
+        A **normal** approval is deliberately open to the `Employee` role, and
+        that is a business rule, not an oversight (FBR70): department reps file
+        OT for their area, the reps rotate often, and CAF chose a wide create +
+        submit over a role that would have to be reassigned every rotation. The
+        controls are that `Employee` holds **no cancel, no delete and no amend**,
+        and that `owner` names whoever filed it.
+
+        ⚠️ **`special_approve` is a different instrument and those controls do not
+        reach it.** It does not merely add an approval — `validate()` runs a raw
+        `UPDATE tabOT Approval Table SET docstatus = 2` over every *other*
+        submitted row for the same (employee, work date), and `check_ot_approval`
+        then takes its figure verbatim with `has_overwrite = 1`. So it silently
+        overrides an existing approval **without cancelling the document that
+        holds it** — and cancel is exactly the permission `Employee` does not
+        have. Left open, the one lock on the type is bypassed by the other type.
+
+        Restricted to **HR Manager + Leave Approver** (MG's choice). `Leave
+        Approver` is the closest thing CAF has to a supervisor role — 19 holders,
+        already the authority for leave (OD-82) — so this needs no new role.
+        """
+        if self.type != "special_approve":
+            return
+        # ⚠️ `only_for` returns early for Administrator AND for flags.in_test
+        # (quirks #33). That is wanted here — the importer and the fixtures run
+        # as Administrator — but it means a suite must use `frappe.set_user`.
+        frappe.only_for(("HR Manager", "Leave Approver", "System Manager"))
+
     def validate(self):
         # Server-side, and OUTSIDE the `docstatus == 0` guard below: an amendment
         # or a resubmit must not be able to leave a row pointing at a different
         # day from the document approving it.
         self.sync_child_work_dates()
+
+        # Before anything else: a special approval that the caller may not file
+        # should be refused before it starts cancelling other people's rows.
+        self.guard_special_approve()
 
         if self.docstatus == 0:
             # print("\n", self.__dict__)

@@ -167,6 +167,29 @@ def run():
     frappe.set_user("Administrator")
     cleanup()
 
+    # 🔴 2026-09-02 — the roster gate went live from 2026-09-01 (T-26), and this
+    # suite's fixtures are 2026-09-22..24, chosen because those dates were
+    # measured empty. Every `make_log()` below now hits
+    # `require_confirmed_month` and cannot submit. Suspended for the length of
+    # the run and restored by MEANING; AM-GATE-RESTORE asserts it came back.
+    from caf.tests.roster_gate import restored, suspended
+
+    with suspended() as gate_before:
+        _run_body()
+
+    ok, detail = restored(gate_before)
+    check("AM-GATE-RESTORE", ok, detail)
+
+    print("\n=== AM — amendment per doctype, as a ROLE ===")
+    for tid, o, detail in RESULTS:
+        print(f"{tid:18s} {'PASS' if o else 'FAIL'}  {detail}")
+    failed = [t for t, o, _d in RESULTS if not o]
+    print(f"\n{len(RESULTS) - len(failed)}/{len(RESULTS)} passed"
+          + (f" — FAILED: {failed}" if failed else ""))
+    return not failed
+
+
+def _run_body():
     try:
         # ═══════════════════════════════════════════════ AM1 — Finger Log
         log = make_log(D_LOG)
@@ -618,10 +641,6 @@ def run():
           f"session restored to {frappe.session.user} — asserted, not assumed. "
           f"A suite that exits still switched poisons every suite after it")
 
-    print("\n=== AM — amendment per doctype, as a ROLE ===")
-    for tid, ok, detail in RESULTS:
-        print(f"{tid:14s} {'PASS' if ok else 'FAIL'}  {detail}")
-    failed = [t for t, ok, _ in RESULTS if not ok]
-    print(f"\n{len(RESULTS) - len(failed)}/{len(RESULTS)} passed"
-          + (f" — FAILED: {failed}" if failed else ""))
-    return not failed
+    # ⚠️ The summary is printed by `run()`, AFTER the roster gate has been put
+    # back and AM-GATE-RESTORE has been recorded — otherwise the restore would
+    # be missing from the very report meant to prove it happened.

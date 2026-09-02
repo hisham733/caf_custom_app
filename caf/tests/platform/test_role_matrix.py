@@ -278,93 +278,117 @@ def run():
 
 
 def _check_docperm_drift(doctype):
-    """Custom DocPerm on this site vs the DocPerm shipped in the .json.
+    """Does the EXPORTED FIXTURE still match this site's live Custom DocPerm?
 
-    Production receives the `.json`. This site has whatever a person clicked in
-    Role Permissions Manager. When they disagree, every permission result above
-    is true *here* and unproven *there* — which is the whole risk T-18 exists to
-    retire.
+    🔴 **Compare against `fixtures/custom_docperm.json`, NOT the doctype's own
+    `.json`.** The first version of this check compared the two `.json` files and
+    reported that Finger Log's permissions would arrive on production wrong. They
+    will not: `Custom DocPerm` is a declared fixture in `hooks.py` (filtered to a
+    list that includes Finger Log), so `bench migrate` imports these rows and they
+    override the doctype's own DocPerm — which is exactly why the two differ, and
+    why the difference is the design rather than a defect.
 
-    ⚠️ **Do not assume the narrower side is the correct one.** On Finger Log the
-    `.json` is the narrower and it is the WRONG one: `create` is what actually
-    gates amendment (`insert()` checks `create`, never `amend` — OD-48 · A1), so
-    shipping `create = 0` would silently kill cancel-and-amend, the sanctioned
-    route for correcting a submitted log. Resolve each row on what the permission
-    DOES, not on which side grants less.
+    The drift that CAN actually happen is quirks #44: a permission changed in Role
+    Permissions Manager and never re-exported. That row lives only in this site's
+    database, and production silently keeps the old one. So this compares
+    **fixture vs live**, which is the pair that can genuinely disagree.
+
+    ⚠️ **And when they do disagree, do not assume the narrower side is right.** On
+    Finger Log, `create` is what actually gates amendment (`insert()` checks
+    `create`, never `amend` — OD-48 · A1), so a "tidy-up" to `create = 0` would
+    silently kill cancel-and-amend, the sanctioned route for correcting a
+    submitted log. Resolve each row on what the permission DOES.
     """
-    slug = doctype.lower().replace(" ", "_")
-    path = frappe.get_app_path("caf", "caf", "doctype", slug, f"{slug}.json")
-    shipped = {r["role"]: r for r in json.load(open(path))["permissions"]}
     live = {r.role: r for r in frappe.get_all(
-        "Custom DocPerm", filters={"parent": doctype},
-        fields=["role", "`read`", "`write`", "`create`", "`delete`", "submit", "cancel", "amend"])}
+        "Custom DocPerm", filters={"parent": doctype, "permlevel": 0},
+        fields=["role", "permlevel", "`read`", "`write`", "`create`", "`delete`",
+                "submit", "cancel", "amend"])}
 
-    if not live:
-        check("RM13-DOCPERM-DRIFT", True,
-              f"{doctype} has no Custom DocPerm rows — the site runs on the "
-              f"shipped .json, so production and this site cannot disagree")
+    path = frappe.get_app_path("caf", "fixtures", "custom_docperm.json")
+    try:
+        exported = {r["role"]: r for r in json.load(open(path))
+                    if r.get("parent") == doctype and not r.get("permlevel")}
+    except FileNotFoundError:
+        check("RM13-FIXTURE-DRIFT", False,
+              f"{path} does not exist — Custom DocPerm is declared as a fixture in "
+              f"hooks.py but has never been exported, so NONE of this site's "
+              f"permission rows would reach production (quirks #44)")
+        return
+
+    if not live and not exported:
+        check("RM13-FIXTURE-DRIFT", True,
+              f"{doctype} has no Custom DocPerm rows on either side — it runs on "
+              f"the shipped .json, which travels with the app")
         return
 
     keys = ("read", "write", "create", "delete", "submit", "cancel", "amend")
     drift = []
-    for role in sorted(set(shipped) | set(live)):
-        if role not in shipped:
-            drift.append(f"{role}: live only")
+    for role in sorted(set(exported) | set(live)):
+        if role not in exported:
+            drift.append(f"{role}: LIVE ONLY — never exported")
             continue
         if role not in live:
-            drift.append(f"{role}: .json only")
+            drift.append(f"{role}: in the fixture but not on this site")
             continue
         for k in keys:
-            a, b = int(shipped[role].get(k, 0)), int(live[role].get(k, 0) or 0)
+            a, b = int(exported[role].get(k, 0) or 0), int(live[role].get(k, 0) or 0)
             if a != b:
-                drift.append(f"{role}.{k} .json={a} live={b}")
+                drift.append(f"{role}.{k} fixture={a} live={b}")
 
-    check("RM13-DOCPERM-DRIFT", not drift,
-          f"{doctype}: {len(drift) or 'no'} difference(s) between the shipped "
-          f".json and this site's Custom DocPerm — {drift or 'identical'}. "
-          f"🔴 Production gets the .json. Where these disagree, everything this "
-          f"suite proved is true HERE and unproven THERE (T-18)")
+    check("RM13-FIXTURE-DRIFT", not drift,
+          f"{doctype}: this site's {len(live)} Custom DocPerm row(s) match the "
+          f"exported fixture — {drift or 'identical'}. That fixture is what "
+          f"`bench migrate` installs on production, so a match means everything "
+          f"this suite proved here is also true there. ⚠️ A permission edited in "
+          f"Role Permissions Manager and not re-exported lives only in this "
+          f"database (quirks #44) — run `bench export-fixtures`")
 
 
 def _check_ot_self_approval(emp_user):
-    """🔴 Can an ordinary employee approve their own overtime?
+    """OT Approval's two types have deliberately different gates. Assert both.
 
-    Measured, not inferred. `OT Approval` has no workflow and no `has_permission`
-    hook, and its shipped .json grants the `Employee` role create + write +
-    submit. So the permission layer has nothing to say — and an OT hour that
-    reaches a submitted approval is a PAID hour.
+    🔴 **Corrected 2026-09-02. The first version of this check called the open
+    `normal` type a hole; MG had already decided it, and was right.**
 
-    Builds one document and removes it in `finally`, because a permission row is
-    not proof: the first two attempts were stopped by business rules (a duplicate
-    day, a wrong duration) and would have been reported as a PASS by any suite
-    that only looked at the exception type.
+    FBR70 — a **normal** approval is open to the `Employee` role ON PURPOSE.
+    Department reps file OT for their area, the reps rotate often, and CAF chose
+    a wide create + submit over a role that would need reassigning every
+    rotation. The controls are real and are asserted here: the `Employee` role
+    holds **no cancel, no delete and no amend**, `owner` names whoever filed it,
+    and most users additionally carry a `User Permission` scoping them to their
+    own Employee record.
+
+    FBR71 — **`special_approve` is a different instrument** and those controls do
+    not reach it: it runs a raw `UPDATE ... SET docstatus = 2` over every other
+    submitted row for the same (employee, date), and the Finger Log then takes
+    its figure verbatim. It overrides an approval *without cancelling the
+    document holding it* — and cancel is precisely what `Employee` lacks. Gated
+    to HR Manager + Leave Approver on 2026-09-02.
+
+    ⚠️ Nothing is written: the ALLOW direction rolls back, and the DENY direction
+    never gets that far.
     """
     frappe.set_user("Administrator")
-    emp = frappe.db.get_value("Employee", {"user_id": emp_user}, "name")
-    if not emp:
-        check("RM16-OT-SELF-APPROVAL", True,
-              f"skipped: {emp_user} has no Employee record to name")
+
+    # A plain employee whose own shift allows OT — otherwise a PASS would mean
+    # "the fixture could not have overtime", which proves nothing.
+    filer = None
+    for r in frappe.db.sql(
+        """SELECT e.user_id FROM `tabEmployee` e
+           JOIN `tabShift Type` st ON st.name = e.default_shift
+           WHERE e.status='Active' AND IFNULL(e.user_id,'')<>'' AND st.caf_allow_ot=1
+           ORDER BY e.name""", as_dict=True):
+        if set(frappe.get_roles(r.user_id)).isdisjoint(
+                {"HR Manager", "HR User", "System Manager", "Leave Approver"}):
+            filer = r.user_id
+            break
+    if not filer:
+        check("RM16-OT-TYPE-GATES", True,
+              "skipped: no ordinary employee on an OT-allowing shift on this site")
         return
 
-    shift = frappe.db.get_value("Employee", emp, "default_shift")
-    if not shift or not frappe.db.get_value("Shift Type", shift, "caf_allow_ot"):
-        # Find any non-privileged employee whose shift does allow OT — otherwise
-        # this test passes because the FIXTURE could not have OT, which proves
-        # nothing about the permission model.
-        for r in frappe.db.sql(
-            """SELECT e.name, e.user_id FROM `tabEmployee` e
-               JOIN `tabShift Type` st ON st.name = e.default_shift
-               WHERE e.status='Active' AND IFNULL(e.user_id,'')<>''
-                 AND st.caf_allow_ot = 1""", as_dict=True):
-            roles = set(frappe.get_roles(r.user_id))
-            if roles.isdisjoint({"HR Manager", "HR User", "System Manager"}):
-                emp, emp_user = r.name, r.user_id
-                break
-        else:
-            check("RM16-OT-SELF-APPROVAL", True,
-                  "skipped: no ordinary employee on an OT-allowing shift on this site")
-            return
-
+    emp = frappe.db.get_value("Employee", {"user_id": filer}, "name")
+    dept = frappe.db.get_value("Employee", emp, "department")
     taken = {str(d[0]) for d in frappe.db.sql(
         "SELECT DISTINCT work_date FROM `tabOT Approval Table` WHERE emp_id=%s", (emp,))}
     day = getdate("2026-06-01")
@@ -373,42 +397,43 @@ def _check_ot_self_approval(emp_user):
             break
         day = add_days(day, 1)
 
-    made, verdict = None, None
-    frappe.set_user(emp_user)
-    try:
-        d = frappe.new_doc("OT Approval")
-        d.work_date = str(day)
-        d.reason = "role matrix probe"
-        d.ot_department = frappe.db.get_value("Employee", emp, "department")
-        row = d.append("emp_list", {})
-        row.emp_id, row.start_work, row.ot_end, row.ot_duration = emp, "08:00:00", "19:00:00", 2.5
-        d.insert()
-        made = d.name
-        d.submit()
-        verdict = f"SUBMITTED docstatus={d.docstatus}"
-    except frappe.PermissionError:
-        verdict = "refused by permissions"
-    except Exception as e:
-        verdict = f"reached validate() and stopped there: {type(e).__name__}"
-    finally:
-        frappe.set_user("Administrator")
-        if made and frappe.db.exists("OT Approval", made):
-            doc = frappe.get_doc("OT Approval", made)
-            if doc.docstatus == 1:
-                doc.flags.ignore_permissions = True
-                doc.cancel()
-            frappe.delete_doc("OT Approval", made, force=True, ignore_permissions=True)
-        frappe.db.commit()
+    def attempt(kind):
+        frappe.set_user(filer)
+        try:
+            d = frappe.new_doc("OT Approval")
+            d.work_date, d.type, d.reason, d.ot_department = str(day), kind, "probe", dept
+            row = d.append("emp_list", {})
+            row.emp_id, row.start_work, row.ot_end, row.ot_duration = (
+                emp, "08:00:00", "19:00:00", 2.5)
+            d.insert()
+            return "ALLOWED"
+        except frappe.PermissionError:
+            return "DENIED"
+        except Exception as e:
+            return f"ERR:{type(e).__name__}"
+        finally:
+            frappe.set_user("Administrator")
+            frappe.db.rollback()
 
-    check("RM16-OT-SELF-APPROVAL", verdict == "refused by permissions",
-          f"{emp_user} (roles: "
-          f"{sorted(r for r in frappe.get_roles(emp_user) if r not in ('All', 'Guest'))}) "
-          f"raising an OT Approval that names themselves for 2.5h on {day}: "
-          f"{verdict}. 🔴 OT Approval has no workflow and no has_permission hook, "
-          f"and its .json grants the Employee role create+write+submit — so an "
-          f"employee can approve their own paid overtime. Fix by role (drop submit "
-          f"from Employee) or by controller guard (the rows must be the caller's "
-          f"reports); a JS-only check will not hold (quirks #29)")
+    v_norm, v_spec = attempt("normal"), attempt("special_approve")
+
+    perms = frappe.get_all(
+        "Custom DocPerm", filters={"parent": "OT Approval", "role": "Employee"},
+        fields=["`create`", "`delete`", "submit", "cancel", "amend"]) or frappe.get_all(
+        "DocPerm", filters={"parent": "OT Approval", "role": "Employee"},
+        fields=["`create`", "`delete`", "submit", "cancel", "amend"])
+    e = perms[0] if perms else {}
+    undo_locked = bool(e) and not (e.get("cancel") or e.get("delete") or e.get("amend"))
+
+    check("RM16-OT-TYPE-GATES",
+          v_norm != "DENIED" and v_spec == "DENIED" and undo_locked,
+          f"{filer} (plain Employee) — normal={v_norm}, special_approve={v_spec}; "
+          f"Employee cancel={e.get('cancel')} delete={e.get('delete')} "
+          f"amend={e.get('amend')}. Normal is open BY BUSINESS RULE (FBR70) and "
+          f"must stay open; special is the final arbiter and is gated to HR "
+          f"Manager + Leave Approver (FBR71). The asymmetry — filing is open, "
+          f"UNDOING is not — is what makes the open create safe, so all three "
+          f"are asserted together")
 
 
 def _summary():

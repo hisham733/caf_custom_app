@@ -77,12 +77,17 @@ chunk3 21/21 · chunk4 10/10 · chunk5 23/23 · chunk7_swap 12/12
 alt_saturday 16/16 · monthly_roster 11/11 · readiness 6/6 · chunk_r 12/12
 manifest_search 8/8 · unmapped_employee 6/6 · fixture_integrity 18/18
 finger_log_title 8/8 · leave_service_bar 9/9 · leave_allocation 18/18
-data_scripts 6/6 (+2 skipped)
+basic_validation 10/10 · role_matrix 18/18 · data_scripts 6/6 (+2 skipped)
+amend 13/13 · chunk3 21/21               ← both now suspend the roster gate
 ingress_import 23/23 · catchup 8/8      (both need the Ingress PC awake)
 chunk7_roster 22/23                      ← C75-LIVE, parked by MG
-role_matrix 16/18                        ← 🔴 RED ON PURPOSE: both failures are
-                                            real findings, GO_LIVE_TODO T-22
-                                            (an employee can approve their own
-                                            OT) and T-23 (Finger Log DocPerm
-                                            drift). Do NOT edit them green
+fixture_integrity 17/18                  ← I2-GAPS, the HR-PF naming counter;
+                                            readiness_audit reports it too
 ```
+
+⚠️ **The roster gate is LIVE from `2026-09-01`.** Any suite that submits a Finger
+Log dated on or after it must wrap the run in
+`caf.tests.roster_gate.suspended()` and assert `restored()` — `test_amend` and
+`test_chunk3_decisions` do. Restore **by meaning**: a cleared Date on a Single
+reads back as `0001-01-01`, so putting the raw value back leaves a gate that
+refuses every Finger Log ever recorded.

@@ -76,9 +76,48 @@ class MonthlyRosterConfirmation(Document):
         self.month_label = d.strftime("%B %Y")
 
         self.check_day_matches_date()
+        self.check_holiday_is_in_the_month()
         self.check_answer_is_consistent()
-        if not self.saturdays:
-            self.fill_saturdays()
+        self.refresh_saturdays()
+
+    def check_holiday_is_in_the_month(self):
+        """🔴 A holiday listed here must fall INSIDE the month being confirmed.
+
+        Found by MG, 2026-09-02: he filed `ROSTER-2026-08` with a holiday dated
+        **9 September** and it submitted cleanly. The day-of-week checksum could
+        not catch it — 9 September 2026 really is a Wednesday, so the two fields
+        agreed with each other while both disagreed with the form they were on.
+
+        ⚠️ It is not harmless. `on_submit` appends the row to
+        `CAF Public Holidays <year>`, so a September holiday recorded on the
+        August form: (1) makes the August confirmation claim something about a
+        month nobody confirmed, (2) regenerates the alternate-Saturday calendars
+        for a date outside the window this form is the record for, and (3) makes
+        September's own form report it as `already_in_list`, so the month that
+        should have declared it looks as though somebody already had.
+
+        **A late-announced holiday for a month already confirmed is handled the
+        way every other correction is** — cancel and amend that month's form
+        (FBR47), not by filing it against a different month.
+        """
+        first = get_first_day(getdate(self.month_start))
+        last = get_last_day(first)
+        for row in self.holidays or []:
+            if not row.holiday_date:
+                continue
+            d = getdate(row.holiday_date)
+            if first <= d <= last:
+                continue
+            frappe.throw(
+                _("Row {0}: <b>{1}</b> is dated {2}, which is not in <b>{3}</b> "
+                  "({4} to {5}).<br><br>This form is the record of what was "
+                  "confirmed for {3}, and submitting it adds the holiday to the "
+                  "calendar for that month. A holiday in another month belongs on "
+                  "that month's confirmation — open it, or amend it if it is "
+                  "already submitted.").format(
+                      row.idx, row.holiday_name, d, self.month_label or
+                      first.strftime("%B %Y"), first, last),
+                title=_("That holiday is not in this month"))
 
     def check_day_matches_date(self):
         """🔴 MG's checksum. The date and the weekday are entered separately so
@@ -112,6 +151,59 @@ class MonthlyRosterConfirmation(Document):
                 _("Either list the new holidays, or tick <b>No new holidays this "
                   "month</b>. An unanswered form is the thing this exists to "
                   "prevent."))
+
+    def refresh_saturdays(self):
+        """🔴 REBUILD (b) from the calendar every save, keeping HR's ticks.
+
+        Found by MG, 2026-09-02, and it is the most serious thing this form has
+        done. He filed `ROSTER-2026-08` and it submitted with **one** Saturday
+        row — hand-added, dated **2026-09-11** (not in August, and not a
+        Saturday), `shift_type` blank, `agreed` ticked. The calendar would have
+        produced **15** rows across 5 Saturdays and 3 shift groups.
+
+        **Cause:** the old guard was `if not self.saturdays: self.fill_saturdays()`.
+        One row in the grid — including the empty one the desk's *Add Row* button
+        makes — skipped the entire pre-fill. Reproduced: no rows ➜ 12 generated;
+        one empty row ➜ 1 row, blank. So the form recorded *"HR confirmed the
+        alternate-Saturday roster"* on a table nobody had ever seen.
+
+        ⚠️ That is the exact failure the form exists to prevent. §6.12: *"the
+        manual step is where the errors came from"* — February's unrecorded
+        holiday and its four mislabelled day types were both hand-entry.
+
+        **The fix is to make the design true rather than to add a warning.** The
+        rows are a CONFIRMATION, never an entry, so they are rebuilt from the
+        generated calendar on every draft save. Anything hand-added disappears;
+        an `agreed` tick on a row that still exists is preserved, so HR does not
+        re-tick what they already read. A submitted document is left alone —
+        the correction route is cancel and amend (FBR47).
+        """
+        if self.docstatus != 0:
+            return
+
+        kept = {(str(r.saturday), r.shift_type): r.agreed
+                for r in (self.saturdays or [])
+                if r.saturday and r.shift_type}
+        hand_added = [r for r in (self.saturdays or [])
+                      if not r.saturday or not r.shift_type]
+
+        self.saturdays = []
+        self.fill_saturdays()
+
+        for row in self.saturdays:
+            key = (str(row.saturday), row.shift_type)
+            if key in kept:
+                row.agreed = kept[key]
+
+        if hand_added:
+            frappe.msgprint(
+                _("{0} hand-typed row(s) were removed from the Saturday table. "
+                  "This table is a <b>confirmation</b>, not an entry — it is "
+                  "rebuilt from the generated calendar so that what you tick is "
+                  "what the system will actually do. Tick the rows you agree "
+                  "with; if one is wrong, the roster is what needs correcting.")
+                .format(len(hand_added)),
+                title=_("The Saturday table is generated"), indicator="orange")
 
     def fill_saturdays(self):
         """Pre-fill (b) from the GENERATED calendar. Read-only rows — HR ticks."""
