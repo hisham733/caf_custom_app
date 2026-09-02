@@ -39,6 +39,7 @@ bench --site <site> execute caf.scripts.<name>.verify                     # PROV
 | `join_date_from_ingress` | the 9 disputed join dates |
 | `leave_naming_fix` | Leave Period named by the year it covers · Leave Policy shows its title |
 | `backfill_manifest_employee_name` | makes historical manifests searchable by name |
+| `finger_log_title_backfill` | `date · device · name` on 3,167 logs, so the desk stops showing a name that looks like a device id and is not (FBR67) |
 | `alt_saturday_setup` · `holiday_lists` | alternating-Saturday shifts and calendars |
 | `leave_policy_seed` · `leave_formula` | the 3 policies and the under-2-year curve |
 | `leave_group_review` | 🟡 read-only — builds the HR confirmation page |
@@ -64,6 +65,19 @@ bench --site <site> execute caf.scripts.<name>.verify                     # PROV
   allocation is the allocated group"* is circular — it cannot distinguish
   *correctly unallocated* from *not yet reached by HR*, and would freeze today's
   split as if somebody had decided it (FBR60).
+
+- **A backfill must not touch `modified`.** `Finger Log.sort_field` is `modified`,
+  so stamping 3,167 rows would flatten the list view's natural order to a single
+  instant. `update_modified=False`, always — and `verify()` asserts the spread
+  survived, because that is the kind of damage nobody notices for a week.
+- **The audit-trail Comment is for values that decide someone's PAY** — a shift, a
+  join date, an approver. A derived display label backfilled into a field that had
+  no previous value gets none: 3,167 comments would bury the ones that matter.
+  Say so in the docstring rather than skipping it silently.
+
+**Every script here is now exercised** by
+`caf.tests.platform.test_data_scripts` — report mode + `verify()`, with a
+`CHECKSUM TABLE` fingerprint proving report mode writes nothing.
 
 **Production parity: `GO_LIVE_TODO.md` T-17** lists which of these production
 needs and how to verify each landed.

@@ -644,7 +644,16 @@ doc_events = {
         # AFTER the controller's own validate, which is what lets it overwrite
         # the stock figure. The ledger derives from `total_leave_days`, so
         # correcting the document corrects the balance.
-        "validate": "caf.caf.leave_days.recount_leave_days",
+        # CAF 2026-09-02 — the one-year bar on ANNUAL leave (option B, MG's
+        # choice). A LIST, and the order is deliberate: the bar runs FIRST, so an
+        # application that is not allowed at all is refused before anything
+        # recounts its days. `validate`, not `before_submit`, because the Leave
+        # Approver files for their report (OD-82) — the refusal has to arrive
+        # while the form is open, not after somebody was told their leave is booked.
+        "validate": [
+            "caf.caf.leave_service_bar.check_service_bar",
+            "caf.caf.leave_days.recount_leave_days",
+        ],
         "before_submit": "caf.caf.appraisal_refresh.check_leave_window",
         "on_submit": "caf.caf.appraisal_refresh.on_leave_application_submit",
         "on_cancel": "caf.caf.appraisal_refresh.on_leave_application_cancel",

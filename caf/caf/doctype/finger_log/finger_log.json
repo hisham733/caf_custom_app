@@ -7,6 +7,7 @@
  "engine": "InnoDB",
  "field_order": [
   "section_break_o0it",
+  "caf_title",
   "amended_from",
   "log_date",
   "employee",
@@ -40,6 +41,15 @@
   {
    "fieldname": "section_break_o0it",
    "fieldtype": "Section Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "description": "Work date · Ingress device id · employee. Built from ftag_id, which is set_only_once and captured at import, so it records what Ingress held ON THAT DAY and cannot drift when a person is re-enrolled on a new reader (FBR67).",
+   "fieldname": "caf_title",
+   "fieldtype": "Data",
+   "label": "Title",
+   "no_copy": 1,
+   "read_only": 1
   },
   {
    "fieldname": "amended_from",
@@ -305,8 +315,10 @@
  ],
  "row_format": "Dynamic",
  "search_fields": "employee_name,work_date,employee",
+ "show_title_field_in_link": 1,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],
+ "title_field": "caf_title",
  "track_changes": 1
 }
