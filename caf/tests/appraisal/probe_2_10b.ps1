@@ -99,3 +99,31 @@ if ((Req HRMgr GET "/api/resource/Finger%20Log/$([uri]::EscapeDataString($draft)
 }
 Req Admin DELETE "/api/resource/Finger%20Log/$([uri]::EscapeDataString($draft))" $null | Out-Null
 "        fixture removed: $draft (+ attendance rows $($attRows -join ', '))"
+
+# -----------------------------------------------------------------------------
+# T-J15..J17  Attendance Follow-Up report - added 2026-09-02.
+#
+# The report was built on 2026-09-02 with NO role test, which was the most urgent
+# gap in T-21: it is HR-Manager-only and every row carries an employee name, a
+# work date and an OT figure. A supervisor reading it would see the overtime of
+# people outside their team.
+#
+# Tested through `frappe.desk.query_report.run`, the path the desk actually uses.
+# WARNING: calling the report module's execute() directly would BYPASS the gate
+# and pass against a broken model (quirks #58) - the same trap as running a
+# permission test as Administrator.
+""
+"=== 2.10b(2)  Attendance Follow-Up restricted to HR Manager (2026-09-02) ==="
+
+$rptPath = "/api/method/frappe.desk.query_report.run?report_name=Attendance%20Follow-Up&ignore_prepared_report=1"
+
+$rHR  = Req HRMgr GET $rptPath
+$rows = 0
+if ($rHR.json -and $rHR.json.message -and $rHR.json.message.result) { $rows = @($rHR.json.message.result).Count }
+Result "T-J15" ($rHR.code -eq 200 -and $rows -gt 0) "HR Manager runs Attendance Follow-Up: code=$($rHR.code) rows=$rows - the worklist must work for the one role that owns it"
+
+$rEmp = Req EmpB GET $rptPath
+Result "T-J16" ($rEmp.code -eq 403) "Employee runs Attendance Follow-Up: code=$($rEmp.code) (must be 403) - every row carries somebody else's name, work date and OT hours"
+
+$rSup = Req SupA GET $rptPath
+Result "T-J17" ($rSup.code -eq 403) "Supervisor runs Attendance Follow-Up: code=$($rSup.code) (must be 403) - a supervisor sees their own team elsewhere, never company-wide OT"

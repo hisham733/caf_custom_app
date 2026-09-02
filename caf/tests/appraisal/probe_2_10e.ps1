@@ -27,7 +27,16 @@ function Res($id, $ok, $detail) { "{0,-7} {1,-6} {2}" -f $id, $(if ($ok) {"PASS"
 
 # T-J24 - which doctypes now carry Custom DocPerm rows? The plan names exactly
 # six. Anything else means a permission change escaped its intended scope.
-$named = @("Appraisal","Appraisal Cycle","Employee Performance Feedback","Finger Log","HR Settings","KRA")
+# 🔴 "Shift Assignment" ADDED 2026-09-02. It joined `hooks.py`'s Custom DocPerm
+# fixture filter for the Chunk 7 Saturday-swap work, after this assertion was
+# written — so the fixture legitimately carries a seventh parent and T-J24b was
+# reporting a leak that was a deliberate, shipped addition.
+#
+# ⚠️ The assertion itself is still worth keeping and is NOT weakened: it exists
+# to catch a permission change escaping its intended scope, and the only way to
+# widen it is to name the new doctype here, deliberately, as this comment does.
+$named = @("Appraisal","Appraisal Cycle","Employee Performance Feedback",
+           "Finger Log","HR Settings","KRA","Shift Assignment")
 $sql = 'SELECT DISTINCT parent FROM `_54cc49b9a1aab38b`.`tabCustom DocPerm` ORDER BY parent;'
 $all = ($sql | wsl docker exec -i mariadb mariadb -uroot -p123 -N 2>$null) | ForEach-Object { $_.Trim() } | Where-Object { $_ }
 
@@ -43,7 +52,22 @@ $outside = @($all | Where-Object { $named -notcontains $_ })
 # dropped the Appraisal Supervisor role, leaving stock Appraisal permissions
 # untouched, and Appraisal Cycle never needed a change. So 4 of the 6 carrying
 # rows is the CORRECT outcome; demanding 6/6 was the bug in this assertion.
-$touched = @("Employee Performance Feedback","Finger Log","HR Settings","KRA")
+# 🔴 "Appraisal" ADDED 2026-09-02. The comment above said CAF deliberately changed
+# neither Appraisal nor Appraisal Cycle — that stopped being true on 2026-08-13,
+# when OD-81b (`caf.scripts.appraisal_amend_perm`) granted HR Manager `cancel` +
+# `amend` so a submitted appraisal could be corrected at all. Before it, NOBODY
+# who should correct appraisals could: HR Manager was blocked by DocPerm and
+# HR User by CAF's own `may_appraise` hook.
+#
+# The rows ship in `custom_docperm.json` and are re-applied on every migrate, so
+# this is a shipped, intended change and the assertion was simply behind it.
+# Appraisal Cycle still carries none, and that half of the claim still holds.
+# "Shift Assignment" also added 2026-09-02, for the same reason as $named above:
+# `caf.scripts.shift_assignment_lockdown` (R3) removed `allow_on_submit` from
+# `status` so a PERSON can no longer set it — stock's daily expiry job still
+# writes it through `db_set`, which is the point. A deliberate, shipped change.
+$touched = @("Appraisal","Employee Performance Feedback","Finger Log","HR Settings",
+             "KRA","Shift Assignment")
 $unexpected = @($appraisalScope | Where-Object { $touched -notcontains $_ })
 Res "T-J24" ($unexpected.Count -eq 0) `
   "CAF changed permissions on exactly [$($appraisalScope -join ', ')]; unexpected: $($unexpected.Count)"
