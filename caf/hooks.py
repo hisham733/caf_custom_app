@@ -805,6 +805,15 @@ fixtures = [
                     # ⚠️ Custom DocPerm REPLACES DocPerm per doctype, so this
                     # fixture must stay complete: dropping a role here removes it.
                     "Shift Assignment",
+                    # Added 2026-09-02 with T-24 / OD-84 — CAF does not practise
+                    # self-service attendance, so `Employee` loses create on both
+                    # and `Employee Self Service` gets an explicit zero row.
+                    # Without these two names the closure would live only in this
+                    # site's database and production would keep the stock grant
+                    # (quirks #44) — which is exactly the shape of the drift the
+                    # line above was added to prevent.
+                    "Attendance Request",
+                    "Employee Checkin",
                 ],
             ]
         ],

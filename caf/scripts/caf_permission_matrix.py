@@ -56,6 +56,51 @@ CHANGES = [
              "cancel": 0, "delete": 0, "report": 1, "email": 1, "print": 1},
         ],
     },
+    # ── T-24 / OD-84 · CAF does not practise self-service attendance ─────────
+    #
+    # MG, 2026-09-02: *"CAF does not practise self attendance (even a long
+    # distance driver has to physically log via the finger print machine)…
+    # note CAF does not use Employee Self Service role or mobile check-in
+    # attendance."*
+    #
+    # 🔴 Both doctypes were measured OPEN and INERT — 0 rows each, and
+    # `enable_auto_attendance` is 0 on all 18 Shift Types, so nothing converts a
+    # checkin into Attendance today. **Inert is one checkbox from live**, which
+    # is why these are closed rather than left. FBR69: ERPNext holds exactly one
+    # source of attendance, and the escape hatch for a machine-down day is in
+    # INGRESS (paper, then HR keys it in), not here.
+    *[
+        {
+            "doctype": dt,
+            "role": role,
+            "why": (
+                f"T-24 / OD-84, MG 2026-09-02. CAF does not use self-service "
+                f"attendance. {reason}\n"
+                f"        READ stays where stock granted it — seeing a record is "
+                f"not creating one, and removing read would break list views "
+                f"employees can legitimately open. CREATE/WRITE/DELETE go."),
+            "rows": [
+                {"if_owner": 0, "read": read, "create": 0, "write": 0, "submit": 0,
+                 "cancel": 0, "delete": 0, "report": read, "email": read,
+                 "print": read},
+            ],
+        }
+        for dt, role, read, reason in (
+            ("Attendance Request", "Employee", 1,
+             "`Attendance Request.on_submit` CREATES Attendance, so an open "
+             "create here is a second source for a day the Finger Log already "
+             "decided."),
+            ("Attendance Request", "Employee Self Service", 0,
+             "The role is a standing zero (OD-84); the row is written explicitly "
+             "so a future stock upgrade cannot re-grant it silently."),
+            ("Employee Checkin", "Employee", 1,
+             "The HRMS mobile PWA writes Employee Checkin directly, and a Shift "
+             "Type's `enable_auto_attendance` turns those into Attendance. That "
+             "checkbox is the whole distance between inert and live."),
+            ("Employee Checkin", "Employee Self Service", 0,
+             "Same standing zero."),
+        )
+    ],
 ]
 
 # Doctypes that must record who changed what. An audit trail is the whole reason

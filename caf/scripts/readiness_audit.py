@@ -272,11 +272,77 @@ def check_approver_matches_manager():
                 or "every approver is the employee's own manager")
 
 
+def check_self_service_attendance():
+    """🔴 T-24 / OD-84 — the two doors CAF decided never to open.
+
+    MG, 2026-09-02: *"CAF does not practise self attendance… does not use
+    Employee Self Service role or mobile check-in."* FBR69 makes the Finger Log
+    the single source, with the machine-down escape hatch in **Ingress**.
+
+    Three things could quietly undo that, and none of them raises anything on
+    its own:
+
+      1. a Shift Type gets `enable_auto_attendance` ticked — one checkbox, and
+         every Employee Checkin starts becoming Attendance;
+      2. the `Employee` role regains `create` on Attendance Request or Employee
+         Checkin, e.g. from a stock upgrade re-seeding DocPerm;
+      3. somebody is given the `Employee Self Service` role again.
+
+    ⚠️ Measured 2026-09-02: 0 of 18 shifts, 0 rows in either doctype — so this
+    check reads clear today and only ever speaks when something has changed.
+    That is the point: it is a tripwire, not a report.
+    """
+    auto = frappe.get_all("Shift Type", filters={"enable_auto_attendance": 1},
+                          pluck="name")
+    openings = []
+    for dt in ("Attendance Request", "Employee Checkin"):
+        for role in ("Employee", "Employee Self Service"):
+            row = frappe.get_all("Custom DocPerm",
+                                 filters={"parent": dt, "role": role, "permlevel": 0},
+                                 fields=["`create`", "`write`", "`delete`"])
+            if row and (row[0].create or row[0].write or row[0].delete):
+                openings.append(f"{dt}/{role}")
+            elif not row:
+                stock = frappe.get_all("DocPerm",
+                                       filters={"parent": dt, "role": role},
+                                       fields=["`create`"])
+                if stock and stock[0].create:
+                    openings.append(f"{dt}/{role} (stock, unoverridden)")
+    # ⚠️ `parenttype` matters. `Has Role` is the child table of BOTH `User` and
+    # `Role Profile`, so an unfiltered query returns profiles as though they were
+    # people — the first run of this check reported "held by 9" including
+    # "Income Tax Deductions", which is a Role Profile. A profile granting the
+    # role is worth knowing about too, so it is counted separately rather than
+    # silently dropped: it is how the role would come back.
+    ess = frappe.get_all("Has Role",
+                         filters={"role": "Employee Self Service",
+                                  "parenttype": "User"}, pluck="parent")
+    ess_profiles = frappe.get_all("Has Role",
+                                  filters={"role": "Employee Self Service",
+                                           "parenttype": "Role Profile"},
+                                  pluck="parent")
+
+    problems = len(auto) + len(openings) + len(ess) + len(ess_profiles)
+    bits = []
+    if auto:
+        bits.append(f"auto-attendance ON: {auto}")
+    if openings:
+        bits.append(f"still creatable: {openings}")
+    if ess:
+        bits.append(f"ESS held by {len(ess)} user(s): {ess[:5]}")
+    if ess_profiles:
+        bits.append(f"ESS granted by Role Profile: {ess_profiles}")
+    return _row("BLOCK" if problems else "ok",
+                "self-service attendance is closed (OD-84)", problems,
+                "; ".join(bits) or "no auto-attendance, no create, nobody holds ESS")
+
+
 CHECKS = [check_naming, check_default_shift, check_holiday_list, check_shift_lists,
           check_alt_pairs, check_manager_logins, check_attendance_device,
           check_org_chart,
           check_approver_matches_manager, check_leave_period,
-          check_next_year_holidays, check_missing_mc, check_missing_annual]
+          check_next_year_holidays, check_missing_mc, check_missing_annual,
+          check_self_service_attendance]
 
 
 def audit():

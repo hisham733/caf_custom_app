@@ -31,6 +31,7 @@ bench --site <site> execute caf.scripts.<name>.verify                     # PROV
 | script | does |
 |---|---|
 | `retire_hr_user_role` | HR User → 3 holders (was 32) |
+| `retire_ess_role` | `Employee Self Service` → **0 holders** (was 4) — CAF does not use self-service attendance (OD-84) |
 | `caf_permission_matrix` | EPF `if_owner` · ESS write · `track_changes` |
 | `hr_manager_user_permissions` | removes self-scoping Employee User Permissions |
 | `leave_approver_gap` | fills blank `leave_approver`, grants the role |
