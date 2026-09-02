@@ -39,7 +39,6 @@ bench --site <site> execute caf.scripts.<name>.verify                     # PROV
 | `join_date_from_ingress` | the 9 disputed join dates |
 | `leave_naming_fix` | Leave Period named by the year it covers · Leave Policy shows its title |
 | `backfill_manifest_employee_name` | makes historical manifests searchable by name |
-| `finger_log_title_backfill` | `date · device · name` on 3,167 logs, so the desk stops showing a name that looks like a device id and is not (FBR67) |
 | `alt_saturday_setup` · `holiday_lists` | alternating-Saturday shifts and calendars |
 | `leave_policy_seed` · `leave_formula` | the 3 policies and the under-2-year curve |
 | `leave_group_review` | 🟡 read-only — builds the HR confirmation page |

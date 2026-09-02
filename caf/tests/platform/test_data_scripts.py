@@ -71,9 +71,6 @@ SCRIPTS = [
      "a second allocation"),
     ("backfill_manifest_employee_name", "run", False,
      "makes historical import manifests searchable by name"),
-    ("finger_log_title_backfill", "run", False,
-     "fills the Finger Log title so the desk stops showing a name that looks like "
-     "a device id and is not"),
     ("retire_hr_user_role", "run", False,
      "cuts HR User from 32 holders to 3"),
     ("caf_permission_matrix", "run", False,
@@ -95,7 +92,6 @@ VERIFIERS = [
     ("no_clocking_flag", False),
     ("leave_naming_fix", False),
     ("backfill_manifest_employee_name", False),
-    ("finger_log_title_backfill", False),
     ("retire_hr_user_role", False),
     ("join_date_from_ingress", True),
 ]

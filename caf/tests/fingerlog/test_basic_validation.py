@@ -27,6 +27,7 @@ Self-cleaning: every case is rolled back; nothing is left on the site.
 """
 
 import frappe
+from frappe.utils import add_days, nowdate
 
 RESULTS = []
 MONTH = "2026-11-01"          # far from the imported July/August data
@@ -158,6 +159,12 @@ def run():
         # ── BV8..BV10 — OT Approval: special_approve is role-gated ─────────
         _ot_special()
 
+        # ── BV11..BV13 — the import date rules, where they actually live ───
+        _import_dates()
+
+        # ── BV14 — Ingress Sync Settings port range ────────────────────────
+        _port_range()
+
     finally:
         frappe.set_user("Administrator")
         frappe.db.rollback()
@@ -166,6 +173,93 @@ def run():
     print(f"\n{len(RESULTS) - len(failed)}/{len(RESULTS)} passed"
           + (f" — FAILED: {failed}" if failed else ""))
     return not failed
+
+
+def _import_dates():
+    """🔴 The import date rules live on `manual_import`, NOT on the doctype.
+
+    The 2026-09-02 survey first reported both of these as missing, because it
+    created a bare `Ingress Import Batch` **document** and watched it save. A
+    batch document is only the RECORD of a run; nothing imports when you insert
+    one. The rules are on the function that does the work — the third time in two
+    days that probing the wrong surface produced a false finding.
+
+    ⚠️ These call `manual_import` for real. The two refusals throw before the
+    machine is touched, so nothing is created. The positive control deliberately
+    does NOT run — a successful import would write Finger Logs — so
+    `from_date == to_date` is asserted by the fact that it gets past the date
+    checks and fails on the connection instead.
+    """
+    from caf.caf.ingress import sync
+
+    hrm = _pick("HR Manager")
+    if not hrm:
+        check("BV11-IMPORT-DATE-ORDER", False, "no HR Manager on this site")
+        return
+
+    def attempt(frm, to):
+        frappe.set_user(hrm)
+        try:
+            sync.manual_import(frm, to, purpose="Test")
+            return "RAN"
+        except Exception as e:
+            return f"{type(e).__name__}: {str(e).replace(chr(10), ' ')[:150]}"
+        finally:
+            frappe.set_user("Administrator")
+            frappe.db.rollback()
+
+    today = nowdate()
+    v = attempt("2026-06-30", "2026-06-01")
+    check("BV11-IMPORT-DATE-ORDER", "is before" in v,
+          f"from_date after to_date → {v}. Refused before the machine is "
+          f"touched, so no batch is created for an impossible request")
+
+    v = attempt(add_days(today, 5), add_days(today, 9))
+    check("BV12-IMPORT-NOT-FUTURE", "still incomplete" in v,
+          f"a future range → {v}. FBR43: yesterday is the newest importable work "
+          f"date, because today's punches are mid-sentence — somebody has clocked "
+          f"in and not out. ⚠️ Refused LOUDLY rather than clamped: a clamp would "
+          f"let somebody ask for 1–17 Aug, receive 1–16, and never learn")
+
+    v = attempt(add_days(today, -1), today)
+    check("BV13-IMPORT-NOT-TODAY", "still incomplete" in v,
+          f"to_date = today → {v}. This is MG's point exactly: Ingress is still "
+          f"recording, and `attendance` is only materialised when somebody runs "
+          f"the day in Ingress (FBR49) — so even yesterday can be half-written, "
+          f"which the batch reports as `unprocessed_dates`")
+
+
+def _port_range():
+    """`port = 0` used to save, and it is worse than inert."""
+    before = frappe.db.get_single_value("Ingress Sync Settings", "port")
+    outcomes = {}
+    for label, value in (("0", 0), ("70000", 70000), ("3306", 3306)):
+        try:
+            d = frappe.get_doc("Ingress Sync Settings")
+            d.port = value
+            d.flags.ignore_permissions = True
+            d.save()
+            outcomes[label] = "accepted"
+        except frappe.ValidationError:
+            outcomes[label] = "refused"
+        finally:
+            frappe.db.rollback()
+    # rollback does not restore a Single's cached doc; put the value back plainly
+    frappe.db.set_single_value("Ingress Sync Settings", "port", before)
+    frappe.db.commit()
+    frappe.clear_document_cache("Ingress Sync Settings", "Ingress Sync Settings")
+
+    check("BV14-PORT-RANGE",
+          outcomes["0"] == "refused" and outcomes["70000"] == "refused"
+          and outcomes["3306"] == "accepted"
+          and frappe.db.get_single_value("Ingress Sync Settings", "port") == before,
+          f"port 0 → {outcomes['0']}, 70000 → {outcomes['70000']}, "
+          f"3306 → {outcomes['3306']}; restored to {before}. 🔴 Zero was not "
+          f"inert — `get_settings()` reads `int(doc.port or 3306)`, so it "
+          f"SILENTLY became 3306 while the settings page showed 0, and the next "
+          f"person debugging a connection would read a number the code never "
+          f"uses. A wrong port fails as a timeout, which looks exactly like the "
+          f"Ingress PC being switched off (FBR48)")
 
 
 def _pick(role_needed, role_forbidden=()):

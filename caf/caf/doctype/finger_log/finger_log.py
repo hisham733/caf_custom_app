@@ -64,38 +64,6 @@ def _link(route, label):
     return f'<a href="{route}">{frappe.utils.escape_html(str(label))}</a>'
 
 
-TITLE_SEP = " · "
-
-
-def compose_title(work_date, ftag_id, employee_name):
-    """The Finger Log's human-readable identity: `2026-08-03 · 442 · Chen Xiao Natalie`.
-
-    MG asked for the Ingress device id to be visible so a log can be cross-checked
-    against the machine at a glance, and the name alongside it for human
-    verification. This is the *display*; `name` stays the identifier.
-
-    🔴 Read from `ftag_id`, NOT from `Employee.attendance_device_id`.
-    They agree on all 3,167 rows today, but the employee field is **mutable** — a
-    re-enrolment on a new reader changes it, and every historical title would then
-    claim a device that was not the one Ingress recorded. `ftag_id` is
-    `set_only_once` and captured at import, so it is what the machine held ON THE
-    DAY. That is the whole reason a title beats putting the device id in `name`
-    (FBR67): a display re-reads, an identifier is frozen — so the value that goes
-    in the display must still be the historically correct one.
-
-    ⚠️ `name` already LOOKS like this format and is not. `autoname` builds
-    `<work_date>-<3-digit daily series>`, so `2026-07-01-232` is the 232nd log of
-    that day, not device 232 — and device ids are 3-digit numbers in the same
-    range. The title is what removes that ambiguity.
-    """
-    parts = [
-        getdate(work_date).strftime("%Y-%m-%d") if work_date else "????-??-??",
-        cstr(ftag_id) or "no device",
-        cstr(employee_name) or "?",
-    ]
-    return TITLE_SEP.join(parts)
-
-
 def apply_ot_rules(overtime, params):
     # The three per-shift settings, in the order they apply. Kept a module-level
     # function of plain values so it can be tested without a document.
@@ -209,11 +177,16 @@ class FingerLog(Document):
         if self.employee and not frappe.db.exists("Employee", self.employee):
             frappe.throw(_("Employee {0} does not exist").format(self.employee))
 
-        # OUTSIDE the docstatus guard below on purpose. The title is the doctype's
-        # `title_field`, so it must exist on a draft as well as a submitted log —
-        # and its three inputs are all set_only_once, so recomputing costs nothing
-        # and can never disagree with itself.
-        self.caf_title = compose_title(self.work_date, self.ftag_id, self.employee_name)
+        # ⚠️ 2026-09-02 — a `caf_title` field (`<work_date> · <ftag_id> ·
+        # <employee_name>`) was built here and REMOVED the same day on MG's
+        # decision: the name stays `<work_date>-<3-digit daily series>` and no
+        # display field is added. FBR67 carries the reasoning, including the
+        # objection to renaming that turned out not to follow.
+        #
+        # 🔴 The one fact the revert leaves standing, and the user guide now warns
+        # about it: the trailing number LOOKS like a device id and is not.
+        # `2026-07-01-232` is the 232nd log of that day and belongs to device 385
+        # — measured, 0 of 500 names match their own log's device.
         # (debug prints removed 2026-08-10 — the importer creates thousands of
         # rows per run and three lines each buried the actual result)
         # if FingerLog record is NOT submitted, then execute the following

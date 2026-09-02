@@ -39,6 +39,37 @@ class IngressSyncSettings(Document):
         if self.source_mode == "Snapshot CSV" and not self.snapshot_path:
             frappe.throw(_("Snapshot CSV needs a path inside the frappe container."))
 
+        self.check_port()
+
+    def check_port(self):
+        """A TCP port is 1..65535, and Ingress listens on 3306.
+
+        Found by the 2026-09-02 validation survey (T-27): `port = 0` saved
+        happily. ⚠️ It is not inert — but it is worse than inert, because
+        `get_settings()` reads `int(doc.port or 3306)`, so a zero **silently
+        becomes 3306**. The settings page would then show `0` while the importer
+        connected to 3306, and the next person to debug a connection problem
+        would be reading a number the code never uses.
+
+        Refused rather than defaulted here, for the reason FBR48 was written
+        about: a wrong port produces a *connection timeout*, which reads as
+        "the PC is switched off" rather than "the address is wrong" — so the
+        diagnosis starts in the wrong place while the attendance gap grows.
+        """
+        if self.port in (None, ""):
+            return
+        port = frappe.utils.cint(self.port)
+        if 1 <= port <= 65535:
+            return
+        frappe.throw(
+            _("<b>{0}</b> is not a usable port. A TCP port is between 1 and "
+              "65535, and Ingress's MySQL listens on <b>3306</b> — leave it at "
+              "that unless somebody has moved it.<br><br>⚠️ A wrong port fails as "
+              "a <i>connection timeout</i>, which looks exactly like the Ingress "
+              "PC being switched off, so this is worth getting right now rather "
+              "than diagnosing later.").format(self.port),
+            title=_("Port {0} is out of range").format(self.port))
+
 
 def get_settings():
     """The settings document, or a defaulted one on a site that never saved it.
