@@ -338,90 +338,56 @@ Please confirm that is still the rule.
 
 
 def _burn_section():
-    """🔴 The December trap MG spotted — with real people, so HR can picture it.
+    """Point at the existing decision paper — do NOT re-ask the question.
 
-    MG, 2026-09-02: *"if Mr A joins Dec 25 2026, then all annual leave becomes
-    available on Dec 25 2027, but he only has 31-25 days to use it, else burn,
-    because of another business rule = no carry forward."*
+    🔴 **A correction, 2026-09-02.** The first version of this section asked HR to
+    choose between four options for the late-year-joiner problem. It should never
+    have existed: **`LEAVE_LATE_JOINER_for_HR_decision.html` already asks exactly
+    this**, prepared 2026-08-13, using the *same* employee as its worked example,
+    with its own diagrams and **three** options — A change nothing · B skip the
+    first grant · C issue it in January — plus a recommendation (C) and a stated
+    default if unanswered (A).
 
-    Two rules that are each reasonable and collide:
+    Asking again with a **different set of options** would have been worse than
+    not asking at all: HR would hold two papers on one question whose answers do
+    not map onto each other, and would reasonably assume they were two questions.
 
-        annual leave cannot be TAKEN until one year of service
-        annual leave does NOT carry forward past 31 December
-
-    A late-year joiner therefore has their entitlement unlocked and expired within
-    days of each other. Shown with names and real dates rather than as a
-    hypothetical, because HR will recognise the people and the abstract version is
-    easy to wave away.
+    So this is a pointer and a status line. The count is computed live, because it
+    grows with every October–December intake and a stale figure is exactly what
+    stops a document being believed.
     """
-    rows = frappe.db.sql("""
-        SELECT name, employee_name, department, date_of_joining
-          FROM `tabEmployee`
-         WHERE status = 'Active' AND MONTH(date_of_joining) IN (10, 11, 12)
-      ORDER BY DAYOFYEAR(date_of_joining) DESC
-         LIMIT 6""", as_dict=True)
-    if not rows:
+    n = frappe.db.sql("""
+        SELECT COUNT(*) FROM `tabEmployee`
+         WHERE status = 'Active' AND MONTH(date_of_joining) IN (10, 11, 12)""")[0][0]
+    total = frappe.db.count("Employee", {"status": "Active"})
+    if not n:
         return ""
 
-    today = getdate(nowdate())
-    body = []
-    for r in rows:
-        join = getdate(r.date_of_joining)
-        unlock = getdate(f"{join.year + 1}-{join.month:02d}-{join.day:02d}")
-        year_end = getdate(f"{unlock.year}-12-31")
-        days = (year_end - unlock).days
-        soon = unlock >= today
-        body.append(
-            f"<tr{' style=\"background:var(--amberbg)\"' if soon else ''}>"
-            f"<td><b>{frappe.utils.escape_html(r.employee_name)}</b>"
-            f"<div class='small'>{r.name} &middot; "
-            f"{frappe.utils.escape_html((r.department or '').replace(' - CAF',''))}"
-            f"</div></td>"
-            f"<td class='small'>{join}</td>"
-            f"<td class='small'>{unlock}</td>"
-            f"<td><b>{days}</b> days"
-            f"{' &nbsp;<span class=\"tag t-conflict\">still to come</span>' if soon else ''}"
-            f"</td></tr>")
+    soonest = frappe.db.sql("""
+        SELECT employee_name, date_of_joining FROM `tabEmployee`
+         WHERE status = 'Active' AND MONTH(date_of_joining) IN (10, 11, 12)
+      ORDER BY DAYOFYEAR(date_of_joining) DESC LIMIT 1""", as_dict=True)
+    who = soonest[0] if soonest else None
+    nearest = (f" &mdash; the nearest being <b>"
+               f"{frappe.utils.escape_html(who.employee_name)}</b>, who joined "
+               f"{who.date_of_joining}") if who else ""
 
     return f"""
-<h2>0b. 🔴 A question the calendar creates &mdash; late-year joiners</h2>
-<div class="note stop">
-Two rules that are each sensible collide for anyone who joins near the end of a
-year:
-<ol>
-<li>annual leave cannot be <b>taken</b> until one year of service;</li>
-<li>annual leave does <b>not carry forward</b> past 31 December.</li>
-</ol>
-So their entitlement unlocks and expires within days of each other &mdash; they
-are credited the days, become entitled to use them, and then lose them.
-</div>
-
-<div class="wrap"><table>
-<tr><th>Employee</th><th>Joined</th><th>Annual leave usable from</th>
-    <th>Days left before it expires</th></tr>
-{''.join(body)}
-</table></div>
-
-<p><b>Reading the worst case:</b> somebody joining on 15 December has
-<b>16 days</b> &mdash; including weekends and public holidays &mdash; to use a
-full year's annual leave, or lose it. In practice that is two or three working
-weeks in the busiest part of the year.</p>
-
-<div class="note warn">
-<b>Please tell us which of these you intend</b>, because the system currently does
-none of them:
-<ol>
-<li><b>Nothing &mdash; it burns.</b> Defensible, and it is what the two rules say
-    literally. But it should be a decision rather than an accident.</li>
-<li><b>Let a late joiner carry their first year forward</b>, once only.</li>
-<li><b>Unlock at the start of the next cycle instead of on the anniversary</b>
-    &mdash; they wait slightly longer and then have a full year to use it.</li>
-<li><b>Pro-rate it away</b> &mdash; a December joiner is credited almost nothing
-    for that cycle anyway, so there is little to lose.</li>
-</ol>
-<b>⚠️ Whichever you choose, nothing currently prevents or permits any of it</b>
-&mdash; the one-year bar is a rule in HR's head, not in the system. Confirming it
-here is what lets it be built correctly.
+<h2>0c. Already asked separately &mdash; late-year joiners</h2>
+<div class="note">
+<b>This is not a new question and does not need answering here.</b> Annual leave
+cannot be taken until one year of service, and it does not carry forward past
+31&nbsp;December &mdash; so somebody joining in October, November or December has
+their entitlement unlock and expire within weeks of each other.
+<br><br>
+It is already set out in its own paper &mdash;
+<b><code>LEAVE_LATE_JOINER_for_HR_decision.html</code></b>, prepared 2026-08-13,
+with three options and a recommendation. It affects <b>{n} of {total}</b> active
+staff{nearest}.
+<br><br>
+⚠️ <b>If that paper goes unanswered, option A stands by default</b> &mdash; the
+days are granted and then quietly expire. Noted here only so the two documents are
+known to be about the same people.
 </div>
 """
 
