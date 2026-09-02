@@ -522,6 +522,12 @@ override_doctype_dashboards = {
     # larger, more stable answer to "who is on this shift" — was invisible from
     # the shift itself.
     "Shift Type": "caf.caf.overrides.shift_type_dashboard.get_data",
+    # MG's manual test, 2026-09-02. Attendance.caf_finger_log has existed since
+    # Chunk 3 and pointed one way in the UI only: from an Attendance you could
+    # reach its Finger Log, but not the reverse — HR searched the Attendance list
+    # by employee and date for a document this one created. A connections panel
+    # is a read-only query, so it adds no delete or cancel constraint.
+    "Finger Log": "caf.caf.overrides.finger_log_dashboard.get_data",
 }
 
 # exempt linked doctypes from being automatically cancelled
