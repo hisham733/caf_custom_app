@@ -43,6 +43,8 @@ bench --site <site> execute caf.scripts.<name>.verify                     # PROV
 | `alt_saturday_setup` · `holiday_lists` | alternating-Saturday shifts and calendars |
 | `leave_policy_seed` · `leave_formula` | the 3 policies and the under-2-year curve |
 | `leave_group_review` | 🟡 read-only — builds the HR confirmation page |
+| `join_date_signoff_html` | 🟡 read-only — the joining-date sign-off page, all 89 against ERPNext · Ingress `IssueDate` · the machine's first raw tap (T-28) |
+| `leave_workflow` | 🔴 the **`CAF Leave Approval`** workflow — 9 states. **NOT in fixtures**, so this script is the only route to production (T-17 item 16) |
 | `readiness_audit` | ⭐ **13 checks; a clean run is the go-live gate** |
 
 ## Gotchas
