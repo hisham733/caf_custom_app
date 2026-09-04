@@ -85,6 +85,12 @@ SCRIPTS = [
      "proves tabSeries.current is ahead of every minted suffix (quirks #37)"),
     ("join_date_from_ingress", "run", True,
      "the 9 disputed join dates, adjudicated against the machine's first tap"),
+    ("retire_ess_role", "run", False,
+     "cuts Employee Self Service from 4 holders to 0 (OD-84)"),
+    ("leave_type_hygiene", "run", False,
+     "turns off the one Leave Type that would carry days forward"),
+    ("join_date_signoff_apply", "run", False,
+     "writes HR's four signed-off joining dates (FBR74)"),
 ]
 
 VERIFIERS = [
@@ -94,6 +100,9 @@ VERIFIERS = [
     ("backfill_manifest_employee_name", False),
     ("retire_hr_user_role", False),
     ("join_date_from_ingress", True),
+    ("retire_ess_role", False),
+    ("leave_type_hygiene", False),
+    ("join_date_signoff_apply", False),
 ]
 
 
