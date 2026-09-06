@@ -91,6 +91,8 @@ SCRIPTS = [
      "turns off the one Leave Type that would carry days forward"),
     ("join_date_signoff_apply", "run", False,
      "writes HR's four signed-off joining dates (FBR74)"),
+    ("alt_saturday_setup", "run", False,
+     "the four alternate-Saturday shifts, their pairing and their drift (OD-88)"),
 ]
 
 VERIFIERS = [
@@ -103,6 +105,7 @@ VERIFIERS = [
     ("retire_ess_role", False),
     ("leave_type_hygiene", False),
     ("join_date_signoff_apply", False),
+    ("alt_saturday_setup", False),
 ]
 
 

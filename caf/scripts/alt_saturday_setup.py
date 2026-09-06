@@ -34,6 +34,7 @@ RE-RUNNABLE: every step checks before it writes, so this can be run repeatedly.
 
 import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
+from frappe.utils import getdate
 
 # ---------------------------------------------------------------- the schema
 #
@@ -213,26 +214,95 @@ def backfill_shift_codes() -> int:
     return changed
 
 
-def ensure_shifts():
-    """Create the four mirror shifts, wire the pairs, set the anchors.
+# 🔴 OD-88 — WHAT THIS SCRIPT OWNS, AND WHAT IT MUST NOT TOUCH AGAIN.
+#
+# MG, 2026-09-04: *"if HR manager manually change lunch = 30 min on both clones …
+# and if for whatever reason CAF app is reinstalled OR bench_migrate is called,
+# then OT = True again, silently?"*
+#
+# The migrate half of that was unfounded — this module is in no hook, no
+# `after_migrate`, and nothing calls it (FBR76, verified by grep over the whole
+# app). But the **re-run** half was real, and it was worse than it looked: the
+# first version re-copied all 13 CLONED parameters from the source on EVERY
+# invocation, including an invocation whose only purpose was to repair a mirror
+# link. So a run meant to fix a one-way link silently reverted HR's lunch and OT
+# settings, with no error and no log entry.
+#
+# The split below is the fix (OD-88, MG 2026-09-04: *"Yes. Copy on creation only;
+# report drift instead of reverting it"*):
+#
+#   THE SCRIPT OWNS          because it is a structural invariant, not a setting
+#     caf_shift_code           identity; `unique`, and code/tests hold it (OD-70)
+#     caf_alt_sat              declares the shift is half of a pair
+#     caf_sat_mirror           MUST be mutual — a one-way link fails in the
+#                              direction nobody tests (FBR57), and repairing it
+#                              is the main reason to re-run this at all
+#
+#   HR OWNS — reported, never overwritten
+#     the 13 CLONED parameters start/end, lunch, OT gate and rounding, workdays
+#     caf_sat_anchor_date      🔴 changing this RE-PHASES every later Saturday
+#     caf_sat_anchor           🔴 same — and flipping one half without the other
+#                              means nobody works that Saturday
+#
+# ⚠️ The anchor moved from "always written" to "written once" deliberately. It is
+# the single value that decides which group rests on which Saturday, and a silent
+# rewrite of it is the "run away" failure OD-71 exists to prevent. If it is ever
+# genuinely wrong, `resync_from_source()` is the deliberate, named act that fixes
+# it — nobody should reach it by re-running `setup()`.
+PAIRING = ("caf_shift_code", "caf_alt_sat", "caf_sat_mirror")
+HR_OWNED = CLONED + ("caf_sat_anchor_date", "caf_sat_anchor")
 
-    ⚠️ `caf_work_sat` stays **1** on all four. That flag means "this shift works
-    Saturdays at all", which is true of both halves of a pair — WHICH Saturdays is
-    the Holiday List's job, and only after R1 does the resolver read it. Until
-    then these shifts resolve every Saturday as a workday, which is why employees
-    are assigned in a separate step.
+
+def _drift(name, source, rests):
+    """What this shift holds vs what a fresh clone would hold. Reports only."""
+    src = frappe.db.get_value("Shift Type", source, CLONED, as_dict=True)
+    cur = frappe.db.get_value("Shift Type", name, HR_OWNED, as_dict=True)
+    want = dict(src)
+    want["caf_work_sat"] = 1
+    want["caf_sat_anchor_date"] = getdate(ANCHOR)
+    want["caf_sat_anchor"] = "Rest" if rests else "Work"
+
+    out = []
+    for f in HR_OWNED:
+        a, b = cur.get(f), want.get(f)
+        if f == "caf_sat_anchor_date":
+            a = getdate(a) if a else None
+        if str(a) != str(b):
+            out.append((f, a, b))
+    return out
+
+
+def ensure_shifts():
+    """Create the four mirror shifts, wire the pairs, set the anchors ONCE.
+
+    🔴 **Re-runnable, and re-running it changes nothing HR set.** See the OD-88
+    note above: on a shift that already exists this touches only the three
+    PAIRING fields and reports everything else as drift.
+
+    ⚠️ `caf_work_sat` stays **1** on all four at creation. That flag means "this
+    shift works Saturdays at all", which is true of both halves of a pair — WHICH
+    Saturdays is the Holiday List's job, and only after R1 does the resolver read
+    it. Until then these shifts resolve every Saturday as a workday, which is why
+    employees are assigned in a separate step.
     """
+    created, existing = [], []
+
     for name, source, code, rests in SHIFTS:
-        src = frappe.db.get_value("Shift Type", source, CLONED, as_dict=True)
-        if not src:
+        if not frappe.db.exists("Shift Type", source):
             frappe.throw(f"Source shift {source!r} not found")
 
         if frappe.db.exists("Shift Type", name):
-            doc = frappe.get_doc("Shift Type", name)
-        else:
-            doc = frappe.new_doc("Shift Type")
-            doc.name = name
+            existing.append((name, source, rests))
+            # PAIRING only. Never the parameters, never the anchor.
+            frappe.db.set_value("Shift Type", name, {
+                "caf_shift_code": code,
+                "caf_alt_sat": 1,
+            }, update_modified=False)
+            continue
 
+        src = frappe.db.get_value("Shift Type", source, CLONED, as_dict=True)
+        doc = frappe.new_doc("Shift Type")
+        doc.name = name
         for f in CLONED:
             doc.set(f, src.get(f))
         doc.caf_work_sat = 1
@@ -241,29 +311,112 @@ def ensure_shifts():
         doc.caf_sat_anchor_date = ANCHOR
         doc.caf_sat_anchor = "Rest" if rests else "Work"
         doc.flags.ignore_permissions = True
-        doc.save()
+        doc.insert()
+        created.append(name)
 
-    # Both directions, always. A one-way link is a half-configured pair and it
-    # fails in the direction nobody tests.
+    # Both directions, always — this IS the script's job. A one-way link is a
+    # half-configured pair and it fails in the direction nobody tests.
     for a, b in MIRRORS:
-        frappe.db.set_value("Shift Type", a, "caf_sat_mirror", b)
-        frappe.db.set_value("Shift Type", b, "caf_sat_mirror", a)
+        frappe.db.set_value("Shift Type", a, "caf_sat_mirror", b, update_modified=False)
+        frappe.db.set_value("Shift Type", b, "caf_sat_mirror", a, update_modified=False)
 
     codes = backfill_shift_codes()
     frappe.db.commit()
+    frappe.clear_cache(doctype="Shift Type")
 
-    print(f"  shift codes backfilled on {codes} existing shift(s)")
+    print(f"  created {len(created)}: {created or 'none'}")
+    print(f"  already present, parameters left alone: {len(existing)}")
+    print(f"  shift codes backfilled on {codes} other shift(s)")
+
     for name, _, code, rests in SHIFTS:
         row = frappe.db.get_value(
             "Shift Type", name,
             ["caf_shift_code", "caf_alt_sat", "caf_sat_mirror",
              "caf_sat_anchor_date", "caf_sat_anchor", "caf_work_sat",
-             "caf_allow_ot", "start_time", "end_time"], as_dict=True)
+             "caf_allow_ot", "caf_lunch_minutes", "start_time", "end_time"],
+            as_dict=True)
         back = frappe.db.get_value("Shift Type", row.caf_sat_mirror, "caf_sat_mirror")
         ok = "ok " if back == name else "🔴 ONE-WAY LINK"
         print(f"    {ok} {name:26s} code={row.caf_shift_code:14s} "
               f"anchor={row.caf_sat_anchor:5s} mirror={row.caf_sat_mirror}")
+
+    report_drift()
     return True
+
+
+def report_drift():
+    """Every place a live shift differs from a fresh clone of its source.
+
+    🔴 **A difference here is NOT automatically a fault.** HR changing a lunch
+    break on one half of a pair is exactly the kind of edit this script stopped
+    reverting. What it is, is *visible* — which is the whole of OD-88. Read the
+    list, decide, and if a value genuinely should come back from the source, say
+    so out loud with `resync_from_source`.
+    """
+    print("\n  ── drift from source (reported, NOT corrected) ──")
+    total = 0
+    for name, source, code, rests in SHIFTS:
+        if not frappe.db.exists("Shift Type", name):
+            continue
+        rows = _drift(name, source, rests)
+        total += len(rows)
+        if not rows:
+            print(f"    ok  {name:26s} matches a fresh clone of {source}")
+            continue
+        print(f"    ⚠️  {name:26s} {len(rows)} field(s) differ from {source}:")
+        for f, is_now, would_be in rows:
+            flag = "🔴 " if f.startswith("caf_sat_anchor") else "   "
+            print(f"        {flag}{f:22s} is {str(is_now):12s} "
+                  f"a fresh clone would be {would_be}")
+    if total:
+        print(f"\n    {total} difference(s). ⚠️ If HR set them, that is correct and "
+              f"nothing should be done.\n    Only if they are genuinely wrong: "
+              f"bench execute caf.scripts.alt_saturday_setup.resync_from_source")
+    return total
+
+
+def resync_from_source(dry_run: bool = True):
+    """🔴 THE DELIBERATE ACT. Push the source's parameters back onto the clones.
+
+    This is what `ensure_shifts()` used to do silently on every run. It is kept
+    because there is a real case for it — the source was corrected and the clones
+    should follow — but it is now a separate, named command with a dry run, so it
+    can only happen because somebody decided it should.
+
+    ⚠️ It rewrites the ANCHOR too, and a changed anchor re-phases every Saturday
+    after it. Read `report_drift()` first.
+    """
+    plan = []
+    for name, source, code, rests in SHIFTS:
+        if frappe.db.exists("Shift Type", name):
+            for f, is_now, would_be in _drift(name, source, rests):
+                plan.append((name, f, is_now, would_be))
+
+    print(f"  {'WOULD OVERWRITE' if dry_run else 'OVERWRITING'} {len(plan)} value(s)")
+    for name, f, is_now, would_be in plan:
+        print(f"    {name:26s} {f:22s} {is_now} → {would_be}")
+    if dry_run:
+        print("    ... run apply_resync_from_source to apply")
+        return len(plan)
+
+    for name, f, _is_now, would_be in plan:
+        frappe.db.set_value("Shift Type", name, f, would_be)
+    for name in {p[0] for p in plan}:
+        frappe.get_doc("Shift Type", name).add_comment(
+            "Comment",
+            f"alt_saturday_setup.resync_from_source — parameters pushed back "
+            f"from the source shift. OD-88: this is a deliberate act, never a "
+            f"side effect of re-running setup().")
+    frappe.db.commit()
+    frappe.clear_cache(doctype="Shift Type")
+    print(f"  DONE — {len(plan)} value(s) overwritten")
+    return len(plan)
+
+
+def apply_resync_from_source():
+    """`resync_from_source` for real — separate entry point because
+    `bench execute --kwargs` does not survive PowerShell (PROTOCOL §A3)."""
+    return resync_from_source(dry_run=False)
 
 
 # ------------------------------------------------- the holiday HR forgot to add
@@ -516,3 +669,83 @@ def setup():
     ensure_company_holidays()
     made = holiday_lists.generate_holiday_lists(2026)
     print(f"  holiday lists for 2026: {made}")
+
+
+# ────────────────────────────────────────────── the CAF scripts contract
+#
+# `run()` reports and writes nothing; `verify()` proves the state. Both were
+# missing until OD-88, which is why this module was the one production script
+# `test_data_scripts` did not cover — its only entry point wrote.
+
+
+def run():
+    """Report only. What exists, how it is paired, and where it has drifted."""
+    print(f"\n{'=' * 74}\nALTERNATE-SATURDAY SHIFTS — current state\n{'=' * 74}")
+    for name, source, code, rests in SHIFTS:
+        if not frappe.db.exists("Shift Type", name):
+            print(f"  🔴 MISSING {name} (would be cloned from {source})")
+            continue
+        row = frappe.db.get_value(
+            "Shift Type", name,
+            ["caf_shift_code", "caf_alt_sat", "caf_sat_mirror",
+             "caf_sat_anchor_date", "caf_sat_anchor", "caf_lunch_minutes",
+             "caf_allow_ot", "holiday_list"], as_dict=True)
+        emps = frappe.db.count("Employee",
+                               {"default_shift": name, "status": "Active"})
+        back = frappe.db.get_value("Shift Type", row.caf_sat_mirror,
+                                   "caf_sat_mirror") if row.caf_sat_mirror else None
+        print(f"\n  {name}")
+        print(f"    code={row.caf_shift_code}  anchor={row.caf_sat_anchor} on "
+              f"{row.caf_sat_anchor_date}  active employees={emps}")
+        print(f"    mirror={row.caf_sat_mirror} "
+              f"{'(mutual ok)' if back == name else '🔴 ONE-WAY'}")
+        print(f"    lunch={row.caf_lunch_minutes} ot={row.caf_allow_ot} "
+              f"list={row.holiday_list}")
+    n = report_drift()
+    print(f"\n(report only — `setup` creates what is missing and repairs pairing; "
+          f"it does NOT touch the {n} drifted value(s))")
+    return {"drift": n}
+
+
+def verify():
+    """Four assertions, and the third is the one OD-88 exists for."""
+    fails = 0
+
+    missing = [n for n, _s, _c, _r in SHIFTS if not frappe.db.exists("Shift Type", n)]
+    ok = not missing
+    print(f"AS1-SHIFTS-EXIST      {'PASS' if ok else 'FAIL'}  "
+          f"missing: {missing or 'none'} — all four alternate-Saturday shifts")
+    fails += 0 if ok else 1
+
+    broken = []
+    for a, b in MIRRORS:
+        if frappe.db.get_value("Shift Type", a, "caf_sat_mirror") != b:
+            broken.append(f"{a} does not name {b}")
+        if frappe.db.get_value("Shift Type", b, "caf_sat_mirror") != a:
+            broken.append(f"{b} does not name {a}")
+    ok = not broken
+    print(f"AS2-MIRRORS-MUTUAL    {'PASS' if ok else 'FAIL'}  {broken or 'both pairs mutual'} "
+          f"— a one-way link fails in the direction nobody tests (FBR57)")
+    fails += 0 if ok else 1
+
+    opposite = []
+    for a, b in MIRRORS:
+        if (frappe.db.get_value("Shift Type", a, "caf_sat_anchor")
+                == frappe.db.get_value("Shift Type", b, "caf_sat_anchor")):
+            opposite.append(f"{a}/{b} anchor the SAME way")
+    ok = not opposite
+    print(f"AS3-ANCHORS-OPPOSITE  {'PASS' if ok else 'FAIL'}  "
+          f"{opposite or 'each pair anchors Rest against Work'} — if both rest, "
+          f"nobody covers that Saturday")
+    fails += 0 if ok else 1
+
+    codes = {n: frappe.db.get_value("Shift Type", n, "caf_shift_code")
+             for n, _s, _c, _r in SHIFTS if frappe.db.exists("Shift Type", n)}
+    want = {n: c for n, _s, c, _r in SHIFTS if n in codes}
+    ok = codes == want
+    print(f"AS4-CODES-STABLE      {'PASS' if ok else 'FAIL'}  {codes} "
+          f"(want {want}) — code and tests hold these, not the name (OD-70)")
+    fails += 0 if ok else 1
+
+    print(f"\n{'clean' if not fails else str(fails) + ' problem(s)'}")
+    return fails
