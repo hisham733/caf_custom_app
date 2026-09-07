@@ -93,6 +93,8 @@ SCRIPTS = [
      "writes HR's four signed-off joining dates (FBR74)"),
     ("alt_saturday_setup", "run", False,
      "the four alternate-Saturday shifts, their pairing and their drift (OD-88)"),
+    ("shift_reassign", "run", False,
+     "moves an employee between shifts, resolved by device id not by name (T-32)"),
 ]
 
 VERIFIERS = [
@@ -106,6 +108,7 @@ VERIFIERS = [
     ("leave_type_hygiene", False),
     ("join_date_signoff_apply", False),
     ("alt_saturday_setup", False),
+    ("shift_reassign", False),
 ]
 
 
