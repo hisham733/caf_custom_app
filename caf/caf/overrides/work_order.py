@@ -383,6 +383,7 @@ def make_stock_entry(
             #     frappe.throw(frappe._("Balance Item is greater than the total quantity to produce"))
             else:
                 item.qty = total_balance
+                item.transfer_qty = total_balance
                 item.custom_table_link_id = work_order.custom_link_id
                 item.t_warehouse = warehouse or (
                     scrap_target_warehouse
