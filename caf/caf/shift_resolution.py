@@ -46,6 +46,43 @@ _DOW_FIELD = ("caf_work_mon", "caf_work_tue", "caf_work_wed", "caf_work_thu",
               "caf_work_fri", "caf_work_sat", "caf_work_sun")
 
 
+def by_code(code: str) -> str:
+    """The Shift Type NAME for a stable `caf_shift_code`. OD-70 · OD-96.
+
+    🔴 **Code and tests must hold the CODE, never the name.** A Shift Type is
+    autonamed `prompt`, so its name is a human label HR may rename at will
+    (FBR75) — and Frappe cascades a rename across every Link that points at it,
+    so the DATA survives. What does not survive is a string literal in a `.py`
+    file.
+
+    Measured 2026-09-09, which is why this exists: **~30 executable references
+    to shift names across 3 scripts and 8 test modules**, and
+    `alt_saturday_setup` would have **recreated the old shifts** on its next run
+    after a rename. OD-70 created `caf_shift_code` in August precisely to prevent
+    that, and nothing was ever migrated onto it.
+
+    ⚠️ Raises rather than returning None. A test that silently gets `None` for a
+    shift asserts against nothing and passes — which is worse than failing.
+    """
+    name = frappe.db.get_value("Shift Type", {"caf_shift_code": code}, "name")
+    if not name:
+        known = frappe.get_all("Shift Type", pluck="caf_shift_code", limit=40)
+        frappe.throw(
+            f"No Shift Type carries caf_shift_code {code!r}. "
+            f"Codes on this site: {sorted(c for c in known if c)}",
+            title="Unknown shift code")
+    return name
+
+
+def code_for(shift: str) -> str | None:
+    """The reverse — the stable code for a Shift Type name.
+
+    For messages and reports that were handed a name and want to say something
+    durable about it.
+    """
+    return frappe.db.get_value("Shift Type", shift, "caf_shift_code")
+
+
 def get_shift_for_date(employee: str, work_date) -> str | None:
     """The shift that applies to this employee on this date. OD-45, option A.
 

@@ -136,9 +136,14 @@ def write(path=None):
         f"<td class='num'>{c['in']}–{c['out']}</td>"
         f"<td class='num'>{_hm(c['stint'])}</td>"
         f"<td class='num'>{'yes, ' + _hm(c['actual_lunch']) if c['punched'] else '<b>no</b>'}</td>"
-        f"<td class='num{' diff' if c['A'] != c['B'] else ''}'>{c['A']}</td>"
+        # 🔴 The column ORDER here must match the header below — A, C, B.
+        # It did not on 2026-09-09: the header read A/C/B while the cells emitted
+        # A/B/C, so option C appeared to pay 8.5 h on a day it actually pays 7.5.
+        # MG caught it. Column order and header order are now written adjacently
+        # so they cannot drift again.
+        f"<td class='num{' diff' if c['A'] != c['C'] else ''}'>{c['A']}</td>"
+        f"<td class='num{' diff' if c['C'] != c['A'] else ''}'>{c['C']}</td>"
         f"<td class='num{' diff' if c['B'] != c['A'] else ''}'>{c['B']}</td>"
-        f"<td class='num{' diff' if c['C'] not in (c['A'], c['B']) or c['C'] != c['A'] else ''}'>{c['C']}</td>"
         f"<td class='num'>{c['recorded']}</td></tr>"
         for c in disagree[:20])
 

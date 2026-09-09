@@ -177,16 +177,43 @@ def ensure_fields():
 # (Too Poh Chin, Najwa, Seow) worked.
 ANCHOR = "2026-04-11"
 
+# 🔴 THE CODE IS THE IDENTITY; THE NAME IS ONLY THE FIRST NAME IT IS GIVEN.
+#
+# OD-96, 2026-09-09. Before this, every entry below held a NAME, and that made
+# the four shifts unrenameable: after an HR rename, `frappe.db.exists(name)`
+# would find nothing and this script would **create the old shifts again**,
+# silently, alongside the renamed ones.
+#
+# Now the tuple carries the code, and `_resolve()` finds the live shift by code
+# first, falling back to the seed name only when the shift does not exist yet —
+# which is the one moment a name is genuinely needed, at creation.
+#
+# (code, seed name used only at creation, source code, rests on the anchor)
 SHIFTS = [
-    # (new shift, cloned from, code, rests on the anchor Saturday)
-    ("8-5 Alt Sat 1st-3rd",     "Special 8-5",     "ALTSAT_85_A",  False),
-    ("8-5 Alt Sat 2nd-4th",     "Special 8-5",     "ALTSAT_85_B",  True),
-    ("8:30am Alt Sat 1st-3rd",  "8:30am Schedule", "ALTSAT_830_A", False),
-    ("8:30am Alt Sat 2nd-4th",  "8:30am Schedule", "ALTSAT_830_B", True),
+    ("ALTSAT_85_A",  "8-5 Alt Sat 1st-3rd",    "SPECIAL_8_5",     False),
+    ("ALTSAT_85_B",  "8-5 Alt Sat 2nd-4th",    "SPECIAL_8_5",     True),
+    ("ALTSAT_830_A", "8:30am Alt Sat 1st-3rd", "8_30AM_SCHEDULE", False),
+    ("ALTSAT_830_B", "8:30am Alt Sat 2nd-4th", "8_30AM_SCHEDULE", True),
 ]
 
-MIRRORS = [("8-5 Alt Sat 1st-3rd", "8-5 Alt Sat 2nd-4th"),
-           ("8:30am Alt Sat 1st-3rd", "8:30am Alt Sat 2nd-4th")]
+MIRRORS = [("ALTSAT_85_A", "ALTSAT_85_B"),
+           ("ALTSAT_830_A", "ALTSAT_830_B")]
+
+
+def _resolve(code, seed_name=None):
+    """The live Shift Type for a code, or None if it does not exist yet.
+
+    ⚠️ Deliberately NOT `shift_resolution.by_code`, which throws. Here a missing
+    shift is the normal case on a fresh site — it is what `ensure_shifts()`
+    exists to fix — so this returns None and lets the caller create it.
+    """
+    name = frappe.db.get_value("Shift Type", {"caf_shift_code": code}, "name")
+    if name:
+        return name
+    # A shift created before codes existed, or one seeded by an older run.
+    if seed_name and frappe.db.exists("Shift Type", seed_name):
+        return seed_name
+    return None
 
 # What the shift's rules are made of. Everything else stays at stock defaults.
 CLONED = ("start_time", "end_time", "caf_allow_ot", "caf_ot_gate_minutes",
@@ -253,10 +280,15 @@ PAIRING = ("caf_shift_code", "caf_alt_sat", "caf_sat_mirror")
 HR_OWNED = CLONED + ("caf_sat_anchor_date", "caf_sat_anchor")
 
 
-def _drift(name, source, rests):
+def _drift(name, source_code, rests):
     """What this shift holds vs what a fresh clone would hold. Reports only."""
+    source = _resolve(source_code)
+    if not source or not name:
+        return []
     src = frappe.db.get_value("Shift Type", source, CLONED, as_dict=True)
     cur = frappe.db.get_value("Shift Type", name, HR_OWNED, as_dict=True)
+    if not src or not cur:
+        return []
     want = dict(src)
     want["caf_work_sat"] = 1
     want["caf_sat_anchor_date"] = getdate(ANCHOR)
@@ -287,11 +319,15 @@ def ensure_shifts():
     """
     created, existing = [], []
 
-    for name, source, code, rests in SHIFTS:
-        if not frappe.db.exists("Shift Type", source):
-            frappe.throw(f"Source shift {source!r} not found")
+    for code, seed_name, source_code, rests in SHIFTS:
+        source = _resolve(source_code)
+        if not source:
+            frappe.throw(f"Source shift with code {source_code!r} not found")
 
-        if frappe.db.exists("Shift Type", name):
+        # 🔴 By CODE, not by name — so an HR rename does not make this create a
+        # duplicate of a shift that already exists under its new label (OD-96).
+        name = _resolve(code)
+        if name:
             existing.append((name, source, rests))
             # PAIRING only. Never the parameters, never the anchor.
             frappe.db.set_value("Shift Type", name, {
@@ -302,7 +338,7 @@ def ensure_shifts():
 
         src = frappe.db.get_value("Shift Type", source, CLONED, as_dict=True)
         doc = frappe.new_doc("Shift Type")
-        doc.name = name
+        doc.name = seed_name
         for f in CLONED:
             doc.set(f, src.get(f))
         doc.caf_work_sat = 1
@@ -312,11 +348,14 @@ def ensure_shifts():
         doc.caf_sat_anchor = "Rest" if rests else "Work"
         doc.flags.ignore_permissions = True
         doc.insert()
-        created.append(name)
+        created.append(seed_name)
 
     # Both directions, always — this IS the script's job. A one-way link is a
     # half-configured pair and it fails in the direction nobody tests.
-    for a, b in MIRRORS:
+    for code_a, code_b in MIRRORS:
+        a, b = _resolve(code_a), _resolve(code_b)
+        if not (a and b):
+            continue
         frappe.db.set_value("Shift Type", a, "caf_sat_mirror", b, update_modified=False)
         frappe.db.set_value("Shift Type", b, "caf_sat_mirror", a, update_modified=False)
 
@@ -328,7 +367,11 @@ def ensure_shifts():
     print(f"  already present, parameters left alone: {len(existing)}")
     print(f"  shift codes backfilled on {codes} other shift(s)")
 
-    for name, _, code, rests in SHIFTS:
+    for code, _seed, _src, rests in SHIFTS:
+        name = _resolve(code)
+        if not name:
+            print(f"    🔴 MISSING {code}")
+            continue
         row = frappe.db.get_value(
             "Shift Type", name,
             ["caf_shift_code", "caf_alt_sat", "caf_sat_mirror",
@@ -355,10 +398,12 @@ def report_drift():
     """
     print("\n  ── drift from source (reported, NOT corrected) ──")
     total = 0
-    for name, source, code, rests in SHIFTS:
-        if not frappe.db.exists("Shift Type", name):
+    for code, _seed, source_code, rests in SHIFTS:
+        name = _resolve(code)
+        if not name:
             continue
-        rows = _drift(name, source, rests)
+        source = _resolve(source_code)
+        rows = _drift(name, source_code, rests)
         total += len(rows)
         if not rows:
             print(f"    ok  {name:26s} matches a fresh clone of {source}")
@@ -387,9 +432,10 @@ def resync_from_source(dry_run: bool = True):
     after it. Read `report_drift()` first.
     """
     plan = []
-    for name, source, code, rests in SHIFTS:
-        if frappe.db.exists("Shift Type", name):
-            for f, is_now, would_be in _drift(name, source, rests):
+    for code, _seed, source_code, rests in SHIFTS:
+        name = _resolve(code)
+        if name:
+            for f, is_now, would_be in _drift(name, source_code, rests):
                 plan.append((name, f, is_now, would_be))
 
     print(f"  {'WOULD OVERWRITE' if dry_run else 'OVERWRITING'} {len(plan)} value(s)")
@@ -681,9 +727,11 @@ def setup():
 def run():
     """Report only. What exists, how it is paired, and where it has drifted."""
     print(f"\n{'=' * 74}\nALTERNATE-SATURDAY SHIFTS — current state\n{'=' * 74}")
-    for name, source, code, rests in SHIFTS:
-        if not frappe.db.exists("Shift Type", name):
-            print(f"  🔴 MISSING {name} (would be cloned from {source})")
+    for code, seed_name, source_code, rests in SHIFTS:
+        name = _resolve(code)
+        if not name:
+            print(f"  🔴 MISSING code {code} (would be created as {seed_name!r} "
+                  f"from {source_code})")
             continue
         row = frappe.db.get_value(
             "Shift Type", name,
@@ -711,14 +759,22 @@ def verify():
     """Four assertions, and the third is the one OD-88 exists for."""
     fails = 0
 
-    missing = [n for n, _s, _c, _r in SHIFTS if not frappe.db.exists("Shift Type", n)]
+    # ⚠️ SHIFTS and MIRRORS hold CODES since OD-96, so every lookup resolves
+    # first. Comparing a code against a `caf_sat_mirror` (which stores a NAME)
+    # is what this function did on its first run after the migration, and it
+    # reported four false failures.
+    missing = [c for c, _seed, _src, _r in SHIFTS if not _resolve(c)]
     ok = not missing
     print(f"AS1-SHIFTS-EXIST      {'PASS' if ok else 'FAIL'}  "
-          f"missing: {missing or 'none'} — all four alternate-Saturday shifts")
+          f"missing codes: {missing or 'none'} — all four alternate-Saturday shifts")
     fails += 0 if ok else 1
 
     broken = []
-    for a, b in MIRRORS:
+    for code_a, code_b in MIRRORS:
+        a, b = _resolve(code_a), _resolve(code_b)
+        if not (a and b):
+            broken.append(f"{code_a}/{code_b} — one half does not exist")
+            continue
         if frappe.db.get_value("Shift Type", a, "caf_sat_mirror") != b:
             broken.append(f"{a} does not name {b}")
         if frappe.db.get_value("Shift Type", b, "caf_sat_mirror") != a:
@@ -729,7 +785,10 @@ def verify():
     fails += 0 if ok else 1
 
     opposite = []
-    for a, b in MIRRORS:
+    for code_a, code_b in MIRRORS:
+        a, b = _resolve(code_a), _resolve(code_b)
+        if not (a and b):
+            continue
         if (frappe.db.get_value("Shift Type", a, "caf_sat_anchor")
                 == frappe.db.get_value("Shift Type", b, "caf_sat_anchor")):
             opposite.append(f"{a}/{b} anchor the SAME way")
@@ -739,12 +798,12 @@ def verify():
           f"nobody covers that Saturday")
     fails += 0 if ok else 1
 
-    codes = {n: frappe.db.get_value("Shift Type", n, "caf_shift_code")
-             for n, _s, _c, _r in SHIFTS if frappe.db.exists("Shift Type", n)}
-    want = {n: c for n, _s, c, _r in SHIFTS if n in codes}
-    ok = codes == want
-    print(f"AS4-CODES-STABLE      {'PASS' if ok else 'FAIL'}  {codes} "
-          f"(want {want}) — code and tests hold these, not the name (OD-70)")
+    # 🔴 The assertion OD-96 turns on: the CODE must resolve to exactly one live
+    # shift, whatever HR has renamed it to.
+    codes = {c: _resolve(c) for c, _seed, _src, _r in SHIFTS}
+    ok = all(codes.values())
+    print(f"AS4-CODES-RESOLVE     {'PASS' if ok else 'FAIL'}  {codes} — the code is "
+          f"the identity; the name is only the first label it was given (OD-70/96)")
     fails += 0 if ok else 1
 
     print(f"\n{'clean' if not fails else str(fails) + ' problem(s)'}")
