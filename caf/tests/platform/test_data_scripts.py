@@ -95,6 +95,8 @@ SCRIPTS = [
      "the four alternate-Saturday shifts, their pairing and their drift (OD-88)"),
     ("shift_reassign", "run", False,
      "moves an employee between shifts, resolved by device id not by name (T-32)"),
+    ("early_start_setting", "run", False,
+     "the early-start threshold on HR Settings, and the data behind the number"),
 ]
 
 VERIFIERS = [
@@ -109,6 +111,7 @@ VERIFIERS = [
     ("join_date_signoff_apply", False),
     ("alt_saturday_setup", False),
     ("shift_reassign", False),
+    ("early_start_setting", False),
 ]
 
 

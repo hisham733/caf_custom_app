@@ -41,11 +41,12 @@ import frappe
 from frappe.utils import getdate
 
 from caf.caf.overrides import appraisal as ap
+from caf.caf.shift_resolution import by_code
 
 EMP_A = "HR-EMP-00016"        # 8am Schedule    — Mon–Sat, caf_allow_ot 1, 08:00–16:30
 EMP_C = "HR-EMP-00127"        # 8am no OT no Sat — Mon–Fri, Saturday is a rest day
-NO_OT_SHIFT = "8am no OT no Sat"
-SAT_SHIFT = "8am Schedule"
+NO_OT_SHIFT = by_code("8AM_NO_OT_NO_SAT")
+SAT_SHIFT = by_code("8AM_SCHEDULE")
 CYCLE = "2026-06"
 TEMPLATE = "CAF Monthly Appraisal"
 MARKER = "CHUNK T TEST"

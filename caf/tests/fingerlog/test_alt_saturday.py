@@ -21,13 +21,14 @@ import frappe
 from frappe.utils import add_days, getdate
 
 from caf.caf import holiday_lists
-from caf.caf.shift_resolution import (get_holiday_list, get_shift_for_date,
-                                      is_rest_day, resolve_day_type, works_on)
+from caf.caf.shift_resolution import (by_code, get_holiday_list,
+                                      get_shift_for_date, is_rest_day,
+                                      resolve_day_type, works_on)
 
-PAIR_A = "8:30am Alt Sat 1st-3rd"
-PAIR_B = "8:30am Alt Sat 2nd-4th"
-PROD_A = "8-5 Alt Sat 1st-3rd"
-PROD_B = "8-5 Alt Sat 2nd-4th"
+PAIR_A = by_code("ALTSAT_830_A")
+PAIR_B = by_code("ALTSAT_830_B")
+PROD_A = by_code("ALTSAT_85_A")
+PROD_B = by_code("ALTSAT_85_B")
 
 GROUP_A = "HR-EMP-00003"        # Too Poh Chin
 GROUP_B = "HR-EMP-00004"        # Afiza binti Mustafa
@@ -35,7 +36,7 @@ GROUP_B = "HR-EMP-00004"        # Afiza binti Mustafa
 # 🔴 JUNE for the one fixture. July is the importer's (§F4d).
 FIX_EMP = "HR-EMP-00016"        # 8am Schedule, Mon-Sat, not one of the eight
 D_SAT = "2026-06-06"
-NO_SAT_SHIFT = "8am no OT no Sat"
+NO_SAT_SHIFT = by_code("8AM_NO_OT_NO_SAT")
 
 RESULTS = []
 
@@ -114,8 +115,8 @@ def run():
         # ------------------------------------------------------------ ALT-YEAR
         # OD-66. After R1 the list carries every rest day, so a date outside the
         # list's year would return NO rest days at all — silently.
-        hl25 = get_holiday_list(FIX_EMP, "8am Schedule", "2025-06-07")
-        hl26 = get_holiday_list(FIX_EMP, "8am Schedule", "2026-03-21")
+        hl25 = get_holiday_list(FIX_EMP, by_code("8AM_SCHEDULE"), "2025-06-07")
+        hl26 = get_holiday_list(FIX_EMP, by_code("8AM_SCHEDULE"), "2026-03-21")
         dt25, _ = resolve_day_type(FIX_EMP, "2025-06-07")
         check("ALT-YEAR", "2025" in (hl25 or "") and "2026" in (hl26 or "")
               and dt25 == "Holiday",

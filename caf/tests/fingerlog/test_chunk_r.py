@@ -44,6 +44,7 @@ import frappe
 from frappe.utils import add_to_date, getdate
 
 from caf.caf import appraisal_refresh as ar
+from caf.caf.shift_resolution import by_code
 
 REP = "HR-EMP-00075"                      # Seriramulu A/L Apanah
 REP_USER = "seriramulu@caffood.com"       # role: Employee
@@ -103,7 +104,7 @@ D_ABS = "2026-06-16"                      # Tue — punchless -> Absent -> count
 # this suite's twelve assertions failed for a reason that had nothing to do with
 # roles. A calendar clash reads exactly like a broken permission model.
 D_LEAVE = "2026-06-18"                    # Thu — the leave the approver files
-NO_SAT = "8am no OT no Sat"
+NO_SAT = by_code("8AM_NO_OT_NO_SAT")
 LEAVE_TYPE = "Emergency"                  # is_lwp, and FBR37 counts it
 
 RESULTS = []

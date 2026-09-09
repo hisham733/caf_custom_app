@@ -42,11 +42,16 @@ lists them so nobody is surprised.
 """
 
 import frappe
+from caf.caf.shift_resolution import by_code
 
-# (device id, expected name, from shift, to shift, why)
+# (device id, expected name, from CODE, to CODE, why)
+#
+# 🔴 Codes, not names, on BOTH axes — the employee by `attendance_device_id`
+# (T-32) and the shift by `caf_shift_code` (OD-96). Neither identifier means
+# anything different on production, which is the whole point of this file.
 MOVES = [
     ("1059", "Noor Arifah Binti Ibrahim",
-     "8-5 Alt Sat 2nd-4th", "8-5 Alt Sat 1st-3rd",
+     "ALTSAT_85_B", "ALTSAT_85_A",
      "MG, 2026-09-07. The production pair were both on `2nd-4th`, which "
      "reproduced what Ingress showed — off together on 24 of 32 Saturdays — but "
      "leaves `1st-3rd` empty and the pair covering nothing. Moving her makes the "
@@ -76,13 +81,16 @@ def _resolve(device_id, expected_name):
 
 def _plan():
     out = []
-    for device_id, name, frm, to, why in MOVES:
+    for device_id, name, from_code, to_code, why in MOVES:
         e, problem = _resolve(device_id, name)
-        want_list = frappe.db.get_value("Shift Type", to, "holiday_list")
-        if not frappe.db.exists("Shift Type", to):
-            problem = problem or f"target shift {to!r} does not exist"
+        frm = frappe.db.get_value("Shift Type", {"caf_shift_code": from_code}, "name")
+        to = frappe.db.get_value("Shift Type", {"caf_shift_code": to_code}, "name")
+        if not to:
+            problem = problem or f"no shift carries caf_shift_code {to_code!r}"
+        want_list = frappe.db.get_value("Shift Type", to, "holiday_list") if to else None
         out.append({
-            "device": device_id, "expected": name, "from": frm, "to": to,
+            "device": device_id, "expected": name,
+            "from": frm or from_code, "to": to, "to_code": to_code,
             "why": why, "employee": e, "problem": problem,
             "want_list": want_list,
         })
@@ -174,8 +182,8 @@ def verify():
         fails += 0 if ok else 1
 
     # 🔴 The point of the move: a pair with everybody on one side covers nothing.
-    for a, b in (("8-5 Alt Sat 1st-3rd", "8-5 Alt Sat 2nd-4th"),
-                 ("8:30am Alt Sat 1st-3rd", "8:30am Alt Sat 2nd-4th")):
+    for a, b in ((by_code("ALTSAT_85_A"), by_code("ALTSAT_85_B")),
+                 (by_code("ALTSAT_830_A"), by_code("ALTSAT_830_B"))):
         na = frappe.db.count("Employee", {"default_shift": a, "status": "Active"})
         nb = frappe.db.count("Employee", {"default_shift": b, "status": "Active"})
         ok = not (na == 0 and nb > 0) and not (nb == 0 and na > 0)

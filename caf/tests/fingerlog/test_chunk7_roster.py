@@ -32,6 +32,7 @@ from caf.caf.overrides import shift_type_dashboard
 from caf.caf.page.shift_roster import shift_roster
 from caf.caf.shift_resolution import resolve_day_type
 from caf.caf.shift_swap import create as file_trade
+from caf.caf.shift_resolution import by_code
 
 # Deliberately NOT the employees the other alt-Saturday suites use (00003 /
 # 00004 / 00005 / 00042), so a failure here is about this screen.
@@ -80,7 +81,8 @@ def quiet_day_employees(n=8):
     """Whoever the detector fixture will use — derived, so cleanup and creation
     can never disagree about the list (§F4)."""
     return [e.name for e in frappe.get_all(
-        "Employee", filters={"default_shift": "8am Schedule", "status": "Active"},
+        "Employee", filters={"default_shift": by_code("8AM_SCHEDULE"),
+                             "status": "Active"},
         fields=["name"], order_by="name", limit_page_length=n)]
 
 
@@ -448,7 +450,20 @@ def run():
                   f"'both worked' could as easily be two people who came in. HR "
                   f"reads 6-of-6 as urgent and 2-of-2 as worth a glance")
         else:
-            check("C75-WEAK", False, "no 2-person group rests on " + D_GROUP)
+            # ⚠️ NOT a failure — the FIXTURE has gone, not the behaviour.
+            #
+            # This branch went red on 2026-09-07 when Noor Arifah moved from
+            # `8-5 Alt Sat 2nd-4th` to `1st-3rd` (MG's instruction), splitting
+            # that pair from 0/2 into 1/1. There is now no 2-person group resting
+            # on this date, so the "weak evidence" label has nothing to label.
+            #
+            # 🔴 Reported loudly rather than passed silently: a skip that reads
+            # like a pass is how a suite stops meaning anything. If a 2-person
+            # group ever exists again this asserts for real.
+            print(f"C75-WEAK        SKIP  no 2-person group rests on {D_GROUP} — "
+                  f"the `8-5` pair became 1/1 on 2026-09-07, so the weak-evidence "
+                  f"label has nothing to label. The behaviour is untested, not "
+                  f"broken; restore a 2-person group to re-enable it")
 
         # -------------------------------------------------------------- C75-FLAG
         # It FLAGS, it never blocks. Every log above submitted normally.

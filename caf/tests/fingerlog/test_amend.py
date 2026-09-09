@@ -45,6 +45,7 @@ AM6 needs — and the collision is avoided by DATE, which is §F4d's rule.
 
 import frappe
 from frappe.utils import getdate
+from caf.caf.shift_resolution import by_code
 
 EMP = "HR-EMP-00075"                          # Seriramulu — Active, 8am Schedule
 EMP_USER = "seriramulu@caffood.com"           # role: Employee only
@@ -353,7 +354,7 @@ def _run_body():
         # ═══════════════════════════════════════════════ AM3 — Shift Assignment
         sa = frappe.new_doc("Shift Assignment")
         sa.employee = EMP
-        sa.shift_type = "8am no OT no Sat"
+        sa.shift_type = by_code("8AM_NO_OT_NO_SAT")
         sa.start_date = sa.end_date = D_SHIFT
         sa.docstatus = 0
         sa.flags.ignore_permissions = True

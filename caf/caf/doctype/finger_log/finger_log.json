@@ -81,8 +81,9 @@
   {
    "allow_on_submit": 1,
    "fieldname": "shift_type",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "label": "Shift Type",
+   "options": "Shift Type",
    "read_only": 1
   },
   {

@@ -13,6 +13,21 @@ from datetime import datetime
 
 from caf.caf.shift_resolution import get_shift_for_date, get_shift_params
 
+
+def _has_time(value):
+    """A Time is PRESENT only if it is set and not the all-zero sentinel.
+
+    ⚠️ The importer writes `'00:00:00'`, never NULL (OD-49), so `if not value`
+    is not the test — a real 00:00 and a forgotten one are the same bytes, and
+    OD-95 is the decision that they mean "forgotten".
+    """
+    if value is None or value == "":
+        return False
+    try:
+        return int(value.total_seconds()) != 0
+    except AttributeError:
+        return str(value) not in ("00:00:00", "0:00:00")
+
 class OTApproval(Document):
     def autoname(self):
         # note that self.work_date is a string. Example: '2021-01-01'
@@ -109,6 +124,12 @@ class OTApproval(Document):
         # Before anything else: a special approval that the caller may not file
         # should be refused before it starts cancelling other people's rows.
         self.guard_special_approve()
+
+        # 🔴 BOTH TYPES, and OUTSIDE the `docstatus == 0` block below — MG,
+        # 2026-09-10. These two ran only for `type = normal` until today, and
+        # the data shows what that cost.
+        self.guard_shift_allows_ot()
+        self.guard_ot_end_present()
 
         if self.docstatus == 0:
             # print("\n", self.__dict__)
@@ -308,6 +329,76 @@ class OTApproval(Document):
 
         return (params.end_time - params.start_time).total_seconds() / 3600
 
+
+    # ───────────────────────────────────────────────── the two guards, FBR92
+    def guard_shift_allows_ot(self):
+        """🔴 A shift with `caf_allow_ot = 0` may not be approved overtime — for
+        EITHER approval type. MG, 2026-09-10.
+
+        This rule already existed, buried inside `get_work_hours()`, which is
+        called only from `check_ot_duration()`, which `validate()` ran only when
+        `self.type == "normal"`. So a `special_approve` reached submit without it
+        ever executing.
+
+        🔴 **Measured before the fix: 155 child rows named employees whose shift
+        forbids OT — 151 of them submitted `special_approve` on ONE person,
+        Rajaindran.** ⚠️ And those 151 are not abuse: MG confirmed his policy
+        changed from "has OT" to "no OT" around mid-2025, so the approvals were
+        correct when filed and only look wrong because `Employee.default_shift`
+        has **no date dimension** (FBR54) — today's flag is applied to yesterday's
+        approval.
+
+        ⚠️ **That is exactly why this validates the shift ON THE WORK DATE**, via
+        `get_shift_for_date()`, and why it runs on `validate` rather than
+        retroactively: an existing submitted approval is never re-validated
+        unless somebody edits it, so nothing already filed is disturbed.
+        """
+        if not self.work_date:
+            return
+        for row in self.emp_list:
+            if not row.emp_id:
+                continue
+            shift = get_shift_for_date(row.emp_id, self.work_date)
+            if not shift:
+                continue                      # `get_work_hours` reports this
+            if not get_shift_params(shift).get("caf_allow_ot"):
+                frappe.throw(
+                    _("{0} is on shift <b>{1}</b> on {2}, and that shift does not "
+                      "allow overtime."
+                      "<br><br>Either the shift is wrong for that day — file a "
+                      "<b>Shift Assignment</b> for it — or the overtime should not "
+                      "be approved. A <b>special approval</b> does not bypass this: "
+                      "it decides how much, never whether."
+                      ).format(frappe.bold(row.emp_id), frappe.bold(shift),
+                               self.work_date),
+                    title=_("This shift does not allow overtime"))
+
+    def guard_ot_end_present(self):
+        """🔴 A `normal` approval needs a real end time. OD-95.
+
+        `check_ot_duration()` reads `ot_end < start_work` as *crossed midnight*
+        and adds a day. So a **forgotten** end time — stored by the importer as
+        `'00:00:00'`, never NULL (OD-49) — computes a ~16-hour night instead of
+        being refused.
+
+        ⚠️ **Only for `normal`, deliberately.** Measured 2026-09-09: **8,404 of
+        the 8,405 blank `ot_end` rows are `special_approve`**, where `ot_end` is
+        never read at all — `final_ot` takes `ot_duration` verbatim (FBR71) and
+        `check_ot_duration` never runs. Guarding special would refuse 711
+        historical approvals to prevent a calculation that does not happen.
+        """
+        if self.type != "normal":
+            return
+        blank = [r.emp_id for r in self.emp_list
+                 if r.start_work and not _has_time(r.ot_end)]
+        if blank:
+            frappe.throw(
+                _("Fill in the <b>OT End</b> time for {0}."
+                  "<br><br>A blank end time is stored as <code>00:00:00</code>, "
+                  "which reads as midnight — so the approval would silently claim "
+                  "a night shift nobody worked."
+                  ).format(frappe.bold(", ".join(str(b) for b in blank))),
+                title=_("OT End is missing"))
 
     def convert_to_seconds(self, time_str):
         parts = time_str.split(':')

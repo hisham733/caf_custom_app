@@ -13,9 +13,10 @@ import frappe
 from frappe.utils import add_days, getdate, nowdate
 
 from caf.caf import re_resolve
+from caf.caf.shift_resolution import by_code
 
 EMP_A = "HR-EMP-00016"   # 8am Schedule - works Saturday, OT allowed
-NO_SAT = "8am no OT no Sat"
+NO_SAT = by_code("8AM_NO_OT_NO_SAT")
 SAT = None               # resolved below
 
 RESULTS = []
