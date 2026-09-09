@@ -42,8 +42,17 @@ Role keys in `credentials.ps1` (**gitignored**, values in
 
 ## ✅ T-21 CLOSED 2026-09-10 — `run_all.ps1` completes
 
-**45 passed, 9 failed.** Every remaining failure is named and understood; see
-*"What is red, and why"* below.
+**46 passed, 9 failed**, stable across three consecutive runs. Every remaining
+failure is named and understood; see *"What is red, and why"* below.
+
+```
+   test_2_1_to_2_4    0 passed   1 failed   ← stops on T-ORG, by design
+   test_2_5_to_2_8   14 passed   7 failed   ← 6 of the 7 are T-ORG or downstream
+   probe_2_10a        7 passed   0 failed
+   probe_2_10b        9 passed   0 failed
+   probe_2_10bc      10 passed   1 failed   ← T-I2
+   probe_2_10e        6 passed   0 failed
+```
 
 **The reset owns a list, not the site.** `_cleanup.ps1` used to `GET
 /api/resource/Appraisal?limit_page_length=0` and delete the lot. It now removes
