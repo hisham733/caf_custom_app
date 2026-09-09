@@ -384,12 +384,27 @@ def make_stock_entry(
             else:
                 item.qty = total_balance
                 item.transfer_qty = total_balance
-                item.custom_table_link_id = work_order.custom_link_id
-                item.t_warehouse = warehouse or (
+                scrap_wh = warehouse or (
                     scrap_target_warehouse
                     if frappe.db.exists("Warehouse", {"name": scrap_target_warehouse, "is_group": 0})
                     else item.s_warehouse
                 )
+                from erpnext.stock.stock_ledger import get_valuation_rate
+                rate_wh = frappe.db.get_value(
+                    "Item Default",
+                    {"parent": item.item_code, "company": stock_entry.company},
+                    "default_warehouse",
+                ) or scrap_wh
+                rate = flt(get_valuation_rate(
+                    item.item_code, rate_wh, "Stock Entry", "",
+                    allow_zero_rate=True, company=stock_entry.company, raise_error_if_no_rate=False,
+                ))
+
+                if rate > 0:
+                    item.basic_rate = rate
+                item.basic_amount = flt(total_balance) * flt(item.basic_rate)
+                item.custom_table_link_id = work_order.custom_link_id
+                item.t_warehouse = scrap_wh
         if item.item_code == work_order.production_item and item.is_finished_item == 1:
             if total_pack_qty != 0:
                 item.qty = total_pack_qty
@@ -398,6 +413,17 @@ def make_stock_entry(
         stock_entry.set_serial_no_batch_for_finished_good()
 
     CustomStockEntry.set_qi_items(stock_entry)
+
+    outgoing = sum(flt(i.basic_amount) for i in stock_entry.items if i.s_warehouse and not i.t_warehouse)
+    scrap = sum(flt(i.basic_amount) for i in stock_entry.items if i.is_scrap_item)
+    fg_qty = sum(flt(i.transfer_qty) for i in stock_entry.items if i.is_finished_item)
+    rate = (outgoing - scrap) / fg_qty if fg_qty else 0
+    if rate < -0.01:
+        frappe.throw(
+            frappe._("Scrap credit ({0}) exceeds material cost ({1}) — reduce balance qty or check scrap item valuation.").format(
+                flt(scrap, 2), flt(outgoing, 2)
+            )
+        )
 
     return stock_entry.as_dict()
 
