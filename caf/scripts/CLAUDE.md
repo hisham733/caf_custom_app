@@ -45,7 +45,19 @@ bench --site <site> execute caf.scripts.<name>.verify                     # PROV
 | `leave_group_review` | 🟡 read-only — builds the HR confirmation page |
 | `join_date_signoff_html` | 🟡 read-only — the joining-date sign-off page, all 89 against ERPNext · Ingress `IssueDate` · the machine's first raw tap (T-28) |
 | `leave_workflow` | 🔴 the **`CAF Leave Approval`** workflow — 9 states. **NOT in fixtures**, so this script is the only route to production (T-17 item 16) |
-| `readiness_audit` | ⭐ **13 checks; a clean run is the go-live gate** |
+| `leave_type_hygiene` | stock Leave Types that contradict CAF's rules — `Casual Leave.is_carry_forward` 1 → 0 (FBR62a) |
+| `join_date_signoff_apply` | HR's four signed-off joining dates (FBR74). **Refuses any row whose current value has drifted** from what she signed |
+| `leave_entitlement_signoff_html` | 🟡 read-only — the entitlement page: 3 bands, 4 worked archetypes across 3 cycles each, and the rows that disagree with the rule |
+| `shift_signoff_html` | 🟡 read-only — Shift Type rules + who is on each (T-28 items 4+5) |
+| `restday_lunch_html` | 🟡 read-only — OD-94/FBR91, the rest-day lunch question with what each option would have cost |
+| `shift_reassign` | ⭐ **the template for every production data script**: resolves the employee by `attendance_device_id` (T-32) and the shift by `caf_shift_code` (OD-96), and refuses unless the name agrees too |
+| `early_start_setting` | `HR Settings.caf_early_start_minutes` (default 60) + `distribution()`, which prints how many days each threshold would flag |
+| `readiness_audit` | ⭐ **14 checks; a clean run is the go-live gate** |
+
+🔴 **Identify people by `attendance_device_id`, never by `HR-EMP-xxxxx`** (T-32).
+The id is a per-site counter, so the same value is a **different person** on
+production. Identify shifts by **`caf_shift_code`**, never by name (OD-96) —
+`shift_resolution.by_code()` resolves it and throws on an unknown code.
 
 ## Gotchas
 

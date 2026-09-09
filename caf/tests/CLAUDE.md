@@ -18,7 +18,8 @@ that something did.
 | `fingerlog/` | the bulk — shifts, punches, work hours, OT, leave, roster, appraisal cascade |
 | `ingress/` | the importer, the manifest, the catch-up, unmapped employees |
 | `workflow_gaps/` | EPF ownership, appraisal cancel/amend, fixture integrity |
-| **`platform/`** | ⭐ cross-cutting — **`test_role_matrix`** (every surface × every role, both directions, T-21) and **`test_data_scripts`** (every production script's report mode + `verify()`) |
+| **`platform/`** | ⭐ cross-cutting — **`test_role_matrix`** (every surface × every role, both directions, T-21) · **`test_data_scripts`** (every production script's report mode + `verify()`, 15 scripts / 11 verifiers) · **`test_disabled_features`** (everything CAF deliberately switched off, asserted still off — read-only, safe on production) |
+| `fingerlog/test_midnight_ot` | overtime past midnight, **both sides** — the log and the OT Approval must agree about how long a night was. ⚠️ **0 live rows exercise it**, so it is the only thing keeping that rule honest; do not delete it as dead code |
 | `appraisal/` | 🔴 **PowerShell, not Python** — the per-role REST suite. See its own `CLAUDE.md` |
 
 ## Conventions that are not optional
