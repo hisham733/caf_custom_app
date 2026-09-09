@@ -47,6 +47,17 @@ function SetToggle($val) {
 Reset-CafTestData -Request { param($r,$m,$p,$b) Req $r $m $p $b } -IncludeProbeEmployees
 ""
 
+# --- the org tree ------------------------------------------------------------
+# Reported, then CARRIED ON - unlike test_2_1_to_2_4, which stops. Only the
+# assertions that create an appraisal AS SupA depend on the tree (T-F1/2/3,
+# T-G3, T-J15); 2.8's reports_to-mandatory and org-root checks, T-H7 and the EPF
+# probes do not, and they are worth running. The named FAIL keeps the run red.
+$orgOk = Test-CafOrgFixture -Request { param($r,$m,$p,$b) Req $r $m $p $b }
+if (-not $orgOk) {
+  Res "T-ORG" $false "org-tree fixture absent (see above) - every SupA-created appraisal below will 403 for that reason, not the product's"
+  ""
+}
+
 "=== 2.6  BR6 - the month-ended rule gates SUBMIT, not create (D31) ==="
 
 # T-F1 - drafting for the current, unfinished month is always allowed
@@ -167,13 +178,26 @@ if ($i3.code -eq 200) { Req HRMgr DELETE "/api/resource/Appraisal/$($i3.json.mes
 # script resets the site first, so depending on another script's fixtures makes
 # the result depend on run ORDER. It looked like a product failure the first
 # time - "0 auto-filled cells" - when the appraisal had simply been cleared.
-$fl = Req SupA GET "/api/resource/Finger%20Log?limit_page_length=1"
+# ⚠️ EXPECTATION CORRECTED 2026-09-10. This asserted `code -eq 403` - a flat
+# denial - which stopped being true on 2026-08-15, when OD-63 option d gave the
+# Employee role a read on Finger Log SCOPED TO THEIR OWN ROWS
+# (hooks.py -> caf.caf.finger_log_scope.get_permission_query_conditions). A
+# supervisor now gets 200 and sees their own logs, so the old assertion failed
+# against correct, shipped behaviour.
+#
+# The POINT of the test is unchanged and is now asserted directly: the supervisor
+# cannot read the APPRAISEE's logs, yet the appraisee's cells still populate,
+# because CAF's helpers run server-side. Ask for EMP_B's rows explicitly and
+# require none to come back - a stronger claim than the 403 ever made.
+$flq = [uri]::EscapeDataString("[[""employee"",""="",""$EMP_B""]]")
+$fl  = Req SupA GET "/api/resource/Finger%20Log?limit_page_length=0&filters=$flq"
+$flRows = @($fl.json.data).Count
 $j15 = Ins SupA @{ doctype="Appraisal"; employee=$EMP_B; appraisal_cycle=$PAST; company="CAF"; appraisal_template="CAF Monthly Appraisal" }
 $j15name = $j15.json.message.name
 $j15doc = (Req HRMgr GET "/api/resource/Appraisal/$j15name").json.data
 $j15cells = @(@($j15doc.appraisal_kra) | Where-Object { $_.caf_date_cell })
-Res "T-J15" ($fl.code -eq 403 -and $j15cells.Count -gt 0) `
-  "supervisor's direct Finger Log read=$($fl.code) (must be 403) yet auto-filled cells=$($j15cells.Count) (must be > 0)"
+Res "T-J15" ($flRows -eq 0 -and $j15cells.Count -gt 0) `
+  "supervisor asks for EMP_B's Finger Logs directly: code=$($fl.code) rows=$flRows (must be 0 - OD-63 scopes him to his own) yet auto-filled cells=$($j15cells.Count) (must be > 0)"
 
 # take it through to Completed, so T-J8f below has a Completed appraisal of its own
 WfAction SupA $j15name "Submit for Review" | Out-Null
@@ -202,6 +226,17 @@ $j8f = Ins HRMgr @{ doctype="Employee Performance Feedback"; employee=$EMP_B; co
                     feedback="<p>ZZPROBE against completed</p>"; appraisal=$j15name }
 Res "T-J8f" ($j8f.code -ne 200 -and "$($j8f.err)" -match "completed|Completed") `
   "EPF linked to a Completed appraisal: code=$($j8f.code) : $($j8f.err)"
+
+""
+# --- put the org roots back to two -------------------------------------------
+# T-H2 creates "ZZ Probe OrgRoot", a THIRD org root. Removing it only at the
+# START of the next run left the site sitting on a D53 violation the whole time
+# in between - and `deploy_appraisal_module` blocks on `len(roots) != 2`, so the
+# suite was quietly failing the readiness gate it exists to protect.
+$probes = (Req Admin GET "/api/resource/Employee?filters=%5B%5B%22first_name%22%2C%22like%22%2C%22ZZ%20Probe%25%22%5D%5D&limit_page_length=0").json.data
+foreach ($p in @($probes)) { Req Admin DELETE "/api/resource/Employee/$($p.name)" | Out-Null }
+$rootsNow = (Req Admin GET "/api/method/frappe.client.get_count?doctype=Employee&filters=%5B%5B%22status%22%2C%22%3D%22%2C%22Active%22%5D%2C%5B%22caf_reports_to_nobody%22%2C%22%3D%22%2C1%5D%5D").json.message
+Res "T-H8" ($rootsNow -eq 2) "probe employees removed=$(@($probes).Count); active org roots left on the site=$rootsNow (must be 2 - D53)"
 
 ""
 "CLEANUP HINTS: appraisals HR-APR-2026-*, employees ZZ Probe*, EPFs with ZZPROBE"

@@ -22,7 +22,10 @@ foreach ($s in $scripts) {
   Write-Host ("#" * 70)
   $out = & (Join-Path $here $s) 2>&1
   $out | ForEach-Object { Write-Host $_ }
-  $all += ($out | Out-String -Stream | Select-String -Pattern "^T-\S+\s+(PASS|FAIL)")
+  # match on the RESULT COLUMN, not on the id. `^T-` silently dropped every
+  # assertion whose id does not start with "T-" - probe_2_10bc's D74 among them,
+  # so the TOTAL line under-reported the suite it was summarising.
+  $all += ($out | Out-String -Stream | Select-String -Pattern "^\S+\s+(PASS|FAIL)\s")
 }
 
 Write-Host ""

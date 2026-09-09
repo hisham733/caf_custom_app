@@ -21,7 +21,7 @@ a whitelisted method, a doctype API — belongs here.
 ```powershell
 cd \\wsl$\Ubuntu-24.04\root\frappe_docker\development\frappe-bench\apps\caf\caf\tests\appraisal
 .\probe_2_10b.ps1        # one probe
-.\run_all.ps1            # everything — ⚠️ see the blocker below
+.\run_all.ps1            # everything — completes since T-21 (2026-09-10)
 ```
 
 Run from **PowerShell**, not the Bash tool: these are `.ps1`, and the Bash tool
@@ -40,29 +40,84 @@ Role keys in `credentials.ps1` (**gitignored**, values in
 `test_fixture_credentials.md`): `HRMgr` `SupA` `EmpB` `SupC` `EmpD` `HRUser`
 `Admin`.
 
-## 🔴 `run_all.ps1` cannot currently complete
+## ✅ T-21 CLOSED 2026-09-10 — `run_all.ps1` completes
 
-`test_2_1_to_2_4.ps1` dies on a null index after warning *"3 appraisal(s)
-survived the reset"*. **It is not a product fault.**
+**45 passed, 9 failed.** Every remaining failure is named and understood; see
+*"What is red, and why"* below.
 
-`_cleanup.ps1`'s shared reset does:
+**The reset owns a list, not the site.** `_cleanup.ps1` used to `GET
+/api/resource/Appraisal?limit_page_length=0` and delete the lot. It now removes
+only the fixtures the suite creates, declared in two places at the top of that
+file:
 
-```powershell
-GET /api/resource/Appraisal?limit_page_length=0            # EVERY appraisal
-GET /api/resource/Employee Performance Feedback?...        # EVERY EPF
-```
+| declaration | what it is |
+|---|---|
+| `$CAF_FIXTURE_APPRAISALS` | the 9 **(employee, cycle) pairs** any script here inserts an Appraisal on — including the ones that expect a 403, since a 403 regressing to a 200 leaves a row |
+| `$CAF_FIXTURE_EPF_MARKER` | `"PROBE"`, the substring every probe writes into `feedback` (`ZZPROBE` satisfies it) |
 
-It assumes it owns every Appraisal on the site. That was true when written and is
-not now: three **cancelled** appraisals belonging to real test users survive it —
-`HR-APR-2026-00092`, `-00280`, and `-00309`, the last referenced by name in the
-appraisal-cancel-state work.
+🔴 **Add a pair to that list in the same commit that adds the assertion.** A
+fixture missing from it is a fixture that survives the reset.
 
-⚠️ **Do not delete them to make the suite green.** Quirks #63 explains why the
-reset fails anyway — a delete is blocked by **any** referrer row, cancelled ones
-included. **The fix is to scope the reset to its own fixtures.** Tracked as T-21.
+The verification changed with it: the reset now confirms **the fixture pairs are
+clear**, not that the site holds zero appraisals. Counting every row is what
+produced the old *"3 appraisal(s) survived the reset"* — about three rows this
+suite never owned, which then could not be deleted at all (quirks #63: a DELETE
+is blocked by **any** referrer, cancelled ones included) and took the whole run
+down with a null index.
 
-Meanwhile the four `probe_2_10*` scripts are independently self-cleaning and can
-be run individually.
+Two smaller repairs shipped with it:
+
+- `run_all.ps1` counted results matching `^T-`, silently dropping every id that
+  does not start with `T-` — `probe_2_10bc`'s `D74` among them. It now matches on
+  the **result column**.
+- `test_2_5_to_2_8` left **`ZZ Probe OrgRoot`** on the site until the *next* run
+  cleaned it, so between runs the site sat on **3 org roots** — a D53 violation
+  that `deploy_appraisal_module` blocks on. It now removes its probe employees at
+  the end and asserts the count is back to 2 (**T-H8**).
+
+## 🔴 The org-tree fixture is gone — `Test-CafOrgFixture`
+
+Every question this suite asks is *"who may appraise whom"*, and the answer comes
+from three `reports_to` links built by hand on 2026-08-05
+(`test_fixture_credentials.md` §1): **C Rukaiya → A Kamrul → B Salsabila**, with
+**D Pramod** under C.
+
+On **2026-09-01** `caf.tests.workflow_gaps.data_align.fill_apply` replaced the
+whole tree with CAF's **real** org chart from `sites/employeewithreport_to.csv` —
+81 employees, written with `frappe.db.set_value`, so **no Version row records it**
+(OD-26) and nothing announced it. All four now report **directly to
+HR-EMP-00008**, who carries **61 direct reports**; Kamrul and Rukaiya have none.
+
+So `T-A1` gets a **correct** 403, `$APR` is null, and nineteen assertions then
+report on a URL built from nothing. `Test-CafOrgFixture` checks the three links
+first and says so in one line:
+
+- **`test_2_1_to_2_4`** stops (`T-ORG` FAIL). All 20 of its assertions need the tree.
+- **`test_2_5_to_2_8`** reports and carries on — 2.8's `reports_to` rules, `T-H7`
+  and the EPF probes do not need it and are worth running.
+
+⚠️ **Restoring the three links by hand will be undone the next time
+`fill_apply` runs** — which is exactly how this happened. Awaiting MG (T-37).
+
+The four `probe_2_10*` scripts do not depend on the tree and are unaffected.
+
+## What is red, and why
+
+| assertion | cause |
+|---|---|
+| `T-ORG` ×2 | the org tree above — **the only real finding** |
+| `T-F1` `T-F2` `T-F6` `T-G3` `T-J8f`, half of `T-J15` | downstream of it: every appraisal created as `SupA` 403s |
+| `T-I2` | the Appraisal workflow has **4 states / 4 transitions**, not 3 — `Cancelled` added 2026-08-22. Deliberately left red: GO_LIVE_TODO T-I2 says *"left red rather than edited on a guess about what it ought to assert"*, and there is no decision record for the state. **Do not edit it without one** |
+
+Fixed on 2026-09-10, each with the reason written beside it:
+
+- **`T-J15`** asserted the supervisor's Finger Log read returns **403**. OD-63
+  option d gave the Employee role a read **scoped to their own rows** on
+  2026-08-15, so 200 is correct. It now asks for **EMP_B's** logs explicitly and
+  requires **0 rows back** — a stronger claim than the 403 ever made.
+- **`T-J24` / `T-J24b`** — `Attendance Request` and `Employee Checkin` joined the
+  Custom DocPerm fixture under **OD-84 / T-24**, built and verified 2026-09-02.
+  Both lists (`$named` **and** `$touched`) now name them, with the reason.
 
 ## Gotchas
 
@@ -74,9 +129,12 @@ be run individually.
   `$touched` lists exist to catch a permission change escaping its intended scope.
   When a doctype legitimately joins them, name it *and say why in the file* — both
   current additions (Appraisal via OD-81b, Shift Assignment via R3) do.
-- **A failing assertion here is not automatically stale.** Two of the current
-  failures are: `T-I2` (the workflow gained a `Cancelled` state on 2026-08-22).
-  One is **not** — `T-J25` reports 4 users holding `Employee Self Service` where
-  D42/T22 says zero, and that is live drift, not a test to edit away.
+- **A failing assertion here is not automatically stale — and both endings have
+  happened.** `T-J25` once reported 4 users holding `Employee Self Service` where
+  D42/T22 says zero; that was **live drift**, and the fix was the site
+  (`retire_ess_role`), not the test — it passes at 0 today. `T-J15` and `T-J24`
+  were the other ending: shipped decisions (OD-63, OD-84) the assertions had not
+  caught up with. **Establish which before touching either**, and if you cannot,
+  do what T-I2 did — leave it red and say why in `GO_LIVE_TODO.md`.
 - Every script is **re-runnable and order-independent** by design. If one is not,
   that is the bug.

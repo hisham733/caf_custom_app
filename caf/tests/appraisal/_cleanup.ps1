@@ -3,14 +3,116 @@
 # Dot-sourced by every script that creates documents, so the suite is
 # RE-RUNNABLE and ORDER-INDEPENDENT.
 #
-# ⚠️ The reason this is a shared file rather than three copies: the first
-# version deleted without cancelling, and a REST DELETE of a SUBMITTED document
-# FAILS. A Completed appraisal therefore survived every "cleanup", and the next
-# run collapsed - T-A1 hit a duplicate, returned no document name, and every
-# later assertion built a URL from a null (405/404). Sixteen red lines, none of
-# them a product fault.
+# ⚠️ Cancel first, then delete. A REST DELETE of a SUBMITTED document FAILS, so
+# the first version left a Completed appraisal behind: the next run's T-A1 hit a
+# duplicate, returned no document name, and every later assertion then built a
+# URL from a null (405/404). Sixteen red lines, none of them a product fault.
 #
-# Cancel first, then delete. Same rule the Python cleanup scripts already follow.
+# 🔴 T-21 - THE RESET OWNS A LIST, NOT THE SITE.
+# The version before this one did:
+#     GET /api/resource/Appraisal?limit_page_length=0          # EVERY appraisal
+#     GET /api/resource/Employee Performance Feedback?...      # EVERY EPF
+# and deleted the lot. That was true when written and stopped being true. Three
+# CANCELLED appraisals belonging to real test users then sat on the site; they
+# could not be deleted at all - a DELETE is blocked by ANY referrer row,
+# cancelled ones included (quirks #63) - so every run warned "3 appraisal(s)
+# survived the reset" and test_2_1_to_2_4 collapsed on a null index.
+# run_all.ps1 has not completed since.
+#
+# It now removes only the fixtures the suite itself creates, declared below.
+# Everything else on the site belongs to somebody and is left alone.
+
+
+# --- the fixture manifest ----------------------------------------------------
+# Every (employee, cycle) pair that any script in this folder inserts an
+# Appraisal on - INCLUDING the ones that expect a 403, because a 403 that
+# regresses to a 200 leaves a row behind and the next run must still start clean.
+#
+# Add a pair here in the same commit that adds the assertion. A fixture missing
+# from this list is a fixture that survives the reset.
+$CAF_FIXTURE_APPRAISALS = @(
+  @{ employee = "HR-EMP-00185"; cycle = "2026-06" },  # T-A1 (-> Completed) · T-J15 · probe_2_10bc scaffolding
+  @{ employee = "HR-EMP-00185"; cycle = "2026-08" },  # T-F1  the current-month draft (BR6)
+  @{ employee = "HR-EMP-00185"; cycle = "2026-09" },  # T-I3  expects 403
+  @{ employee = "HR-EMP-00185"; cycle = "2026-11" },  # T-F6  deleted inline; here as the backstop
+  @{ employee = "HR-EMP-00022"; cycle = "2026-05" },  # T-E1  score toggle; deleted inline
+  @{ employee = "HR-EMP-00022"; cycle = "2026-06" },  # T-B4 expects 200 · T-A6 expects 403
+  @{ employee = "HR-EMP-00016"; cycle = "2026-06" },  # T-A7  expects 403 (A's own superior)
+  @{ employee = "HR-EMP-00003"; cycle = "2026-06" },  # T-G1  employee with no Finger Logs; deleted inline
+  @{ employee = "HR-EMP-00024"; cycle = "2026-06" }   # probe_2_10bc T-I3 expects 403
+)
+
+# An EPF carries no cycle, so it is matched on the marker every probe writes into
+# `feedback`, AND on being about one of the employees above. Both spellings are
+# live - "PROBE T-J8c/e" (probe_2_10bc) and "ZZPROBE" (test_2_5_to_2_8) - and
+# since this is a substring test, "ZZPROBE" satisfies it too.
+# ⚠️ Keep the marker in any new probe's feedback text, or its EPF stays forever.
+$CAF_FIXTURE_EPF_MARKER = "PROBE"
+
+
+# --- the org-tree precondition -----------------------------------------------
+# Every assertion about who may appraise whom rests on THREE links, built by hand
+# on 2026-08-05 and drawn in test_fixture_credentials.md §1:
+#
+#     C  Rukaiya       HR-EMP-00016
+#     ├── A Kamrul     HR-EMP-00024      ◄ A is B's supervisor - T-A1 needs this
+#     │   └── B Salsabila HR-EMP-00185
+#     └── D Pramod     HR-EMP-00022      ◄ under C, NOT under A - T-A6/T-D1/T-D2
+#
+# 🔴 On 2026-09-01 `caf.tests.workflow_gaps.data_align.fill_apply` replaced the
+# whole tree with CAF's REAL org chart from sites/employeewithreport_to.csv - 81
+# employees, written with `frappe.db.set_value`, so NO Version row records it
+# (OD-26) and nothing announced it. All four now report DIRECTLY to HR-EMP-00008,
+# who carries 61 direct reports; Kamrul and Rukaiya have none at all. The suite's
+# premise is simply absent, so T-A1 gets a correct 403, returns no document name,
+# and sixteen later assertions fail on a null - none of them a product fault.
+#
+# Say that once, in one line, instead of sixteen times in a language nobody can
+# read. Same principle as chunk7_roster's C75-WEAK: a gate whose fixture has
+# vanished must announce the fixture, not the symptom.
+$CAF_ORG_FIXTURE = @(
+  @{ employee = "HR-EMP-00024"; reports_to = "HR-EMP-00016"; role = "A (Kamrul) reports to C (Rukaiya)" },
+  @{ employee = "HR-EMP-00185"; reports_to = "HR-EMP-00024"; role = "B (Salsabila) reports to A (Kamrul)" },
+  @{ employee = "HR-EMP-00022"; reports_to = "HR-EMP-00016"; role = "D (Pramod) reports to C (Rukaiya)" }
+)
+
+
+function Test-CafOrgFixture {
+    param([Parameter(Mandatory = $true)] [scriptblock] $Request)
+
+    $ids  = ($CAF_ORG_FIXTURE | ForEach-Object { """$($_.employee)""" }) -join ","
+    $f    = [uri]::EscapeDataString("[[""name"",""in"",[$ids]]]")
+    $cols = [uri]::EscapeDataString('["name","employee_name","reports_to"]')
+    $rows = (& $Request "Admin" "GET" "/api/resource/Employee?limit_page_length=0&filters=$f&fields=$cols" $null).json.data
+
+    $now = @{}
+    foreach ($r in @($rows)) { $now[$r.name] = $r }
+
+    $broken = @()
+    foreach ($link in $CAF_ORG_FIXTURE) {
+        $actual = $now[$link.employee]
+        if (-not $actual) { $broken += "  $($link.employee) is not on this site at all"; continue }
+        if ($actual.reports_to -ne $link.reports_to) {
+            $broken += ("  {0} {1,-38} expected reports_to={2}, found {3}" -f `
+                        $link.employee, $actual.employee_name, $link.reports_to,
+                        $(if ($actual.reports_to) { $actual.reports_to } else { "<empty>" }))
+        }
+    }
+
+    if ($broken.Count -eq 0) { return $true }
+
+    Write-Host ""
+    Write-Host "  🔴 ORG-TREE FIXTURE MISSING - the suite's premise is not on this site." -ForegroundColor Red
+    $broken | ForEach-Object { Write-Host $_ -ForegroundColor Red }
+    Write-Host "  Documented in test_fixture_credentials.md §1 (built 2026-08-05)." -ForegroundColor Red
+    Write-Host "  Overwritten 2026-09-01 by caf.tests.workflow_gaps.data_align.fill_apply," -ForegroundColor Red
+    Write-Host "  which writes CAF's REAL org chart over all 81 employees via db.set_value" -ForegroundColor Red
+    Write-Host "  (no Version row, OD-26). Restoring these links by hand WILL be undone the" -ForegroundColor Red
+    Write-Host "  next time that script runs - which is how this happened. See T-21." -ForegroundColor Red
+    Write-Host ""
+    return $false
+}
+
 
 function Reset-CafTestData {
     param(
@@ -18,23 +120,49 @@ function Reset-CafTestData {
         [switch] $IncludeProbeEmployees
     )
 
+    $fixtureEmployees = @($CAF_FIXTURE_APPRAISALS | ForEach-Object { $_.employee } | Sort-Object -Unique)
     $summary = @{ appraisals = 0; epfs = 0; employees = 0 }
+    $stuck   = @()
 
-    # EPFs first - they can reference an appraisal
-    $epfs = (& $Request "Admin" "GET" "/api/resource/Employee%20Performance%20Feedback?limit_page_length=0" $null).json.data
-    foreach ($e in @($epfs)) {
-        & $Request "Admin" "PUT" "/api/resource/Employee%20Performance%20Feedback/$($e.name)" '{"docstatus":2}' | Out-Null
-        & $Request "Admin" "DELETE" "/api/resource/Employee%20Performance%20Feedback/$($e.name)" $null | Out-Null
-        $summary.epfs++
+    function _IsFixturePair($employee, $cycle) {
+        foreach ($f in $CAF_FIXTURE_APPRAISALS) {
+            if ($f.employee -eq $employee -and $f.cycle -eq $cycle) { return $true }
+        }
+        return $false
     }
 
-    $apr = (& $Request "Admin" "GET" "/api/resource/Appraisal?limit_page_length=0" $null).json.data
-    foreach ($a in @($apr)) {
-        # a Completed appraisal is docstatus 1 - cancel before deleting, or the
-        # DELETE silently fails and the record survives
-        & $Request "Admin" "PUT" "/api/resource/Appraisal/$($a.name)" '{"docstatus":2}' | Out-Null
-        & $Request "Admin" "DELETE" "/api/resource/Appraisal/$($a.name)" $null | Out-Null
-        $summary.appraisals++
+    # cancel only what is actually submitted - a PUT docstatus=2 on a DRAFT is
+    # refused, and the old code swallowed that refusal, which made a real
+    # "cannot cancel" indistinguishable from a no-op
+    function _RemoveDoc($Req, $doctype, $name, $docstatus) {
+        $dt = [uri]::EscapeDataString($doctype)
+        if ([int]$docstatus -eq 1) {
+            & $Req "Admin" "PUT" "/api/resource/$dt/$name" '{"docstatus":2}' | Out-Null
+        }
+        $d = & $Req "Admin" "DELETE" "/api/resource/$dt/$name" $null
+        if ($d.code -eq 200 -or $d.code -eq 202) { return $null }
+        return "HTTP $($d.code) $($d.err)"
+    }
+
+    $empIn   = [uri]::EscapeDataString("[[""employee"",""in"",[" + (($fixtureEmployees | ForEach-Object { """$_""" }) -join ",") + "]]]")
+    $aprCols = [uri]::EscapeDataString('["name","employee","appraisal_cycle","docstatus","workflow_state"]')
+    $epfCols = [uri]::EscapeDataString('["name","employee","docstatus","feedback"]')
+
+    # EPFs first: an EPF's `appraisal` link blocks the parent's DELETE even when
+    # the EPF itself is cancelled (quirks #63)
+    $epfs = (& $Request "Admin" "GET" "/api/resource/Employee%20Performance%20Feedback?limit_page_length=0&filters=$empIn&fields=$epfCols" $null).json.data
+    $myEpfs = @(@($epfs) | Where-Object { "$($_.feedback)" -like "*$CAF_FIXTURE_EPF_MARKER*" })
+    foreach ($e in $myEpfs) {
+        $why = _RemoveDoc $Request "Employee Performance Feedback" $e.name $e.docstatus
+        if ($why) { $stuck += "  EPF       $($e.name)  $why" } else { $summary.epfs++ }
+    }
+
+    $apr = (& $Request "Admin" "GET" "/api/resource/Appraisal?limit_page_length=0&filters=$empIn&fields=$aprCols" $null).json.data
+    $myApr = @(@($apr) | Where-Object { _IsFixturePair $_.employee $_.appraisal_cycle })
+    foreach ($a in $myApr) {
+        $why = _RemoveDoc $Request "Appraisal" $a.name $a.docstatus
+        if ($why) { $stuck += "  Appraisal $($a.name)  $($a.employee) $($a.appraisal_cycle) $($a.workflow_state)  $why" }
+        else      { $summary.appraisals++ }
     }
 
     if ($IncludeProbeEmployees) {
@@ -47,10 +175,17 @@ function Reset-CafTestData {
         }
     }
 
-    # confirm, rather than assume - a survivor here poisons the whole run
-    $left = @((& $Request "Admin" "GET" "/api/resource/Appraisal?limit_page_length=0" $null).json.data).Count
-    "  reset: removed $($summary.appraisals) appraisal(s), $($summary.epfs) EPF(s), $($summary.employees) probe employee(s); $left appraisal(s) remain"
-    if ($left -gt 0) {
-        Write-Host "  WARNING: $left appraisal(s) survived the reset - later assertions may fail on them, not on the product." -ForegroundColor Yellow
+    # confirm BY MEANING: the FIXTURE pairs are clear. Counting every Appraisal
+    # on the site is exactly what produced the old "3 appraisal(s) survived"
+    # warning - about three rows this suite never owned.
+    $after = (& $Request "Admin" "GET" "/api/resource/Appraisal?limit_page_length=0&filters=$empIn&fields=$aprCols" $null).json.data
+    $left  = @(@($after) | Where-Object { _IsFixturePair $_.employee $_.appraisal_cycle })
+
+    "  reset: removed $($summary.appraisals) appraisal(s), $($summary.epfs) EPF(s), $($summary.employees) probe employee(s); $($left.Count) fixture appraisal(s) remain"
+    if ($left.Count -gt 0) {
+        Write-Host "  WARNING: $($left.Count) FIXTURE appraisal(s) survived the reset - later assertions will fail on them, not on the product." -ForegroundColor Yellow
+        $stuck | ForEach-Object { Write-Host $_ -ForegroundColor Yellow }
+        Write-Host "  A DELETE is blocked by ANY referrer row, cancelled ones included (quirks #63)." -ForegroundColor Yellow
+        Write-Host "  Find the referrer and remove it; do not widen this reset to take the site." -ForegroundColor Yellow
     }
 }

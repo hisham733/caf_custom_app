@@ -44,6 +44,16 @@ function WfAction($role, $name, $action) {
 Reset-CafTestData -Request { param($r,$m,$p,$b) Req $r $m $p $b }
 ""
 
+# --- the org tree this whole script is about --------------------------------
+# Stop here rather than run on. Every assertion below asks who may appraise
+# whom, so with the tree gone T-A1 gets a correct 403, $APR is null, and the
+# remaining nineteen lines report on a URL built from nothing. One named FAIL
+# is worth more than twenty anonymous ones.
+if (-not (Test-CafOrgFixture -Request { param($r,$m,$p,$b) Req $r $m $p $b })) {
+  Res "T-ORG" $false "org-tree fixture absent (see above) - 2.1-2.4 not run; nothing here would have measured the product"
+  return
+}
+
 "=== 2.1  Supervisor workflow (happy path) ==="
 
 # T-A1
@@ -59,7 +69,7 @@ $weighted = @($rows | Where-Object { $_.per_weightage -gt 0 })
 Res "T-A2b" ($rows.Count -eq 6 -and $weighted.Count -eq 6) "appraisal_kra rows=$($rows.Count) with weightage=$($weighted.Count) : $((($rows | ForEach-Object { $_.kra }) -join ', '))"
 
 # T-A2 - the auto-filled cells, asserted as STRINGS in D68 format
-$byKra = @{}; foreach ($r in $rows) { $byKra[$r.kra] = $r }
+$byKra = @{}; foreach ($r in $rows) { if ($r.kra) { $byKra[$r.kra] = $r } }
 $att = $byKra["Attendance"].caf_date_cell
 $pun = $byKra["Punctuality"].caf_date_cell
 $ot  = $byKra["OT Hours"].caf_date_cell

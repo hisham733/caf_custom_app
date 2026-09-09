@@ -35,8 +35,17 @@ function Res($id, $ok, $detail) { "{0,-7} {1,-6} {2}" -f $id, $(if ($ok) {"PASS"
 # ⚠️ The assertion itself is still worth keeping and is NOT weakened: it exists
 # to catch a permission change escaping its intended scope, and the only way to
 # widen it is to name the new doctype here, deliberately, as this comment does.
-$named = @("Appraisal","Appraisal Cycle","Employee Performance Feedback",
-           "Finger Log","HR Settings","KRA","Shift Assignment")
+# 🔴 "Attendance Request" and "Employee Checkin" ADDED 2026-09-10, and named here
+# rather than tolerated. Both joined the fixture under **OD-84 / T-24**, built and
+# verified 2026-09-02: CAF does not use self-service attendance, so the `Employee`
+# role was cut to read-only on each and `Employee Self Service` to nothing.
+# `Attendance Request.on_submit` creates Attendance directly, and `Employee
+# Checkin` becomes Attendance the moment any Shift Type sets
+# `enable_auto_attendance` — so both were doors onto CAF's single source of
+# attendance (FBR69). Shipped, intended, and the assertion was simply behind them.
+$named = @("Appraisal","Appraisal Cycle","Attendance Request","Employee Checkin",
+           "Employee Performance Feedback","Finger Log","HR Settings","KRA",
+           "Shift Assignment")
 $sql = 'SELECT DISTINCT parent FROM `_54cc49b9a1aab38b`.`tabCustom DocPerm` ORDER BY parent;'
 $all = ($sql | wsl docker exec -i mariadb mariadb -uroot -p123 -N 2>$null) | ForEach-Object { $_.Trim() } | Where-Object { $_ }
 
@@ -66,7 +75,13 @@ $outside = @($all | Where-Object { $named -notcontains $_ })
 # `caf.scripts.shift_assignment_lockdown` (R3) removed `allow_on_submit` from
 # `status` so a PERSON can no longer set it — stock's daily expiry job still
 # writes it through `db_set`, which is the point. A deliberate, shipped change.
-$touched = @("Appraisal","Employee Performance Feedback","Finger Log","HR Settings",
+# "Attendance Request" and "Employee Checkin" ADDED 2026-09-10 for the OD-84
+# reason given above. They belong in BOTH lists: $named says the fixture may
+# carry them, $touched says CAF deliberately changed them. Widening only $named
+# turned this assertion red - correctly, since a doctype whose permissions CAF
+# altered without saying so is exactly what T-J24 is for.
+$touched = @("Appraisal","Attendance Request","Employee Checkin",
+             "Employee Performance Feedback","Finger Log","HR Settings",
              "KRA","Shift Assignment")
 $unexpected = @($appraisalScope | Where-Object { $touched -notcontains $_ })
 Res "T-J24" ($unexpected.Count -eq 0) `
