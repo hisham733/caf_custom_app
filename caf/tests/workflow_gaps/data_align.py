@@ -123,6 +123,25 @@ def fill_dry():
 
 
 def fill_apply():
+    """Write reports_to + leave_approver from the CSV, then REBUILD THE TREE.
+
+    🔴 The rebuild is not optional and is why it is called here rather than left
+    to the operator. `frappe.db.set_value` writes the column and nothing else —
+    it bypasses the document lifecycle, so `NestedSet.on_update` never runs and
+    `lft`/`rgt` keep describing the OLD hierarchy. The organizational chart,
+    `get_descendants_of`, and therefore the whole appraisal subtree rule (D18)
+    all walk `lft`/`rgt`, NOT `reports_to`.
+
+    So without this, `reports_to` says one thing and the org chart shows
+    another, with nothing to indicate it. MG, 2026-09-10: *"which ever option
+    that ensure the org_chart reflect and align with emp.report_to. ALSO when
+    emp.report_to changes org_chart also change accordingly."* This is that
+    guarantee, made structural instead of remembered.
+
+    ⚠️ `tree_rebuild()` stays as a separate mode for repairing a tree some other
+    script skewed; it is no longer something anyone has to remember after THIS
+    one.
+    """
     plan, problems = fill_plan()
     done = 0
     for eid, action, rt, la in plan:
@@ -141,6 +160,12 @@ def fill_apply():
     print(f"applied {done} rows; problems: {len(problems)}")
     for p in problems:
         print(f"  PROBLEM {p}")
+
+    # the org chart must never be left describing the previous hierarchy
+    tree_rebuild()
+    bad = tree_check()
+    print(f"org chart vs reports_to: {bad} disagreement(s) "
+          f"({'clean' if not bad else 'STILL BROKEN - investigate'})")
 
 
 def accounts_plan():
@@ -302,6 +327,27 @@ def verify():
     return out
 
 
+def tree_check():
+    """Does the ORG CHART still agree with `reports_to`? Returns the count of
+    disagreements, 0 being correct.
+
+    A child must sit strictly inside its parent's `lft`/`rgt` window. When it
+    does not, `reports_to` and the chart describe two different companies — and
+    the appraisal subtree rule (D18) believes the chart.
+
+    Cheap enough to call after anything that writes `reports_to`.
+    """
+    bad = frappe.db.sql("""
+        SELECT COUNT(*) FROM `tabEmployee` c
+          JOIN `tabEmployee` p ON p.name = c.reports_to
+         WHERE c.status = 'Active'
+           AND NOT (c.lft > p.lft AND c.rgt < p.rgt)""")[0][0]
+    orphaned = frappe.db.sql("""
+        SELECT COUNT(*) FROM `tabEmployee`
+         WHERE status = 'Active' AND (IFNULL(lft,0) = 0 OR IFNULL(rgt,0) = 0)""")[0][0]
+    return int(bad) + int(orphaned)
+
+
 def tree_rebuild():
     """After bulk reports_to updates the nested-set lft/rgt is stale - the org
     chart's connection counts and get_descendants_of (appraisal subtree rule)
@@ -320,6 +366,7 @@ def run(mode="verify"):
         "title_verify": title_verify,
         "companions_remove": companions_remove,
         "tree_rebuild": tree_rebuild,
+        "tree_check": tree_check,
         "fill_dry": fill_dry,
         "fill_apply": fill_apply,
         "accounts_dry": accounts_dry,

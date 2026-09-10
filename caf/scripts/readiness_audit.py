@@ -243,6 +243,50 @@ def check_org_chart():
                 or f"all filled; only the {len(ORG_ROOTS)} org roots are blank (FBR50)")
 
 
+def check_org_tree_sync():
+    """🔴 The ORGANIZATIONAL CHART must still describe what `reports_to` says.
+
+    `check_org_chart` above proves the field is FILLED. This proves the chart
+    AGREES with it, which is a different question and the one that bites.
+
+    MG, 2026-09-10: *"which ever option that ensure the org_chart reflect and
+    align with emp.report_to. ALSO when emp.report_to changes org_chart also
+    change accordingly."*
+
+    ⚠️ Frappe stores the hierarchy TWICE. `reports_to` is the field people edit;
+    `lft`/`rgt` is the nested set that `/app/organizational-chart`,
+    `get_descendants_of` and therefore CAF's appraisal subtree rule (D18)
+    actually walk. Saving the Employee document keeps them together —
+    `NestedSet.on_update` rebuilds the set. **`frappe.db.set_value` does not**:
+    it writes the column and skips the lifecycle entirely, so a bulk update
+    leaves the chart describing the previous hierarchy with nothing to say so.
+
+    That is not hypothetical — `caf.tests.workflow_gaps.data_align.fill_apply`
+    rewrote 81 employees exactly that way on 2026-09-01. It now rebuilds the
+    tree itself, and this check is the standing proof for everything else.
+
+    ✅ Measured 2026-09-10 on this site: 0 disagreements across 89 active
+    employees.
+    """
+    misplaced = frappe.db.sql("""
+        SELECT c.name, c.employee_name, p.employee_name AS mgr
+          FROM `tabEmployee` c
+          JOIN `tabEmployee` p ON p.name = c.reports_to
+         WHERE c.status = 'Active'
+           AND NOT (c.lft > p.lft AND c.rgt < p.rgt)""", as_dict=True)
+    unplaced = frappe.db.sql("""
+        SELECT name, employee_name FROM `tabEmployee`
+         WHERE status = 'Active'
+           AND (IFNULL(lft, 0) = 0 OR IFNULL(rgt, 0) = 0)""", as_dict=True)
+
+    bad = ([f"{r.employee_name} is not inside {r.mgr}'s branch" for r in misplaced]
+           + [f"{r.employee_name} has no position in the tree" for r in unplaced])
+    return _row("BLOCK" if bad else "ok",
+                "org chart disagrees with reports_to", len(bad),
+                ", ".join(bad[:4])
+                or "every active employee sits inside their manager's branch")
+
+
 def check_approver_matches_manager():
     """A NOTE, not a block — the approver is usually the manager, but need not be.
 
@@ -339,7 +383,7 @@ def check_self_service_attendance():
 
 CHECKS = [check_naming, check_default_shift, check_holiday_list, check_shift_lists,
           check_alt_pairs, check_manager_logins, check_attendance_device,
-          check_org_chart,
+          check_org_chart, check_org_tree_sync,
           check_approver_matches_manager, check_leave_period,
           check_next_year_holidays, check_missing_mc, check_missing_annual,
           check_self_service_attendance]

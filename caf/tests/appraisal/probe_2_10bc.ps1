@@ -144,13 +144,50 @@ Result "T-J18" ($k2.code -eq 403 -and $exists -eq 0) "Employee create KRA: code=
 ""
 "=== 2.9  permission model shipped, not just configured ==="
 
-# T-I2 - the Workflow record reached the site with 3 states + 3 transitions
+# T-I2 - the Workflow record reached the site with the shape CAF decided on.
+#
+# ⚠️ EXPECTATION CORRECTED 2026-09-10, and only after MG confirmed it. This
+# asserted 3 states + 3 transitions and had been left red since 2026-08-22
+# rather than edited on a guess (GO_LIVE_TODO T-I2). The 4th state, `Cancelled`,
+# is the FIX for what MG's own manual pass found that same day
+# (`MG_LLM_ui_touch up.md`, Pass C5):
+#
+#   "*too@* -HR-APR-2026-00309 - Press cancel - AP.doc.status = still completed
+#    ... Too Poh Chin cancelled this document - possible issue?"
+#
+# Two faults in one line. A SUPERVISOR cancelled a Completed appraisal, and the
+# workflow_state still read "Completed" afterwards while docstatus had gone to
+# 2 - a document displaying the opposite of its own state. Routing cancel
+# THROUGH the workflow fixes both: only HR Manager may take the transition, and
+# taking it moves the state. `Employee.cancel` is now 0 on Appraisal, measured.
+#
+# 🔴 Asserted BY MEANING, not by counting. Counting to 4 would pass against four
+# wrong states; what matters is that the Cancel route exists, starts at
+# Completed, and belongs to HR Manager alone.
 $w = Req Admin GET "/api/resource/Workflow/CAF%20Appraisal%20Workflow"
 $wd = $w.json.data
 $states = @($wd.states); $trans = @($wd.transitions)
+$stateNames = @($states | ForEach-Object { $_.state })
 $selfApprove = ($trans | Where-Object { $_.action -eq "Approve" }).allow_self_approval
-Result "T-I2" ($w.code -eq 200 -and $states.Count -eq 3 -and $trans.Count -eq 3 -and $wd.is_active -eq 1 -and $selfApprove -eq 0) `
-  "Workflow: code=$($w.code) active=$($wd.is_active) states=$($states.Count) transitions=$($trans.Count) Approve.allow_self_approval=$selfApprove"
+$cancelEdge = @($trans | Where-Object { $_.action -eq "Cancel" })
+$cancelOk = ($cancelEdge.Count -eq 1 -and $cancelEdge[0].state -eq "Completed" `
+             -and $cancelEdge[0].next_state -eq "Cancelled" -and $cancelEdge[0].allowed -eq "HR Manager")
+$cancelledState = @($states | Where-Object { $_.state -eq "Cancelled" })
+$cancelledDs = if ($cancelledState.Count) { $cancelledState[0].doc_status } else { "absent" }
+Result "T-I2" ($w.code -eq 200 -and $wd.is_active -eq 1 -and $selfApprove -eq 0 `
+               -and $cancelOk -and "$cancelledDs" -eq "2" `
+               -and ($stateNames -contains "Draft") -and ($stateNames -contains "Pending HR Review") `
+               -and ($stateNames -contains "Completed")) `
+  "Workflow: code=$($w.code) active=$($wd.is_active) states=$($states.Count) transitions=$($trans.Count) Approve.allow_self_approval=$selfApprove; Cancel edge Completed->Cancelled by HR Manager=$cancelOk; Cancelled.doc_status=$cancelledDs (must be 2)"
+
+# T-I2b - the trap MG hit and could not name. `allow_self_approval = 0` compares
+# against **doc.owner**, so the HR Manager who clicks Amend BECOMES the owner of
+# the amended document and can then never approve it. MG, Pass C5:
+# "click amend -> submit for review -> unable to escalate further ... issue =
+# workflow is stucked". It is not stuck; it is waiting for a DIFFERENT HR
+# Manager. Asserted here so the rule is visible rather than rediscovered.
+Result "T-I2b" ($selfApprove -eq 0) `
+  "Approve.allow_self_approval=$selfApprove - 0 means the amender cannot approve their own amendment; a second HR Manager must (OD-87b). This is the 'workflow is stuck' MG reported, and it is deliberate"
 "        states:      " + (($states | ForEach-Object { "$($_.state)(ds=$($_.doc_status),edit=$($_.allow_edit))" }) -join '  ')
 "        transitions: " + (($trans  | ForEach-Object { "$($_.state)-[$($_.action)]->$($_.next_state) by $($_.allowed)" }) -join '  ')
 
