@@ -14,7 +14,17 @@ if (-not (Test-Path $credFile)) {
 . (Join-Path $here "_cleanup.ps1")
 $U = $CAF_SITE_URL
 $T = $CAF_TOKENS
-function CafHeader($role) { return @{ Authorization = "token $($T[$role])" } }
+function CafHeader($role) {
+  # 🔴 A MISSING KEY IS THE MOST DANGEROUS FAILURE IN THIS SUITE. $T[$role] on an
+  # absent key returns $null, so "token " goes out, Frappe treats the caller as
+  # GUEST, and every request comes back 403 - which makes every test that EXPECTS
+  # a 403 pass having proved nothing. It bit T-J10 once, and again on 2026-09-10
+  # when the T-37 re-point renamed SupA2 -> SupA. Fail loudly instead.
+  if (-not $T[$role]) {
+    throw "credentials.ps1 has no token for role '$role'. Every request would run as Guest, and the 403-expecting tests would pass for the wrong reason."
+  }
+  return @{ Authorization = "token $($T[$role])" }
+}
 function Req($role, $method, $path, $body) {
   $p = @{ Uri = "$U$path"; Method = $method; Headers = (CafHeader $role); UseBasicParsing = $true; TimeoutSec = 60 }
   if ($body) { $p.Body = $body; $p.ContentType = "application/json" }
@@ -38,20 +48,24 @@ Reset-CafTestData -Request { param($r,$m,$p,$b) Req $r $m $p $b }
 ""
 
 "=== scaffolding: one cycle + one appraisal (created as HR Manager) ==="
-$CYCLE = "2026-06"
+$CYCLE = "2026-07"   # T-37: the month the new fixture employees have logs for
 $c = Req HRMgr GET "/api/resource/Appraisal%20Cycle/$CYCLE"
 if ($c.code -ne 200) {
   $c = Req HRMgr POST "/api/method/frappe.client.insert" (@{ doc = @{
-        doctype="Appraisal Cycle"; cycle_name=$CYCLE; start_date="2026-06-01"; end_date="2026-06-30"; company="CAF"
+        doctype="Appraisal Cycle"; cycle_name=$CYCLE; start_date="2026-07-01"; end_date="2026-07-31"; company="CAF"
       }} | ConvertTo-Json -Depth 5)
   "  cycle created: code=$($c.code) $($c.err)"
 } else { "  cycle $CYCLE already exists" }
 
-$apr = Req HRMgr GET "/api/resource/Appraisal?filters=%5B%5B%22appraisal_cycle%22%2C%22%3D%22%2C%222026-06%22%5D%5D&limit_page_length=1"
+# ⚠️ Filter on $CYCLE, not a hardcoded month. This read "2026-06" while the cycle
+# above was already $CYCLE, so after the T-37 re-point it would have searched a
+# month nothing is created in and rebuilt the scaffolding on every run.
+$cf = [uri]::EscapeDataString("[[""appraisal_cycle"",""="",""$CYCLE""]]")
+$apr = Req HRMgr GET "/api/resource/Appraisal?filters=$cf&limit_page_length=1"
 $aprName = if ($apr.json -and @($apr.json.data).Count -gt 0) { $apr.json.data[0].name } else { $null }
 if (-not $aprName) {
   $a = Req HRMgr POST "/api/method/frappe.client.insert" (@{ doc = @{
-        doctype="Appraisal"; employee="HR-EMP-00185"; appraisal_cycle=$CYCLE; company="CAF"
+        doctype="Appraisal"; employee=$CAF_EMP.B; appraisal_cycle=$CYCLE; company="CAF"
         appraisal_template="CAF Monthly Appraisal"
       }} | ConvertTo-Json -Depth 5)
   $aprName = $a.json.message.name
@@ -72,15 +86,16 @@ $kraRows = (Req HRMgr GET "/api/resource/Appraisal/$aprName").json.data.appraisa
 
 # T-J8c FIRST - an ordinary Employee posts an EPF WITH the appraisal link set.
 # Expected: HTTP 200 and the stored `appraisal` is EMPTY (silently reset).
-# SupA, not EmpB: EmpB's Employee record has create_user_permission=1, so Frappe
-# scopes her to her OWN record and she cannot file feedback about a colleague at
-# all (D78). That is correct behaviour, but it measures User Permission rather
-# than the permlevel this test is about.
+# SupA files it, not EmpB. Historically that was because EmpB carried
+# create_user_permission=1 and Frappe scoped her to her own record (D78) - which
+# measures User Permission rather than the permlevel this test is about. It stays
+# SupA after the T-37 re-point for the plainer reason below: the subject and the
+# reviewer must be two different people, and SupA is B's actual supervisor.
 $epf = Req SupA POST "/api/method/frappe.client.insert" (@{ doc = @{
         # subject and reviewer must DIFFER - stock validate_employee() blocks
-        # self-feedback, and the scaffolding appraisal belongs to HR-EMP-00185
-        doctype="Employee Performance Feedback"; employee="HR-EMP-00185"; company="CAF"
-        reviewer="HR-EMP-00024"; added_on="2026-08-05 09:00:00"
+        # self-feedback, and the scaffolding appraisal belongs to B
+        doctype="Employee Performance Feedback"; employee=$CAF_EMP.B; company="CAF"
+        reviewer=$CAF_EMP.A; added_on="2026-08-05 09:00:00"
         feedback="<p>PROBE T-J8c standing feedback</p>"; appraisal=$aprName
       }} | ConvertTo-Json -Depth 5)
 $epfName = $epf.json.message.name
@@ -107,7 +122,7 @@ Result "T-J8d" ($epfDoc.total_score -eq 0 -and $scoreBefore -eq $scoreAfter) "un
 
 # T-J8e - HR Manager CAN set the link (the T31 escape hatch stays open)
 $epf2 = Req HRMgr POST "/api/method/frappe.client.insert" (@{ doc = @{
-        doctype="Employee Performance Feedback"; employee="HR-EMP-00185"; company="CAF"
+        doctype="Employee Performance Feedback"; employee=$CAF_EMP.B; company="CAF"
         reviewer="HR-EMP-00003"; added_on="2026-08-05 09:05:00"
         feedback="<p>PROBE T-J8e linked feedback</p>"; appraisal=$aprName
       }} | ConvertTo-Json -Depth 5)
@@ -195,7 +210,7 @@ Result "T-I2b" ($selfApprove -eq 0) `
 # an Appraisal. The gate is the has_permission hook, which is CHUNK 2 work -
 # this probe is expected to fail here and is recorded as the chunk-2 baseline.
 $t = Req EmpB POST "/api/method/frappe.client.insert" (@{ doc = @{
-      doctype="Appraisal"; employee="HR-EMP-00024"; appraisal_cycle=$CYCLE; company="CAF"
+      doctype="Appraisal"; employee=$CAF_EMP.A; appraisal_cycle=$CYCLE; company="CAF"
       appraisal_template="CAF Monthly Appraisal"
     }} | ConvertTo-Json -Depth 5)
 Result "T-I3" ($t.code -eq 403) "Employee with no direct reports creates an Appraisal: code=$($t.code) (403 required; the has_permission gate is Chunk 2)"

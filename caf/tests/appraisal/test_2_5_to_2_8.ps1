@@ -1,7 +1,9 @@
 # CAF Appraisal chunk 2 - test plan 2.5 to 2.8, plus the five carried over from
 # chunk 1 (T-I3, T-J8c, T-J8d, T-J8f, T-J15).
-# Today is 2026-08-05, so cycle 2026-08 is the CURRENT, unfinished month - that
-# is what makes the BR6 tests meaningful.
+# 🔴 $CURRENT must be the month ACTUALLY IN PROGRESS - that is the whole basis of
+# the BR6 tests, and it rots. Written when "today" was 2026-08-05 and left at
+# 2026-08 until 2026-09-10, by which point the month had ended and T-F2 was
+# asserting that a legal submit is refused. **Re-check it when a BR6 test fails.**
 
 $ErrorActionPreference = "Continue"
 # Credentials are NOT stored in this repo - see credentials.example.ps1.
@@ -15,10 +17,27 @@ if (-not (Test-Path $credFile)) {
 . (Join-Path $here "_cleanup.ps1")
 $U = $CAF_SITE_URL
 $T = $CAF_TOKENS
-$EMP_B = "HR-EMP-00185"; $EMP_D = "HR-EMP-00022"; $EMP_A = "HR-EMP-00024"
-$PAST = "2026-06"; $CURRENT = "2026-08"
+# T-37, 2026-09-10: the REAL org tree, from credentials.ps1.
+$EMP_B = $CAF_EMP.B   # HR-EMP-00171 Siti Noratikah - leaf under A
+$EMP_D = $CAF_EMP.D   # HR-EMP-00009 Seow Zi Ying - OUTSIDE A's branch
+$EMP_A = $CAF_EMP.A   # HR-EMP-00036 Nurulfarehah
+# ⚠️ DATE ROT FIXED. The header still said "Today is 2026-08-05", and $CURRENT
+# was 2026-08 - a month that ended six weeks ago, which silently destroyed the
+# point of every BR6 test: T-F2 asserts a submit is REFUSED because the month has
+# not finished. $CURRENT must always be the month actually in progress.
+$PAST = "2026-07"; $CURRENT = "2026-09"
 
-function CafHeader($role) { return @{ Authorization = "token $($T[$role])" } }
+function CafHeader($role) {
+  # 🔴 A MISSING KEY IS THE MOST DANGEROUS FAILURE IN THIS SUITE. $T[$role] on an
+  # absent key returns $null, so "token " goes out, Frappe treats the caller as
+  # GUEST, and every request comes back 403 - which makes every test that EXPECTS
+  # a 403 pass having proved nothing. It bit T-J10 once, and again on 2026-09-10
+  # when the T-37 re-point renamed SupA2 -> SupA. Fail loudly instead.
+  if (-not $T[$role]) {
+    throw "credentials.ps1 has no token for role '$role'. Every request would run as Guest, and the 403-expecting tests would pass for the wrong reason."
+  }
+  return @{ Authorization = "token $($T[$role])" }
+}
 function Req($role, $method, $path, $body) {
   $p = @{ Uri = "$U$path"; Method = $method; Headers = (CafHeader $role); UseBasicParsing = $true; TimeoutSec = 90 }
   if ($body) { $p.Body = $body; $p.ContentType = "application/json" }
@@ -87,8 +106,8 @@ if ($f6.code -eq 200) { Req HRMgr DELETE "/api/resource/Appraisal/$($f6.json.mes
 "=== 2.5  Score toggle (D2/BR5) ==="
 
 # T-E1 - toggle OFF: an appraisal with no scores saves and submits cleanly
-# NOTE: uses EMP-D + 2026-05, NOT EMP-B + 2026-06. The 2.1 script already gives
-# EMP-B an appraisal for 2026-06, so reusing that pair hits the duplicate guard,
+# NOTE: uses EMP-D + 2026-05, NOT EMP-B + $PAST. test_2_1_to_2_4 already gives
+# EMP-B an appraisal for $PAST, so reusing that pair hits the duplicate guard,
 # returns no document name, and the next two assertions then build a URL from a
 # null and fail with HTTP 405 - which looks nothing like the real cause.
 SetToggle 0
@@ -156,17 +175,25 @@ Res "T-H7" ($h7.code -eq 200 -and $h7.json.message.org_roots_excluded -ge 2) `
   "cycle appraisees=$($h7.json.message.appraisees) org_roots_excluded=$($h7.json.message.org_roots_excluded) (must exclude at least the 2 Directors) $($h7.err)"
 
 # T-H6 - two disconnected trees: a supervisor under root 1 never sees root 2's branch
+# 🔴 THE LEAK LIST WAS REBUILT 2026-09-10 (T-37) and the old one was actively
+# WRONG: it named HR-EMP-00036 as part of "Director B's tree", and HR-EMP-00036
+# is now EMP_A herself - so the assertion would have reported a leak the moment
+# the suite worked. The disjoint branch in the real chart is Too Poh Chin's
+# (HR-EMP-00003, lft 2-39); C's own branch is HR-EMP-00008's (lft 46-425). They
+# do not overlap, so anyone under 00003 must never appear in C's list.
 $lC = Req SupC GET "/api/resource/Appraisal?limit_page_length=0&fields=%5B%22employee%22%5D"
 $seen = @(@($lC.json.data) | ForEach-Object { $_.employee } | Sort-Object -Unique)
-$rootBBranch = @("HR-EMP-00036","HR-EMP-00042","HR-EMP-00047","HR-EMP-00051","HR-EMP-00030","HR-EMP-00028")
-$leak = @($seen | Where-Object { $rootBBranch -contains $_ })
-Res "T-H6" ($leak.Count -eq 0) "supervisor in Director A's tree sees [$($seen -join ', ')]; leaks from Director B's tree: $($leak.Count)"
+$disjointBranch = @("HR-EMP-00005","HR-EMP-00007","HR-EMP-00009","HR-EMP-00011","HR-EMP-00013","HR-EMP-00065")
+$leak = @($seen | Where-Object { $disjointBranch -contains $_ })
+Res "T-H6" ($leak.Count -eq 0) "C sees [$($seen -join ', ')]; leaks from the disjoint branch under HR-EMP-00003: $($leak.Count) [$($leak -join ', ')]"
 
 ""
 "=== carried over from chunk 1 ==="
 
 # T-I3 - the headline proof of D55: no role gates this, the tree does
-$i3 = Ins EmpB @{ doctype="Appraisal"; employee=$EMP_B; appraisal_cycle="2026-09"; company="CAF"; appraisal_template="CAF Monthly Appraisal" }
+# ⚠️ 2026-12, not 2026-09: $CURRENT is now 2026-09, and reusing it here would hit
+# T-F1's own draft and return a DUPLICATE error instead of the 403 this tests for.
+$i3 = Ins EmpB @{ doctype="Appraisal"; employee=$EMP_B; appraisal_cycle="2026-12"; company="CAF"; appraisal_template="CAF Monthly Appraisal" }
 Res "T-I3" ($i3.code -eq 403) "Employee-role user with NO direct reports creates an Appraisal: code=$($i3.code) : $($i3.err)"
 if ($i3.code -eq 200) { Req HRMgr DELETE "/api/resource/Appraisal/$($i3.json.message.name)" | Out-Null }
 
@@ -208,7 +235,7 @@ $j15state = (Req HRMgr GET "/api/resource/Appraisal/$j15name").json.data.workflo
 # T-J8c - an ordinary employee files STANDING feedback (no appraisal link).
 # Blocked in chunk 1 by stock validate_appraisal(); the D60 override should fix it.
 $epf = Ins SupA @{ doctype="Employee Performance Feedback"; employee=$EMP_B; company="CAF"
-                   reviewer="HR-EMP-00024"; added_on="2026-08-05 10:00:00"
+                   reviewer=$EMP_A; added_on="2026-08-05 10:00:00"
                    feedback="<p>ZZPROBE standing feedback</p>" }
 $EPF1 = $epf.json.message.name
 Res "T-J8c" ($epf.code -eq 200) "standing EPF with NO appraisal link: code=$($epf.code) name=$EPF1 : $($epf.err)"

@@ -30,16 +30,21 @@
 #
 # Add a pair here in the same commit that adds the assertion. A fixture missing
 # from this list is a fixture that survives the reset.
+#
+# 🔴 RE-POINTED 2026-09-10 (T-37) onto the REAL org tree. The cycle moved too:
+# **2026-07**, because that is the month the new fixture employees actually have
+# Finger Logs for (38 each, 2026-07-01 to 2026-08-09) and because it has ENDED,
+# which BR6 requires before anything can be submitted for review.
 $CAF_FIXTURE_APPRAISALS = @(
-  @{ employee = "HR-EMP-00185"; cycle = "2026-06" },  # T-A1 (-> Completed) · T-J15 · probe_2_10bc scaffolding
-  @{ employee = "HR-EMP-00185"; cycle = "2026-08" },  # T-F1  the current-month draft (BR6)
-  @{ employee = "HR-EMP-00185"; cycle = "2026-09" },  # T-I3  expects 403
-  @{ employee = "HR-EMP-00185"; cycle = "2026-11" },  # T-F6  deleted inline; here as the backstop
-  @{ employee = "HR-EMP-00022"; cycle = "2026-05" },  # T-E1  score toggle; deleted inline
-  @{ employee = "HR-EMP-00022"; cycle = "2026-06" },  # T-B4 expects 200 · T-A6 expects 403
-  @{ employee = "HR-EMP-00016"; cycle = "2026-06" },  # T-A7  expects 403 (A's own superior)
-  @{ employee = "HR-EMP-00003"; cycle = "2026-06" },  # T-G1  employee with no Finger Logs; deleted inline
-  @{ employee = "HR-EMP-00024"; cycle = "2026-06" }   # probe_2_10bc T-I3 expects 403
+  @{ employee = "HR-EMP-00171"; cycle = "2026-07" },  # T-A1 (-> Completed) · T-J15 · probe_2_10bc scaffolding
+  @{ employee = "HR-EMP-00171"; cycle = "2026-09" },  # T-F1  the CURRENT unfinished month (BR6)
+  @{ employee = "HR-EMP-00171"; cycle = "2026-11" },  # T-F6  deleted inline; here as the backstop
+  @{ employee = "HR-EMP-00171"; cycle = "2026-12" },  # T-I3  expects 403
+  @{ employee = "HR-EMP-00009"; cycle = "2026-05" },  # T-E1  score toggle; deleted inline
+  @{ employee = "HR-EMP-00009"; cycle = "2026-07" },  # T-B4 expects 200 · T-A6 expects 403
+  @{ employee = "HR-EMP-00008"; cycle = "2026-07" },  # T-A7  expects 403 (A's own superior)
+  @{ employee = "HR-EMP-00003"; cycle = "2026-07" },  # T-G1  employee with no Finger Logs; deleted inline
+  @{ employee = "HR-EMP-00036"; cycle = "2026-07" }   # probe_2_10bc T-I3 expects 403
 )
 
 # An EPF carries no cycle, so it is matched on the marker every probe writes into
@@ -51,29 +56,34 @@ $CAF_FIXTURE_EPF_MARKER = "PROBE"
 
 
 # --- the org-tree precondition -----------------------------------------------
-# Every assertion about who may appraise whom rests on THREE links, built by hand
-# on 2026-08-05 and drawn in test_fixture_credentials.md §1:
+# Every assertion about who may appraise whom rests on three links. ✅ These are
+# now links that exist in CAF's REAL org chart - the suite was re-pointed onto it
+# on 2026-09-10 (T-37) rather than the chart being bent back to the suite:
 #
-#     C  Rukaiya       HR-EMP-00016
-#     ├── A Kamrul     HR-EMP-00024      ◄ A is B's supervisor - T-A1 needs this
-#     │   └── B Salsabila HR-EMP-00185
-#     └── D Pramod     HR-EMP-00022      ◄ under C, NOT under A - T-A6/T-D1/T-D2
+#     C  Ow Yong Nin Geet  HR-EMP-00008      61 direct reports
+#     └── A Nurulfarehah   HR-EMP-00036      9 direct reports, reports to C
+#         └── B Siti Noratikah HR-EMP-00171  Employee role ONLY
+#     D  Seow Zi Ying      HR-EMP-00009      under HR-EMP-00003 - a DISJOINT branch
 #
-# 🔴 On 2026-09-01 `caf.tests.workflow_gaps.data_align.fill_apply` replaced the
-# whole tree with CAF's REAL org chart from sites/employeewithreport_to.csv - 81
-# employees, written with `frappe.db.set_value`, so NO Version row records it
-# (OD-26) and nothing announced it. All four now report DIRECTLY to HR-EMP-00008,
-# who carries 61 direct reports; Kamrul and Rukaiya have none at all. The suite's
-# premise is simply absent, so T-A1 gets a correct 403, returns no document name,
-# and sixteen later assertions fail on a null - none of them a product fault.
+# 🔴 WHY THE OLD FIXTURE DIED, so nobody rebuilds it. It was hand-made on
+# 2026-08-05 (Rukaiya -> Kamrul -> Salsabila) and on 2026-09-01
+# `caf.tests.workflow_gaps.data_align.fill_apply` replaced the whole tree with the
+# real chart from sites/employeewithreport_to.csv - 81 employees written with
+# `frappe.db.set_value`, so NO Version row records it (OD-26) and nothing
+# announced it. Kamrul and Rukaiya ended up with zero reports, so T-A1 got a
+# CORRECT 403 and sixteen later assertions failed on a null.
 #
-# Say that once, in one line, instead of sixteen times in a language nobody can
+# ⚠️ `reports_to` is production-bound data (MG, 2026-09-01) and is not to be
+# edited to suit a test. If these links break again, the tree moved for a real
+# reason - re-point the suite again, do not restore the links.
+#
+# Say it once, in one line, instead of sixteen times in a language nobody can
 # read. Same principle as chunk7_roster's C75-WEAK: a gate whose fixture has
 # vanished must announce the fixture, not the symptom.
 $CAF_ORG_FIXTURE = @(
-  @{ employee = "HR-EMP-00024"; reports_to = "HR-EMP-00016"; role = "A (Kamrul) reports to C (Rukaiya)" },
-  @{ employee = "HR-EMP-00185"; reports_to = "HR-EMP-00024"; role = "B (Salsabila) reports to A (Kamrul)" },
-  @{ employee = "HR-EMP-00022"; reports_to = "HR-EMP-00016"; role = "D (Pramod) reports to C (Rukaiya)" }
+  @{ employee = "HR-EMP-00036"; reports_to = "HR-EMP-00008"; role = "A (Nurulfarehah) reports to C (Ow Yong Nin Geet)" },
+  @{ employee = "HR-EMP-00171"; reports_to = "HR-EMP-00036"; role = "B (Siti Noratikah) reports to A (Nurulfarehah)" },
+  @{ employee = "HR-EMP-00009"; reports_to = "HR-EMP-00003"; role = "D (Seow Zi Ying) sits OUTSIDE A's branch" }
 )
 
 

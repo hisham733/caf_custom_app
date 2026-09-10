@@ -37,13 +37,57 @@ mangles the UNC path.
 | `probe_2_10bc.ps1` | EPF permlevel · KRA permissions · workflow present |
 | `probe_2_10e.ps1` | cross-checks — did any permission change leak past its scope? |
 
-Role keys in `credentials.ps1` (**gitignored**, values in
-`test_fixture_credentials.md`): `HRMgr` `SupA` `EmpB` `SupC` `EmpD` `HRUser`
-`Admin`.
+Role keys in `credentials.ps1` (**gitignored**): `HRMgr` `SupA` `EmpB` `SupC`
+`EmpD` `HRUser` `Admin`, plus `HRMgr2` (second HR Manager) and `EmpBb` (spare
+second leaf).
+
+🔴 **A MISSING KEY IS THE MOST DANGEROUS FAILURE HERE, and it has happened
+twice.** `$T[$role]` on an absent key returns `$null`, so `token ` goes out,
+Frappe treats the caller as **Guest**, and everything returns 403 — which makes
+every test that *expects* 403 pass having proved nothing. It hit `T-J10` once and
+`SP2` on 2026-09-10 when the T-37 re-point renamed `SupA2` → `SupA`.
+✅ **`CafHeader` / `Req` now `throw` on a missing key** in every script. A warning
+in a document did not stop it twice; the throw will.
 
 ## ✅ T-21 CLOSED 2026-09-10 — `run_all.ps1` completes
 
-**59 passed, 8 failed — and all 8 have ONE cause**, the org-tree fixture (T-37).
+## ✅ 89 passed, 0 failed — green for the first time (T-37 done, 2026-09-10)
+
+```
+   test_2_1_to_2_4      21 · test_2_5_to_2_8      21 · test_supervisor_page 11
+   probe_2_10a           7 · probe_2_10b          12 · probe_2_10bc         12
+   probe_2_10e           6
+```
+
+**The suite now runs on CAF's REAL org tree**, not the retired hand-built one.
+`reports_to` is production-bound data and was not touched — the suite moved:
+
+| role | employee | user | why |
+|---|---|---|---|
+| **C** | HR-EMP-00008 Ow Yong Nin Geet | `production1@` | 61 reports, **no** HR-side role |
+| **A** | HR-EMP-00036 Nurulfarehah | `quality@` | 9 reports, reports to C |
+| **B** | HR-EMP-00171 Siti Noratikah | — | **Employee role only**, leaf under A |
+| **D** | HR-EMP-00009 Seow Zi Ying | — | disjoint branch; **needs no token** |
+
+🔴 **`ow.yong@` is deliberately NOT the senior supervisor** — he holds HR Manager,
+so every subtree assertion would pass on a *role* rather than the tree. He is
+`HRMgr2`, the second HR Manager the two-person rule needs.
+
+⭐ **The mapping lives in `credentials.ps1` (`$CAF_EMP`)** and every script reads
+it from there. The next re-point is one file.
+
+**The cycle moved to 2026-07** — the month the fixture employees actually have
+Finger Logs for (38 each) *and* a month that has ended, which BR6 requires before
+anything submits. T-A2's baseline was re-measured against real data:
+`1, 17, 27` / `` / `23.5 h` / `27 working days`, asserted exactly.
+
+⚠️ **Two expectations were wrong in a way a green suite would have hidden**:
+T-D2 required C to see D (true only in the old tree — D is now deliberately
+disjoint), and T-H6's leak list named HR-EMP-00036, who **is** A. Both corrected.
+
+⚠️ **`$CURRENT` in `test_2_5_to_2_8` rots.** It sat at `2026-08` until 2026-09-10,
+six weeks after that month ended, so T-F2 was asserting that a legal submit gets
+refused. **Re-check it whenever a BR6 test fails.**
 
 ## T-38 — what covering the supervisor page actually established
 

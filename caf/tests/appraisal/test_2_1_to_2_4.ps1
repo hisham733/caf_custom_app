@@ -15,10 +15,27 @@ if (-not (Test-Path $credFile)) {
 . (Join-Path $here "_cleanup.ps1")
 $U = $CAF_SITE_URL
 $T = $CAF_TOKENS   # includes Admin, used only for cleanup
-$EMP_A = "HR-EMP-00024"; $EMP_B = "HR-EMP-00185"; $EMP_C = "HR-EMP-00016"; $EMP_D = "HR-EMP-00022"
-$CYCLE = "2026-06"
+# T-37, 2026-09-10: the REAL org tree. C -> A -> B, with D on a disjoint branch.
+# Taken from credentials.ps1 so the mapping lives in exactly one place.
+$EMP_A = $CAF_EMP.A   # HR-EMP-00036 Nurulfarehah - 9 direct reports
+$EMP_B = $CAF_EMP.B   # HR-EMP-00171 Siti Noratikah - leaf under A
+$EMP_C = $CAF_EMP.C   # HR-EMP-00008 Ow Yong Nin Geet - A's own manager
+$EMP_D = $CAF_EMP.D   # HR-EMP-00009 Seow Zi Ying - OUTSIDE A's branch
+# 2026-07, not 2026-06: it is the month these employees actually have Finger Logs
+# for (38 each), and it has ENDED, which BR6 requires before T-A4 can submit.
+$CYCLE = "2026-07"
 
-function CafHeader($role) { return @{ Authorization = "token $($T[$role])" } }
+function CafHeader($role) {
+  # 🔴 A MISSING KEY IS THE MOST DANGEROUS FAILURE IN THIS SUITE. $T[$role] on an
+  # absent key returns $null, so "token " goes out, Frappe treats the caller as
+  # GUEST, and every request comes back 403 - which makes every test that EXPECTS
+  # a 403 pass having proved nothing. It bit T-J10 once, and again on 2026-09-10
+  # when the T-37 re-point renamed SupA2 -> SupA. Fail loudly instead.
+  if (-not $T[$role]) {
+    throw "credentials.ps1 has no token for role '$role'. Every request would run as Guest, and the 403-expecting tests would pass for the wrong reason."
+  }
+  return @{ Authorization = "token $($T[$role])" }
+}
 function Req($role, $method, $path, $body) {
   $p = @{ Uri = "$U$path"; Method = $method; Headers = (CafHeader $role); UseBasicParsing = $true; TimeoutSec = 60 }
   if ($body) { $p.Body = $body; $p.ContentType = "application/json" }
@@ -74,10 +91,15 @@ $att = $byKra["Attendance"].caf_date_cell
 $pun = $byKra["Punctuality"].caf_date_cell
 $ot  = $byKra["OT Hours"].caf_date_cell
 $rem = $byKra["Attendance"].caf_remarks
-# expected from raw SQL over the seeded set: 0.5UPL on the 16th, UPL on the 27th;
-# never late in June; approved OT 9.00 (clocked 7.00 - proves final_ot is used)
-Res "T-A2" ($att -eq "16½, 27" -and $pun -eq "" -and $ot -eq "9 h") `
-  "Attendance='$att' (expect '16½, 27')  Punctuality='$pun' (expect '')  OT='$ot' (expect '9 h')  Remarks='$rem'"
+# 🔴 BASELINE RE-MEASURED 2026-09-10 for the new B (HR-EMP-00171, cycle 2026-07).
+# The old one - '16½, 27' / '' / '9 h' - belonged to HR-EMP-00185 and to a June
+# 2026 seed that NO LONGER EXISTS: she has zero Finger Logs in June, so that
+# assertion had been dead for some time regardless of the org tree.
+# These values were measured by creating a real appraisal and reading the cells,
+# not derived - and they are asserted exactly, because a shape-only check ("some
+# cells populated") passes against a broken calculation.
+Res "T-A2" ($att -eq "1, 17, 27" -and $pun -eq "" -and $ot -eq "23.5 h") `
+  "Attendance='$att' (expect '1, 17, 27')  Punctuality='$pun' (expect '')  OT='$ot' (expect '23.5 h')  Remarks='$rem' (expect '27 working days')"
 "        auto_fill_computed_on = $($doc.auto_fill_computed_on)"
 
 # T-A3 - supervisor fills the text columns
@@ -168,10 +190,15 @@ $empsA = @(@($lA.json.data) | ForEach-Object { $_.employee } | Sort-Object -Uniq
 Res "T-D1" ($lA.code -eq 200 -and $empsA -contains $EMP_B -and $empsA -notcontains $EMP_C -and $empsA -notcontains $EMP_D) `
   "A sees: [$($empsA -join ', ')] - must contain $EMP_B, never $EMP_C or $EMP_D"
 
+# 🔴 EXPECTATION CORRECTED 2026-09-10 (T-37), and the old one would have been a
+# FALSE PASS on the new tree. It required C to see **D** - true only in the
+# retired hand-built fixture, where D sat under C. In the real chart D is on a
+# DISJOINT branch (under HR-EMP-00003), which is precisely what makes T-A6 and
+# T-D1 mean anything. So C must see the grandchild B and must NOT see D.
 $lC = Req SupC GET "/api/resource/Appraisal?limit_page_length=0&fields=%5B%22name%22%2C%22employee%22%5D"
 $empsC = @(@($lC.json.data) | ForEach-Object { $_.employee } | Sort-Object -Unique)
-Res "T-D2" ($lC.code -eq 200 -and $empsC -contains $EMP_B -and $empsC -contains $EMP_D) `
-  "C sees the whole subtree: [$($empsC -join ', ')] - must include grandchild $EMP_B and $EMP_D"
+Res "T-D2" ($lC.code -eq 200 -and $empsC -contains $EMP_B -and $empsC -notcontains $EMP_D) `
+  "C sees down her own branch: [$($empsC -join ', ')] - must include grandchild $EMP_B, and must NOT include $EMP_D (a disjoint branch)"
 
 $direct = Req SupA GET "/api/resource/Appraisal/$($hrApr.json.message.name)"
 Res "T-D3" ($direct.code -eq 403) "A fetches D's appraisal BY NAME (bypassing the list): code=$($direct.code) - proves the check is per-document"

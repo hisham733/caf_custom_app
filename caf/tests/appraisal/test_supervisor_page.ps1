@@ -19,10 +19,10 @@
 # up and tear down, never as a permission subject.
 #
 # THE FIXTURE - the REAL org tree, not the retired hand-built one:
-#     C  HR-EMP-00008 Ow Yong Nin Geet   production1@   (SupC2)
-#     └── A HR-EMP-00036 Nurulfarehah    quality@       (SupA2)  9 direct reports
-#         └── B HR-EMP-00171 Siti Noratikah              (EmpB2)  Employee role ONLY
-#             + HR-EMP-00181 Nurul Aisyah                (EmpB2b) a second leaf
+#     C  HR-EMP-00008 Ow Yong Nin Geet   production1@   (SupC)
+#     └── A HR-EMP-00036 Nurulfarehah    quality@       (SupA)  9 direct reports
+#         └── B HR-EMP-00171 Siti Noratikah              (EmpB)  Employee role ONLY
+#             + HR-EMP-00181 Nurul Aisyah                (EmpBb) a second leaf
 #
 # CYCLE: **2026-08**, and it must be a month that has ALREADY ENDED - BR6 refuses
 # `submit_for_review` on a cycle still running, so SP7/SP8 cannot be exercised in
@@ -51,6 +51,15 @@ $EMP_B   = "HR-EMP-00171"   # a leaf under A
 $EMP_B2  = "HR-EMP-00181"   # a second leaf under A - B's colleague
 
 function Req($role, $method, $path, $body) {
+  # 🔴 A MISSING KEY IS THE MOST DANGEROUS FAILURE IN THIS SUITE. $T[$role] on an
+  # absent key returns $null, so "token " goes out, Frappe treats the caller as
+  # GUEST, and everything comes back 403 - making every test that EXPECTS a 403
+  # pass having proved nothing. It happened here on 2026-09-10: the T-37 re-point
+  # renamed SupA2 -> SupA, this file still said SupA2, and SP2 "passed" while the
+  # server was answering "Login to access".
+  if (-not $T[$role]) {
+    throw "credentials.ps1 has no token for role '$role'. Every request would run as Guest, and the 403-expecting tests would pass for the wrong reason."
+  }
   $p = @{ Uri = "$U$path"; Method = $method; Headers = @{ Authorization = "token $($T[$role])" }
           UseBasicParsing = $true; TimeoutSec = 90 }
   if ($body) { $p.Body = $body; $p.ContentType = "application/json" }
@@ -103,7 +112,7 @@ function Clear-Cycle {
 # Employee 'HR-EMP-00001' in field Reported By ... issue - Carolina A/P Vijian is
 # report-to production1@". An employee who DOES report to the supervisor produced
 # an access error. This is that call, made as a supervisor over HTTP.
-$sp1 = Page SupA2 "get_direct_reports_appraisals" @{ appraisal_cycle = $CYCLE }
+$sp1 = Page SupA "get_direct_reports_appraisals" @{ appraisal_cycle = $CYCLE }
 $rows = @($sp1.json.message.doc_list | Where-Object { $_ -ne $null })
 Res "SP1" ($sp1.code -eq 200 -and $rows.Count -gt 0) `
   "supervisor lists her direct reports' appraisals: code=$($sp1.code) rows=$($rows.Count) total=$($sp1.json.message.total) : $($sp1.err)"
@@ -121,7 +130,7 @@ Res "SP1b" ($extra.Count -eq 0 -and $emps.Count -gt 0) `
 
 "=== SP2  a leaf employee has no direct reports ==="
 # Must refuse cleanly and say why - never a crash, and never somebody else's list.
-$sp2 = Page EmpB2 "get_direct_reports_appraisals" @{ appraisal_cycle = $CYCLE }
+$sp2 = Page EmpB "get_direct_reports_appraisals" @{ appraisal_cycle = $CYCLE }
 $sp2rows = CountRows $sp2.json.message.doc_list
 Res "SP2" ($sp2.code -ne 200 -or $sp2rows -eq 0) `
   "leaf employee opens the supervisor page: code=$($sp2.code) rows=$sp2rows (must be refused or empty) : $($sp2.err)"
@@ -138,13 +147,13 @@ if (-not $target) {
 } else {
   # SP3 - the owner-supervisor can read it. The positive control: if this fails,
   # the negatives below prove nothing (everything would be refused).
-  $sp3 = Page SupA2 "get_appraisal_doc" @{ appraisal_name = $target }
+  $sp3 = Page SupA "get_appraisal_doc" @{ appraisal_name = $target }
   Res "SP3" ($sp3.code -eq 200) "supervisor reads her own report's appraisal $target : code=$($sp3.code) rows=$(@($sp3.json.message.kra_rows).Count) editable=$($sp3.json.message.is_editable) : $($sp3.err)"
 
   # SP4 - the v1.1 fix, as a REGRESSION GUARD. `doc.check_permission("read")`
   # was added on 2026-08-06 after this exact call returned 200 where the raw
   # Frappe API correctly returned 403. Nothing has re-checked it since.
-  $sp4 = Page EmpB2 "get_appraisal_doc" @{ appraisal_name = $target }
+  $sp4 = Page EmpB "get_appraisal_doc" @{ appraisal_name = $target }
   Res "SP4" ($sp4.code -ne 200) `
     "leaf employee reads a COLLEAGUE's appraisal through the page: code=$($sp4.code) (must NOT be 200 - this is the v1.1 check_permission line) : $($sp4.err)"
 
@@ -154,8 +163,8 @@ if (-not $target) {
   foreach ($r in @($sp3.json.message.kra_rows)) {
     $kra += @{ name = $r.name; caf_description = "SP5 PROBE - must never be stored" }
   }
-  $sp5 = Page EmpB2 "save_appraisal_kra" @{ appraisal_name = $target; kra_rows = ($kra | ConvertTo-Json -Depth 5 -Compress) }
-  $after = Page SupA2 "get_appraisal_doc" @{ appraisal_name = $target }
+  $sp5 = Page EmpB "save_appraisal_kra" @{ appraisal_name = $target; kra_rows = ($kra | ConvertTo-Json -Depth 5 -Compress) }
+  $after = Page SupA "get_appraisal_doc" @{ appraisal_name = $target }
   $leaked = @(@($after.json.message.kra_rows) | Where-Object { "$($_.caf_description)" -like "*SP5 PROBE*" }).Count
   Res "SP5" ($sp5.code -ne 200 -and $leaked -eq 0) `
     "leaf employee WRITES into a colleague's appraisal: code=$($sp5.code) (must NOT be 200); rows carrying the probe text afterwards=$leaked (must be 0) : $($sp5.err)"
@@ -163,21 +172,21 @@ if (-not $target) {
   # 🔴 SP6 - submit_for_review has no check_permission either, and it moves the
   # document's workflow state. A stranger submitting somebody's appraisal for HR
   # review is a state change nobody asked for.
-  $sp6 = Page EmpB2 "submit_for_review" @{ appraisal_name = $target }
-  $state = (Page SupA2 "get_appraisal_doc" @{ appraisal_name = $target }).json.message.header.workflow_state
+  $sp6 = Page EmpB "submit_for_review" @{ appraisal_name = $target }
+  $state = (Page SupA "get_appraisal_doc" @{ appraisal_name = $target }).json.message.header.workflow_state
   Res "SP6" ($sp6.code -ne 200 -and $state -eq "Draft") `
     "leaf employee SUBMITS a colleague's appraisal: code=$($sp6.code) (must NOT be 200); state afterwards='$state' (must stay Draft) : $($sp6.err)"
 
   # SP7 - the supervisor's own submit works, and a second one is refused with a
   # sentence rather than a stack trace.
-  $sp7 = Page SupA2 "submit_for_review" @{ appraisal_name = $target }
-  $sp7b = Page SupA2 "submit_for_review" @{ appraisal_name = $target }
+  $sp7 = Page SupA "submit_for_review" @{ appraisal_name = $target }
+  $sp7b = Page SupA "submit_for_review" @{ appraisal_name = $target }
   Res "SP7" ($sp7.code -eq 200 -and $sp7b.code -ne 200) `
     "supervisor submits her own: code=$($sp7.code) state=$($sp7.json.message.workflow_state); submitting twice: code=$($sp7b.code) (must be refused) : $($sp7.err)"
 
   # SP8 - once it has left Draft the page must refuse edits, or a supervisor
   # could rewrite an appraisal HR is already reviewing.
-  $sp8 = Page SupA2 "save_appraisal_kra" @{ appraisal_name = $target; kra_rows = ($kra | ConvertTo-Json -Depth 5 -Compress) }
+  $sp8 = Page SupA "save_appraisal_kra" @{ appraisal_name = $target; kra_rows = ($kra | ConvertTo-Json -Depth 5 -Compress) }
   Res "SP8" ($sp8.code -ne 200) `
     "edit after Submit for Review: code=$($sp8.code) (must be refused - 'Locked for review') : $($sp8.err)"
 }
@@ -225,7 +234,7 @@ if ($target) {
 $up = (Req Admin GET ("/api/resource/User%20Permission?limit_page_length=0&filters=" +
        [uri]::EscapeDataString("[[""user"",""="",""production1@caffood.com""],[""allow"",""="",""Employee""]]"))).json.data
 $upCount = CountRows $up
-$sp10 = Page SupC2 "get_direct_reports_appraisals" @{ appraisal_cycle = $CYCLE }
+$sp10 = Page SupC "get_direct_reports_appraisals" @{ appraisal_cycle = $CYCLE }
 $sp10rows = CountRows $sp10.json.message.doc_list
 Res "SP10" ($sp10.code -eq 200 -and $sp10rows -gt 0) `
   "production1@ (61 direct reports, $upCount self-scoping Employee User Permission) opens the page: code=$($sp10.code) rows=$sp10rows - a supervisor MUST see their own reports : $($sp10.err)"

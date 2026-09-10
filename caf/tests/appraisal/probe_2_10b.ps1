@@ -12,7 +12,17 @@ if (-not (Test-Path $credFile)) {
 . $credFile
 $U = $CAF_SITE_URL
 $T = $CAF_TOKENS
-function CafHeader($role) { return @{ Authorization = "token $($T[$role])" } }
+function CafHeader($role) {
+  # 🔴 A MISSING KEY IS THE MOST DANGEROUS FAILURE IN THIS SUITE. $T[$role] on an
+  # absent key returns $null, so "token " goes out, Frappe treats the caller as
+  # GUEST, and every request comes back 403 - which makes every test that EXPECTS
+  # a 403 pass having proved nothing. It bit T-J10 once, and again on 2026-09-10
+  # when the T-37 re-point renamed SupA2 -> SupA. Fail loudly instead.
+  if (-not $T[$role]) {
+    throw "credentials.ps1 has no token for role '$role'. Every request would run as Guest, and the 403-expecting tests would pass for the wrong reason."
+  }
+  return @{ Authorization = "token $($T[$role])" }
+}
 function Req($role, $method, $path, $body) {
   $p = @{ Uri = "$U$path"; Method = $method; Headers = (CafHeader $role); UseBasicParsing = $true; TimeoutSec = 60 }
   if ($body) { $p.Body = $body; $p.ContentType = "application/json" }
