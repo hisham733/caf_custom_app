@@ -42,6 +42,7 @@ $CAF_FIXTURE_APPRAISALS = @(
   @{ employee = "HR-EMP-00171"; cycle = "2026-12" },  # T-I3  expects 403
   @{ employee = "HR-EMP-00009"; cycle = "2026-05" },  # T-E1  score toggle; deleted inline
   @{ employee = "HR-EMP-00009"; cycle = "2026-07" },  # T-B4 expects 200 · T-A6 expects 403
+  @{ employee = "HR-EMP-00009"; cycle = "2026-08" },  # SP12  FBR98 - D is the only subject free in 2026-08
   @{ employee = "HR-EMP-00008"; cycle = "2026-07" },  # T-A7  expects 403 (A's own superior)
   @{ employee = "HR-EMP-00003"; cycle = "2026-07" },  # T-G1  employee with no Finger Logs; deleted inline
   @{ employee = "HR-EMP-00036"; cycle = "2026-07" }   # probe_2_10bc T-I3 expects 403

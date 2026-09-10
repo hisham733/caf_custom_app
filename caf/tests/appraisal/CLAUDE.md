@@ -51,32 +51,41 @@ in a document did not stop it twice; the throw will.
 
 ## ✅ T-21 CLOSED 2026-09-10 — `run_all.ps1` completes
 
-## 🔴 SP11 is DELIBERATELY RED — do not weaken it
+## ✅ SP11 — was deliberately red, closed 2026-09-11 by FBR98
 
-**89 passed, 1 failed.** The one failure is **SP11**, and it reproduces the bug
-MG hit by hand on the supervisor page:
+**91 passed, 0 failed.** SP11 reproduced the bug MG hit by hand:
 
 > *production1@ opens the appraisal of his OWN report whose
 > `reported_by = HR-EMP-00001` → **403***
 
-**The cause is not the page.** `production1@` carries a **self-scoping Employee
-User Permission** (`allow = Employee, for_value = HR-EMP-00008, apply_to_all_doctypes = 1`),
-so any document holding a Link to a *different* Employee — and `reported_by` is
-one — falls outside his permitted set.
+**The cause was never the page.** `production1@` carries a **subtree-scoped**
+Employee User Permission (`allow = Employee, for_value = HR-EMP-00008,
+apply_to_all_doctypes = 1`). ⚠️ *"Self-scoping"* was the wrong word: `Employee` is
+a **TREE**, so that permission grants his own record **plus all 189 descendants**
+(190 total, `lft 46..425`) — but never his own superior. A document holding a Link
+**upward** falls outside the set, and `reported_by` was such a link whenever HR or
+a director created the form.
 
-⭐ **Measured: he is the ONLY supervisor affected — and he has 61 direct reports.**
-92 of the site's 94 Employee User Permissions are self-scoping, but the other 91
-are on people with **no reports**, where self-scoping is exactly right.
+✅ **FBR98 (decision ⑰) removed the source**: `set_reported_by` now stamps the
+**employee's own supervisor**, unconditionally, on every save.
 
-🔴 **The assertion states the DESIRED behaviour** — a supervisor must be able to
-open the appraisal of somebody who reports to them. Fixing it is a **policy**
-decision (should a supervisor carry a self-scoping Employee User Permission at
-all?), not a test edit. **Do not make it green by changing what it asks.**
+🔴 **THE READ WENT GREEN ON ITS OWN. THE FIXTURE DID NOT SURVIVE — and that is the
+fix working.** SP11 asserted two things: that a foreign value could be *planted*
+(a fact about the old code) and that the supervisor could then *read* it. The read
+is now 200; the plant is overwritten by `validate()`. SP11 was rewritten to assert
+the stronger fact — **the planted value does not stick, and the supervisor reads
+it** — and **SP12** was added as the drift test the suite never had: `ow.yong@`
+(HR Manager, own Employee HR-EMP-00001) creates **D**'s appraisal, D reports to
+HR-EMP-00003, so creator and correct answer can never coincide.
 
-## ✅ The other 89 — green since T-37 (2026-09-10)
+🔴 **Do not read a green SP11 as "User Permissions are harmless."** The mechanism
+is untouched — a `frappe.db.set_value` would still plant a foreign value (quirks
+#56) and still 403.
+
+## ✅ All 91 — green since T-37 (2026-09-10), FBR98 (2026-09-11)
 
 ```
-   test_2_1_to_2_4      21 · test_2_5_to_2_8      21 · test_supervisor_page 11
+   test_2_1_to_2_4      21 · test_2_5_to_2_8      21 · test_supervisor_page 13
    probe_2_10a           7 · probe_2_10b          12 · probe_2_10bc         12
    probe_2_10e           6
 ```
@@ -127,8 +136,8 @@ holder. **It does not — `production1@` sees all 61 of his reports.** User
 Permissions bite at the list/report layer and in `check_permission`; this
 endpoint uses `frappe.db.exists` / `get_value` / `get_doc`, which do not consult
 them. MG's failing document was a **pre-existing** appraisal whose `reported_by`
-was an Employee outside his permitted set — narrower than "the page is broken",
-and still owed a probe (**T-38b**).
+was an Employee outside his permitted set — narrower than "the page is broken".
+✅ **Probed as SP11 (T-38b) and closed 2026-09-11 by FBR98.**
 
 ```
    test_2_1_to_2_4    0 passed   1 failed   ← stops on T-ORG, by design

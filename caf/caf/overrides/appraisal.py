@@ -801,8 +801,42 @@ class CustomAppraisal(Appraisal):
         )
 
     def set_reported_by(self):
-        if not self.reported_by:
-            self.reported_by = get_employee_for_user()
+        """FBR98 - `reported_by` is the employee's SUPERVISOR, not the creator.
+
+        The paper appraisal form has a "Reported By" line, and the 2026-08 build
+        brief said to "set reported_by server-side to the acting supervisor's
+        Employee" (build_brief_chunk2.md:172). What shipped was
+        get_employee_for_user() - the Employee of whoever is logged in - which
+        equals the supervisor only when the supervisor is the one creating it.
+
+        For a supervisor it always did: may_appraise() allows DIRECT reports
+        only, so the employee's reports_to IS the creator. The drift shows up
+        for HR Manager and Administrator, who may appraise anyone - they stamped
+        THEMSELVES on somebody else's supervisor's form.
+
+        That is what MG hit on 2026-09-10 (T-38b): HR-APR-2026-00091 carried
+        reported_by = HR-EMP-00001, a director, and `production1@` - the
+        supervisor of the employee being appraised - got a 403 opening it,
+        because a User Permission scopes him to his own subtree and a director
+        is not in it. Measured the same day: the ordinary /api/resource route
+        and the supervisor page refuse it identically, so the fault is this
+        value, not that page.
+
+        Set UNCONDITIONALLY, so an existing draft heals itself on the next save
+        and production needs no backfill (MG, decision 17b). validate() does not
+        run on the update_after_submit path, so a submitted appraisal stays
+        frozen with the supervisor it was submitted under.
+
+        No fallback to the creator when reports_to is blank: ensure_reports_to
+        makes it mandatory, readiness check 15 reports 0 blanks, and
+        validate_not_org_root refuses an appraisal for the only two employees
+        who have no supervisor. A fallback branch would be dead code.
+        """
+        if not self.employee:
+            return
+        supervisor = frappe.db.get_value("Employee", self.employee, "reports_to")
+        if supervisor:
+            self.reported_by = supervisor
 
     def validate_month_ended(self):
         """BR6 - the cycle's month must be over before the appraisal is final."""

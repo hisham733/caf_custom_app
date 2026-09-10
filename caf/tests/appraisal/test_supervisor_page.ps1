@@ -80,6 +80,11 @@ function Page($role, $method, $payload) {
   return Req $role POST "/api/method/caf.caf.page.supervisor_appraisal.supervisor_appraisal.$method" ($payload | ConvertTo-Json -Depth 6)
 }
 
+# Same helper the other scripts use. `frappe.client.insert` returns the saved
+# document under `.json.message`, so SP12 can read `reported_by` straight off the
+# insert response - the value the SERVER decided, not one this script supplied.
+function Ins($role, $doc) { return Req $role POST "/api/method/frappe.client.insert" (@{ doc = $doc } | ConvertTo-Json -Depth 6) }
+
 # @($null).Count is 1 in PowerShell, not 0 - so a null result reads as "one row"
 # and an emptiness assertion passes when it should fail.
 function CountRows($v) { return @($v | Where-Object { $_ -ne $null }).Count }
@@ -240,57 +245,88 @@ Res "SP10" ($sp10.code -eq 200 -and $sp10rows -gt 0) `
   "production1@ (61 direct reports, $upCount self-scoping Employee User Permission) opens the page: code=$($sp10.code) rows=$sp10rows - a supervisor MUST see their own reports : $($sp10.err)"
 
 ""
-"=== SP11  T-38b — the Carolina case: an appraisal with a FOREIGN reported_by ==="
-# 🔴 THIS IS THE ONE SP10 COULD NOT REPRODUCE. SP10 passes because the drafts it
-# creates all carry `reported_by = <the supervisor himself>`, which sits inside
-# his own Employee User Permission. MG's failing document did not:
+"=== SP11  T-38b - a FOREIGN reported_by can no longer be planted (FBR98) ==="
+# 🔴 WHAT THIS ASSERTED BEFORE 2026-09-11, AND WHY IT CHANGED. Until FBR98 this
+# test planted `reported_by = HR-EMP-00001` on one of production1@'s OWN reports
+# and demanded a 200. It was deliberately RED, because the read really was a 403:
 #
 #   "You are not allowed to access this Appraisal record because it is linked to
 #    Employee 'HR-EMP-00001' in field Reported By ... issue - Carolina A/P Vijian
 #    is report-to production1@"
 #
-# `production1@` carries `allow = Employee, for_value = HR-EMP-00008 (himself),
-# apply_to_all_doctypes = 1`. A document holding a Link to ANY other Employee is
-# then outside his permitted set - and `reported_by` is such a link.
+# `production1@` carries `allow = Employee, for_value = HR-EMP-00008` (himself),
+# `apply_to_all_doctypes = 1`. Employee is a TREE, so that permission grants his
+# own record PLUS every descendant - 190 of them, measured - but never his own
+# superior. A document holding a Link to an Employee ABOVE him falls outside the
+# set, and `reported_by` was such a link whenever HR or a director created the
+# form.
 #
-# ⚠️ The fixture works because `set_reported_by()` only fills a BLANK
-# (`if not self.reported_by`), and `read_only = 1` is form decoration that
-# `doc.save()` does not enforce (OD-61/OD-62, measured). So Administrator can
-# plant a foreign value at insert.
-#
-# 🔴 THE ASSERTION IS THE DESIRED BEHAVIOUR, NOT THE CURRENT ONE: a supervisor
-# must be able to open the appraisal of somebody who reports to them. Do not
-# "fix" it by weakening this line.
-#
-# ⚠️ AND IT IS NOT A PAGE BUG - measured 2026-09-10, both routes, same document:
+# ⚠️ AND IT WAS NEVER A PAGE BUG - measured 2026-09-10, both routes, same document:
 #
 #     /api/resource/Appraisal/<name>   (the ORDINARY form's route)   403
 #     get_appraisal_doc                (this page)                   403
-#     ...and with reported_by = himself, BOTH return                 200
+#     ...and with reported_by = himself, BOTH returned               200
 #
-# So the page is only where MG was standing when he hit it; the ordinary
-# appraisal form refuses it identically. The assertion lives here because this is
-# where the fixture is cheap, but the fault is in the APPRAISAL DOCTYPE's
-# permissions - specifically `production1@`'s User Permission restricting him to
-# documents linked to his OWN employee record. 94 such permissions exist, 92 are
-# self-scoping, and exactly ONE of those belongs to somebody with direct reports:
-# him, with 61. See GO_LIVE_TODO T-38b, decision ⑯.
-# ⚠️ REUSE one of the drafts SP10 just created rather than inserting a new one -
-# every employee under production1@ already has an appraisal for $CYCLE, so a
-# fresh insert hits the duplicate guard (measured: 409 DuplicateEntryError).
+# ✅ FBR98 (decision 17, 2026-09-11) removed the SOURCE of those foreign values:
+# `set_reported_by` now stamps the EMPLOYEE'S OWN supervisor, unconditionally, on
+# every save. The old fixture can no longer be built through any document route -
+# the PUT below is accepted and then overwritten - so the assertion becomes the
+# stronger one: **the planted value does not stick, and the supervisor reads it.**
+#
+# 🔴 THE PERMISSION RULE ITSELF IS UNCHANGED AND STILL REAL. A subtree User
+# Permission still refuses a document that links upward; a direct
+# `frappe.db.set_value` would still plant one (quirks #56 bypasses the document
+# lifecycle) and would still 403. FBR98 closes the route people actually use, not
+# the mechanism. Do not read a green SP11 as "User Permissions are harmless".
 $sp10rowsList = @($sp10.json.message.doc_list | Where-Object { $_ -ne $null })
 $fname = if ($sp10rowsList.Count) { $sp10rowsList[0].name } else { $null }
 if (-not $fname) {
   Res "SP11" $false "no appraisal from SP10 to re-point - SP10 must pass first"
 } else {
-  # plant a FOREIGN reported_by. `read_only = 1` is form decoration that
-  # `doc.save()` does not enforce (OD-61/OD-62, measured), so a PUT stores it.
-  $put = Req Admin PUT "/api/resource/Appraisal/$fname" '{"reported_by":"HR-EMP-00001"}'
+  # `read_only = 1` is form decoration that `doc.save()` does not enforce
+  # (OD-61/OD-62, measured), so the PUT is ACCEPTED - it is validate() that
+  # overwrites the value again on the way in.
+  $femp = (Req Admin GET "/api/resource/Appraisal/$fname").json.data.employee
+  $fsup = (Req Admin GET "/api/resource/Employee/$femp").json.data.reports_to
+  $put  = Req Admin PUT "/api/resource/Appraisal/$fname" '{"reported_by":"HR-EMP-00001"}'
   $stored = (Req Admin GET "/api/resource/Appraisal/$fname").json.data.reported_by
   $read = Page SupC "get_appraisal_doc" @{ appraisal_name = $fname }
-  Res "SP11" ($stored -eq "HR-EMP-00001" -and $read.code -eq 200) `
-    "production1@ opens the appraisal of his OWN report whose reported_by='$stored' (a FOREIGN Employee; PUT code=$($put.code)): code=$($read.code) - must be 200. A 403 here IS MG's Carolina case, and the cause is his self-scoping Employee User Permission, not this page : $($read.err)"
+  Res "SP11" ($stored -eq $fsup -and $stored -ne "HR-EMP-00001" -and $read.code -eq 200) `
+    "planted reported_by='HR-EMP-00001' on $femp's appraisal (PUT code=$($put.code)); stored back as '$stored' - must be '$fsup', that employee's own reports_to. production1@ then opens it: code=$($read.code) - must be 200 : $($read.err)"
 }
+
+""
+"=== SP12  FBR98 - reported_by follows the EMPLOYEE, not whoever typed the form ==="
+# 🔴 THE DRIFT TEST - the one that would have caught this in August.
+#
+# Until 2026-09-11 `set_reported_by` used `get_employee_for_user()`: the Employee
+# of the logged-in user. For a SUPERVISOR that is right by accident, because
+# `may_appraise()` allows DIRECT reports only - so the employee's `reports_to`
+# already IS the creator. That is why every existing assertion stayed green while
+# the field was wrong. It only diverges when somebody who may appraise ANYONE
+# fills the form in: an HR Manager, or a director.
+#
+# ⭐ THE CREATOR HERE IS ow.yong@ = HR-EMP-00001 - literally the value found on
+# MG's failing document HR-APR-2026-00091. The SUBJECT is D (HR-EMP-00009), who
+# sits in a DISJOINT branch under HR-EMP-00003, so the creator and the correct
+# answer can never be the same person and this cannot pass by coincidence.
+#
+# ⚠️ D is the subject because by the time we reach here every employee under A
+# (SP1) and under C (SP10) already has an appraisal in this cycle, and a fresh
+# insert on any of them hits the duplicate guard (409, measured).
+# The pair (HR-EMP-00009, 2026-08) is declared in _cleanup.ps1's manifest.
+$sp12emp = "HR-EMP-00009"
+$sp12sup = (Req Admin GET "/api/resource/Employee/$sp12emp").json.data.reports_to
+$f12 = [uri]::EscapeDataString("[[""employee"",""="",""$sp12emp""],[""appraisal_cycle"",""="",""$CYCLE""]]")
+foreach ($a in @((Req Admin GET "/api/resource/Appraisal?limit_page_length=0&filters=$f12&fields=%5B%22name%22%2C%22docstatus%22%5D").json.data)) {
+  if ([int]$a.docstatus -eq 1) { Req Admin PUT "/api/resource/Appraisal/$($a.name)" '{"docstatus":2}' | Out-Null }
+  Req Admin DELETE "/api/resource/Appraisal/$($a.name)" | Out-Null
+}
+$sp12 = Ins HRMgr2 @{ doctype="Appraisal"; employee=$sp12emp; appraisal_cycle=$CYCLE; company="CAF"; appraisal_template="CAF Monthly Appraisal" }
+$sp12name = $sp12.json.message.name
+$sp12rb   = $sp12.json.message.reported_by
+Res "SP12" ($sp12.code -eq 200 -and $sp12rb -eq $sp12sup -and $sp12rb -ne "HR-EMP-00001") `
+  "ow.yong@ (HR Manager, own Employee HR-EMP-00001) creates $sp12emp's appraisal: code=$($sp12.code) name=$sp12name reported_by='$sp12rb' - must be '$sp12sup', that employee's reports_to, and never HR-EMP-00001 the creator : $($sp12.err)"
 
 ""
 "=== cleanup ==="
@@ -308,4 +344,9 @@ if ($idsC.Count) {
     Req Admin DELETE "/api/resource/Appraisal/$($a.name)" | Out-Null
   }
   "  removed $(@($rowsC).Count) appraisal(s) created under HR-EMP-00008 by SP10"
+}
+# SP12's subject sits OUTSIDE both branches above, so neither sweep reaches it.
+if ($sp12name) {
+  Req Admin DELETE "/api/resource/Appraisal/$sp12name" | Out-Null
+  "  removed SP12's appraisal $sp12name ($sp12emp, $CYCLE)"
 }
