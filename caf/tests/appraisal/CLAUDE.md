@@ -51,7 +51,29 @@ in a document did not stop it twice; the throw will.
 
 ## ✅ T-21 CLOSED 2026-09-10 — `run_all.ps1` completes
 
-## ✅ 89 passed, 0 failed — green for the first time (T-37 done, 2026-09-10)
+## 🔴 SP11 is DELIBERATELY RED — do not weaken it
+
+**89 passed, 1 failed.** The one failure is **SP11**, and it reproduces the bug
+MG hit by hand on the supervisor page:
+
+> *production1@ opens the appraisal of his OWN report whose
+> `reported_by = HR-EMP-00001` → **403***
+
+**The cause is not the page.** `production1@` carries a **self-scoping Employee
+User Permission** (`allow = Employee, for_value = HR-EMP-00008, apply_to_all_doctypes = 1`),
+so any document holding a Link to a *different* Employee — and `reported_by` is
+one — falls outside his permitted set.
+
+⭐ **Measured: he is the ONLY supervisor affected — and he has 61 direct reports.**
+92 of the site's 94 Employee User Permissions are self-scoping, but the other 91
+are on people with **no reports**, where self-scoping is exactly right.
+
+🔴 **The assertion states the DESIRED behaviour** — a supervisor must be able to
+open the appraisal of somebody who reports to them. Fixing it is a **policy**
+decision (should a supervisor carry a self-scoping Employee User Permission at
+all?), not a test edit. **Do not make it green by changing what it asks.**
+
+## ✅ The other 89 — green since T-37 (2026-09-10)
 
 ```
    test_2_1_to_2_4      21 · test_2_5_to_2_8      21 · test_supervisor_page 11

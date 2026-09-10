@@ -281,6 +281,42 @@ def run():
               f"({len(narrowed)} of {len(hits)}) - a batch run for named employees "
               f"must not report the whole company's appraisals")
 
+    # ------------------------------------------------------------------- RT5
+    # FBR96 — a public-holiday edit must NAME the submitted appraisals its moved
+    # dates land on. `test_alt_saturday` drives the hook itself (ALT-HOOK-*) but
+    # only proves the calendars regenerate; nothing asserted that the warning HR
+    # reads actually lists the appraisals. Tested at the helper, so it needs no
+    # bending of the real Holiday Lists.
+    from caf.caf.holiday_lists import _affected_appraisals_html
+
+    if not sample:
+        check("RT5", True,
+              "SKIPPED - needs a submitted appraisal, same as RT4")
+    else:
+        emp_list = frappe.db.get_value("Employee", sample[0].employee, "holiday_list")
+        if not emp_list:
+            check("RT5", True,
+                  f"SKIPPED - {sample[0].employee} carries no holiday_list, so the "
+                  f"FBR96 lookup (which finds employees BY their list) has nothing "
+                  f"to match. Not a pass")
+        else:
+            # a fake "these Saturdays moved" payload covering the appraisal's cycle
+            html = _affected_appraisals_html({emp_list: [str(cyc.start_date),
+                                                         str(cyc.end_date)]})
+            check("RT5", sample[0].name in html and "Refresh Data" in html,
+                  f"the holiday warning names {sample[0].name} and tells HR to press "
+                  f"Refresh Data. FBR96: a calendar change REPORTS the submitted "
+                  f"appraisals it lands on - it does not refresh them, because one "
+                  f"edit moved 47 Saturdays in MG's own test")
+
+            # and it must stay silent when nothing submitted is affected, or HR
+            # learns to ignore it
+            quiet = _affected_appraisals_html({emp_list: ["2019-01-05"]})
+            check("RT5b", quiet == "",
+                  f"a moved date with no submitted appraisal over it produces NO "
+                  f"extra warning (got {len(quiet)} chars) - a report that fires "
+                  f"every time is one HR stops reading")
+
     frappe.set_user("Administrator")
     print("\n=== T-39 — retroactive change: does it reach the decision? ===")
     for tid, ok, detail in RESULTS:

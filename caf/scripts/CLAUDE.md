@@ -52,7 +52,8 @@ bench --site <site> execute caf.scripts.<name>.verify                     # PROV
 | `restday_lunch_html` | 🟡 read-only — OD-94/FBR91, the rest-day lunch question with what each option would have cost |
 | `shift_reassign` | ⭐ **the template for every production data script**: resolves the employee by `attendance_device_id` (T-32) and the shift by `caf_shift_code` (OD-96), and refuses unless the name agrees too |
 | `early_start_setting` | `HR Settings.caf_early_start_minutes` (default 60) + `distribution()`, which prints how many days each threshold would flag |
-| `readiness_audit` | ⭐ **14 checks; a clean run is the go-live gate** |
+| `stray_attendance_cleanup` | cancels Attendance that **neither** of FBR69's two sources produced — no Finger Log, no Leave Application. Targets are **named explicitly**, never discovered by pattern: a script that decides for itself which of a director's attendance to cancel is not one anybody should run twice. ⚠️ Cancel, not delete — a cancelled row keeps its number and owner, so the evidence survives |
+| `readiness_audit` | ⭐ **15 checks; a clean run is the go-live gate** |
 
 🔴 **Identify people by `attendance_device_id`, never by `HR-EMP-xxxxx`** (T-32).
 The id is a per-site counter, so the same value is a **different person** on

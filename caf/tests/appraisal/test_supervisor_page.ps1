@@ -240,6 +240,47 @@ Res "SP10" ($sp10.code -eq 200 -and $sp10rows -gt 0) `
   "production1@ (61 direct reports, $upCount self-scoping Employee User Permission) opens the page: code=$($sp10.code) rows=$sp10rows - a supervisor MUST see their own reports : $($sp10.err)"
 
 ""
+"=== SP11  T-38b — the Carolina case: an appraisal with a FOREIGN reported_by ==="
+# 🔴 THIS IS THE ONE SP10 COULD NOT REPRODUCE. SP10 passes because the drafts it
+# creates all carry `reported_by = <the supervisor himself>`, which sits inside
+# his own Employee User Permission. MG's failing document did not:
+#
+#   "You are not allowed to access this Appraisal record because it is linked to
+#    Employee 'HR-EMP-00001' in field Reported By ... issue - Carolina A/P Vijian
+#    is report-to production1@"
+#
+# `production1@` carries `allow = Employee, for_value = HR-EMP-00008 (himself),
+# apply_to_all_doctypes = 1`. A document holding a Link to ANY other Employee is
+# then outside his permitted set - and `reported_by` is such a link.
+#
+# ⚠️ The fixture works because `set_reported_by()` only fills a BLANK
+# (`if not self.reported_by`), and `read_only = 1` is form decoration that
+# `doc.save()` does not enforce (OD-61/OD-62, measured). So Administrator can
+# plant a foreign value at insert.
+#
+# 🔴 THE ASSERTION IS THE DESIRED BEHAVIOUR, NOT THE CURRENT ONE: a supervisor
+# must be able to open the appraisal of somebody who reports to them. If this is
+# RED, the cause is the self-scoping User Permission (92 of the site's 94 are
+# self-scoping), NOT the page - and the fix is a policy decision about whether
+# supervisors should carry one at all. Do not "fix" it by weakening this line.
+# ⚠️ REUSE one of the drafts SP10 just created rather than inserting a new one -
+# every employee under production1@ already has an appraisal for $CYCLE, so a
+# fresh insert hits the duplicate guard (measured: 409 DuplicateEntryError).
+$sp10rowsList = @($sp10.json.message.doc_list | Where-Object { $_ -ne $null })
+$fname = if ($sp10rowsList.Count) { $sp10rowsList[0].name } else { $null }
+if (-not $fname) {
+  Res "SP11" $false "no appraisal from SP10 to re-point - SP10 must pass first"
+} else {
+  # plant a FOREIGN reported_by. `read_only = 1` is form decoration that
+  # `doc.save()` does not enforce (OD-61/OD-62, measured), so a PUT stores it.
+  $put = Req Admin PUT "/api/resource/Appraisal/$fname" '{"reported_by":"HR-EMP-00001"}'
+  $stored = (Req Admin GET "/api/resource/Appraisal/$fname").json.data.reported_by
+  $read = Page SupC "get_appraisal_doc" @{ appraisal_name = $fname }
+  Res "SP11" ($stored -eq "HR-EMP-00001" -and $read.code -eq 200) `
+    "production1@ opens the appraisal of his OWN report whose reported_by='$stored' (a FOREIGN Employee; PUT code=$($put.code)): code=$($read.code) - must be 200. A 403 here IS MG's Carolina case, and the cause is his self-scoping Employee User Permission, not this page : $($read.err)"
+}
+
+""
 "=== cleanup ==="
 "  removed $(Clear-Cycle) appraisal(s)"
 # SP10 may have created drafts for production1@'s 61 reports - clear those too
