@@ -244,13 +244,42 @@ def run():
         for v in (hooks.get("Attendance") or {}).values())
 
     check("RT3b", not refreshes_appraisal,
-          f"⚠️ RECORDING A GAP, NOT A PASS. Attendance carries {attendance_events} "
-          f"and Holiday List carries {holiday_events} - NEITHER refreshes an "
-          f"appraisal. So MG's scenarios 4 (a late public holiday) and 5 (an "
-          f"AMENDED Attendance) have no automatic route to a submitted appraisal; "
-          f"the holiday path warns a human and stops. 🔴 Whether they SHOULD is "
-          f"MG's decision - see GO_LIVE_TODO T-39. This assertion flips the day "
-          f"one is wired, which is the reminder to update it")
+          f"NEITHER Attendance {attendance_events} NOR Holiday List "
+          f"{holiday_events} refreshes an appraisal, and under FBR96/⑬ that is "
+          f"now the DECIDED behaviour, not a gap: they REPORT instead. A holiday "
+          f"edit moved 47 Saturdays in MG's own test, so auto-refreshing would "
+          f"rewrite dozens of signed-off appraisals from one save. ⚠️ This "
+          f"assertion exists to catch somebody wiring an auto-refresh in later "
+          f"without revisiting FBR96")
+
+    # ------------------------------------------------------------------- RT4
+    # T-42/FBR97 — the batch-import report. `affected_submitted` is what turns
+    # "this import silently invalidated some appraisals" into a worklist.
+    sample = frappe.get_all("Appraisal", filters={"docstatus": 1},
+                            fields=["name", "employee", "appraisal_cycle"],
+                            limit_page_length=1)
+    if not sample:
+        check("RT4", True,
+              "SKIPPED - no submitted appraisal on this site to probe with. Not a "
+              "pass: re-run after test_2_1_to_2_4, which completes one")
+    else:
+        cyc = frappe.db.get_value("Appraisal Cycle", sample[0].appraisal_cycle,
+                                  ["start_date", "end_date"], as_dict=True)
+        hits = ar.affected_submitted(cyc.start_date, cyc.end_date)
+        names = [h[0].name for h in hits]
+        check("RT4", sample[0].name in names,
+              f"affected_submitted() over {sample[0].appraisal_cycle} "
+              f"({cyc.start_date}..{cyc.end_date}) returns {len(hits)} submitted "
+              f"appraisal(s) and includes {sample[0].name} - this is the worklist "
+              f"an Ingress batch import now writes onto its batch record, because "
+              f"the batch itself refreshes nothing (flags.in_import)")
+
+        narrowed = ar.affected_submitted(cyc.start_date, cyc.end_date,
+                                         employees=[sample[0].employee])
+        check("RT4b", all(h[0].employee == sample[0].employee for h in narrowed),
+              f"narrowing to one employee returns only their rows "
+              f"({len(narrowed)} of {len(hits)}) - a batch run for named employees "
+              f"must not report the whole company's appraisals")
 
     frappe.set_user("Administrator")
     print("\n=== T-39 — retroactive change: does it reach the decision? ===")

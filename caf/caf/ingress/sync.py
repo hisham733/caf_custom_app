@@ -324,6 +324,36 @@ def unmapped_employees() -> list:
         fields=["name", "employee_name"], order_by="employee_name")
 
 
+def _note_affected_appraisals(batch, from_date, to_date, employees=None):
+    """T-42 — write the submitted appraisals this batch's dates land on onto the
+    batch record, so HR has a worklist instead of a silence.
+
+    Never throws: the import is the important document, and a reporting failure
+    must not undo it — the same rule `appraisal_refresh` states for the leave
+    trigger. A failure is noted and the batch stands.
+    """
+    try:
+        from caf.caf.appraisal_refresh import affected_submitted
+        hits = affected_submitted(from_date, to_date, employees)
+        if not hits:
+            return
+        closed = [h for h in hits if h[1]]
+        batch.note(
+            f"⚠️ {len(hits)} SUBMITTED appraisal(s) cover these dates. This import "
+            f"did NOT refresh them (a batch skips the per-row refresh). Open each "
+            f"and press Refresh Data."
+            + (f" 🔴 {len(closed)} are past the FBR39 correction window and need "
+               f"cancel + amend instead." if closed else ""))
+        for app, is_closed in hits:
+            batch.note(
+                f"   {app.name}  {app.employee_name or app.employee}  "
+                f"{app.appraisal_cycle}"
+                + ("  🔴 WINDOW CLOSED" if is_closed else "  — Refresh Data"))
+    except Exception as exc:
+        batch.note(f"could not check affected appraisals: "
+                   f"{frappe.utils.strip_html(str(exc))[:200]}")
+
+
 def _note_unmapped_employees(batch):
     """Record the answer on the batch, whichever way it comes out.
 
@@ -623,6 +653,22 @@ def manual_import(from_date, to_date, employees=None, submit=False,
         raise
     finally:
         frappe.flags.in_import = False
+
+    # T-42/FBR97 — the batch skipped every per-row appraisal refresh (the flag
+    # above), and until 2026-09-10 nothing ran afterwards. So a re-import that
+    # corrected last month left its submitted appraisals holding stale absence
+    # and late counts, with nothing anywhere to say so.
+    #
+    # ⚠️ REPORTS, does not refresh. MG, deciding ⑭: *"same shape as ⑬: report, do
+    # not auto-refresh."* A batch touches hundreds of employee-days; rewriting
+    # every appraisal they land on from one import is the objection FBR96 already
+    # rejected, at a larger scale.
+    #
+    # 🔴 The CLOSED ones are the reason this is urgent: FBR39 shuts the correction
+    # window one month after an appraisal is submitted, and past it the only route
+    # is cancel + amend - which under FBR94 needs a SECOND HR Manager. Every month
+    # this went unreported, more of them became unfixable.
+    _note_affected_appraisals(batch, from_date, to_date, employees)
 
     frappe.db.commit()
     # `unprocessed_dates` is returned, not just stored: the desk dialog raises it

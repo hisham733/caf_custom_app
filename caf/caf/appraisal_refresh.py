@@ -88,6 +88,43 @@ def submitted_appraisals(employee, start_date, end_date):
         fields=["name", "appraisal_cycle", "employee", "employee_name"])
 
 
+def affected_submitted(start_date, end_date, employees=None):
+    """T-42/FBR97 — which SUBMITTED appraisals does a date range land on?
+
+    🔴 WHY THIS EXISTS. `finger_log_scope.refresh_appraisal_on_submit` returns
+    early while `frappe.flags.in_import` is set, and `ingress/sync.py` sets that
+    around a whole batch. **That suppression is correct** - thousands of rows per
+    run must not refresh per row - but nothing ever ran afterwards, so a
+    re-import correcting last month left every submitted appraisal for that month
+    untouched. The absence and late counts are exactly the figures that go stale.
+
+    ⚠️ It REPORTS. MG, 2026-09-10 deciding ⑭: *"same shape as ⑬: report, do not
+    auto-refresh."* A batch touches hundreds of employee-days; silently rewriting
+    every appraisal they land on is the objection FBR96 already rejected, at a
+    larger scale.
+
+    ⚠️ It is deliberately WIDE: every submitted appraisal whose cycle overlaps the
+    range, narrowed to `employees` only when the batch was narrowed. The importer
+    does not report which employees it actually changed, so this over-reports
+    rather than under-reports - for a human worklist that is the safe direction.
+
+    Returns [(appraisal_dict, window_is_closed)], newest cycle first.
+    """
+    cycles = [c.name for c in cycles_covering(start_date, end_date)]
+    if not cycles:
+        return []
+
+    filters = {"appraisal_cycle": ("in", cycles), "docstatus": 1}
+    if employees:
+        filters["employee"] = ("in", list(employees))
+
+    rows = frappe.get_all(
+        "Appraisal", filters=filters,
+        fields=["name", "employee", "employee_name", "appraisal_cycle"],
+        order_by="appraisal_cycle desc, employee_name")
+    return [(r, window_closed(r.name)) for r in rows]
+
+
 def submitted_on(appraisal_name):
     """When docstatus went 0 ➜ 1, from the Version log. None if unrecorded.
 
