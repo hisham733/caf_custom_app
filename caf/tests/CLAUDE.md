@@ -19,6 +19,7 @@ that something did.
 | `ingress/` | the importer, the manifest, the catch-up, unmapped employees |
 | `workflow_gaps/` | EPF ownership, appraisal cancel/amend, fixture integrity |
 | **`platform/`** | ⭐ cross-cutting — **`test_role_matrix`** (every surface × every role, both directions, T-21) · **`test_data_scripts`** (every production script's report mode + `verify()`, 15 scripts / 11 verifiers) · **`test_disabled_features`** (everything CAF deliberately switched off, asserted still off — read-only, safe on production) |
+| **`fingerlog/test_retroactive`** | ⭐ **T-39** — what reaches a decision AFTER the data under it changes. Asserts **FBR94** (the owner of a leave application cannot take the FINAL approval; a second HR Manager can) and records that a **late public holiday** and an **amended Attendance** have NO route to a submitted appraisal. 🔴 `allow_self_approval` is enforced in `has_approval_access`, **not** in `get_transitions` — the button is shown and the refusal is on the press |
 | `fingerlog/test_midnight_ot` | overtime past midnight, **both sides** — the log and the OT Approval must agree about how long a night was. ⚠️ **0 live rows exercise it**, so it is the only thing keeping that rule honest; do not delete it as dead code |
 | `appraisal/` | 🔴 **PowerShell, not Python** — the per-role REST suite. See its own `CLAUDE.md` |
 
