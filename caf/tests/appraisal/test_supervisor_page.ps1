@@ -259,10 +259,22 @@ Res "SP10" ($sp10.code -eq 200 -and $sp10rows -gt 0) `
 # plant a foreign value at insert.
 #
 # 🔴 THE ASSERTION IS THE DESIRED BEHAVIOUR, NOT THE CURRENT ONE: a supervisor
-# must be able to open the appraisal of somebody who reports to them. If this is
-# RED, the cause is the self-scoping User Permission (92 of the site's 94 are
-# self-scoping), NOT the page - and the fix is a policy decision about whether
-# supervisors should carry one at all. Do not "fix" it by weakening this line.
+# must be able to open the appraisal of somebody who reports to them. Do not
+# "fix" it by weakening this line.
+#
+# ⚠️ AND IT IS NOT A PAGE BUG - measured 2026-09-10, both routes, same document:
+#
+#     /api/resource/Appraisal/<name>   (the ORDINARY form's route)   403
+#     get_appraisal_doc                (this page)                   403
+#     ...and with reported_by = himself, BOTH return                 200
+#
+# So the page is only where MG was standing when he hit it; the ordinary
+# appraisal form refuses it identically. The assertion lives here because this is
+# where the fixture is cheap, but the fault is in the APPRAISAL DOCTYPE's
+# permissions - specifically `production1@`'s User Permission restricting him to
+# documents linked to his OWN employee record. 94 such permissions exist, 92 are
+# self-scoping, and exactly ONE of those belongs to somebody with direct reports:
+# him, with 61. See GO_LIVE_TODO T-38b, decision ⑯.
 # ⚠️ REUSE one of the drafts SP10 just created rather than inserting a new one -
 # every employee under production1@ already has an appraisal for $CYCLE, so a
 # fresh insert hits the duplicate guard (measured: 409 DuplicateEntryError).
