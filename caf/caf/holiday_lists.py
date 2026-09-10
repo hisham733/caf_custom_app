@@ -406,8 +406,64 @@ def on_public_holidays_changed(doc, method=None):
           "<b>{0} Saturdays moved</b>.</p><ul>{1}</ul>"
           "<p>Work and rest have changed on those dates. Any Finger Log, "
           "Attendance, Leave Application or Shift Assignment already filed "
-          "against them needs checking and amending.</p>").format(total, lines),
+          "against them needs checking and amending.</p>{2}").format(
+              total, lines, _affected_appraisals_html(moved)),
         title=_("Alternate-Saturday calendar changed"), indicator="orange")
+
+
+def _affected_appraisals_html(moved):
+    """FBR96 — name the SUBMITTED appraisals a calendar change lands on.
+
+    🔴 MG, 2026-09-10, deciding ⑬: *"report let HR decide, do not auto-refresh."*
+
+    The warning above already told HR that Finger Logs, Attendance, Leave
+    Applications and Shift Assignments on the moved dates need checking. It
+    stopped there — and an **appraisal that is already submitted** is the one
+    document she cannot simply re-open, because FBR39 closes a window on it.
+    So it is the one most worth naming.
+
+    ⚠️ This REPORTS. It deliberately does not refresh. A single Holiday List save
+    moved **47 Saturdays** in MG's own manual pass; auto-refreshing every
+    appraisal those dates touch would rewrite dozens of signed-off documents in
+    one keystroke, with nobody reviewing it. That is the same reasoning
+    `on_public_holidays_changed` already gives for not re-resolving Finger Logs.
+
+    Returns an HTML fragment, or "" when nothing submitted is affected.
+    """
+    from caf.caf.appraisal_refresh import submitted_appraisals, window_closed
+
+    dates = sorted({d for v in moved.values() for d in v})
+    if not dates:
+        return ""
+
+    # employees sit on the alternate-Saturday list itself (FDR6 copies the
+    # shift's list down onto Employee, and sync_employee_holiday_lists just ran)
+    employees = frappe.get_all(
+        "Employee",
+        filters={"status": "Active", "holiday_list": ("in", list(moved))},
+        fields=["name", "employee_name"])
+    if not employees:
+        return ""
+
+    hits = []
+    for emp in employees:
+        for app in submitted_appraisals(emp.name, dates[0], dates[-1]):
+            hits.append((app, window_closed(app.name)))
+    if not hits:
+        return ""
+
+    rows = "".join(
+        f"<li><b>{frappe.utils.escape_html(a.employee_name or a.employee)}</b> "
+        f"{frappe.utils.escape_html(a.appraisal_cycle)} — "
+        f"{frappe.utils.escape_html(a.name)}"
+        + (_(" ⚠️ the correction window has CLOSED — this one needs cancel + amend")
+           if closed else _(" — press <b>Refresh Data</b> on it"))
+        + "</li>"
+        for a, closed in sorted(hits, key=lambda h: h[0].name))
+
+    return _("<hr><p>🔴 <b>{0} SUBMITTED appraisal(s)</b> cover these dates. "
+             "They are not updated automatically — open each one and press "
+             "<b>Refresh Data</b>:</p><ul>{1}</ul>").format(len(hits), rows)
 
     return {"changed": moved, "count": total}
 
