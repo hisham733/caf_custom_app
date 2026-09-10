@@ -42,15 +42,14 @@ Role keys in `credentials.ps1` (**gitignored**, values in
 
 ## ✅ T-21 CLOSED 2026-09-10 — `run_all.ps1` completes
 
-**46 passed, 9 failed**, stable across three consecutive runs. Every remaining
-failure is named and understood; see *"What is red, and why"* below.
+**48 passed, 8 failed — and all 8 have ONE cause**, the org-tree fixture (T-37).
 
 ```
    test_2_1_to_2_4    0 passed   1 failed   ← stops on T-ORG, by design
-   test_2_5_to_2_8   14 passed   7 failed   ← 6 of the 7 are T-ORG or downstream
+   test_2_5_to_2_8   14 passed   7 failed   ← all 7 are T-ORG or downstream
    probe_2_10a        7 passed   0 failed
    probe_2_10b        9 passed   0 failed
-   probe_2_10bc      10 passed   1 failed   ← T-I2
+   probe_2_10bc      12 passed   0 failed   ← T-I2 green since 2026-09-10
    probe_2_10e        6 passed   0 failed
 ```
 
@@ -116,7 +115,20 @@ The four `probe_2_10*` scripts do not depend on the tree and are unaffected.
 |---|---|
 | `T-ORG` ×2 | the org tree above — **the only real finding** |
 | `T-F1` `T-F2` `T-F6` `T-G3` `T-J8f`, half of `T-J15` | downstream of it: every appraisal created as `SupA` 403s |
-| `T-I2` | the Appraisal workflow has **4 states / 4 transitions**, not 3 — `Cancelled` added 2026-08-22. Deliberately left red: GO_LIVE_TODO T-I2 says *"left red rather than edited on a guess about what it ought to assert"*, and there is no decision record for the state. **Do not edit it without one** |
+
+✅ **`T-I2` is no longer among them.** Red since 2026-08-22 and rightly left that
+way — until MG confirmed it on 2026-09-10, and his own manual pass
+(`MG_LLM_ui_touch up.md`, Pass C5) turned out to hold the answer: a **supervisor**
+cancelled a Completed appraisal, and the document afterwards still displayed
+*"Completed"* while its `docstatus` had gone to 2. The `Cancelled` state added
+that same day is the fix. It now asserts the shape **by meaning** — a `Cancel`
+edge that runs `Completed → Cancelled`, belongs to HR Manager, and lands on
+`doc_status = 2` — because counting to 4 would pass against four wrong states.
+
+⭐ **`T-I2b`** records the trap underneath it: `allow_self_approval = 0` compares
+against **`doc.owner`**, and clicking *Amend* makes the HR Manager the owner. So
+the amender can never approve their own amendment — a second HR Manager must.
+That is MG's *"workflow is stucked"*, and it is OD-87b working as designed.
 
 Fixed on 2026-09-10, each with the reason written beside it:
 
