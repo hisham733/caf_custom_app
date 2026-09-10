@@ -53,6 +53,7 @@ bench --site <site> execute caf.scripts.<name>.verify                     # PROV
 | `shift_reassign` | ⭐ **the template for every production data script**: resolves the employee by `attendance_device_id` (T-32) and the shift by `caf_shift_code` (OD-96), and refuses unless the name agrees too |
 | `early_start_setting` | `HR Settings.caf_early_start_minutes` (default 60) + `distribution()`, which prints how many days each threshold would flag |
 | `stray_attendance_cleanup` | cancels Attendance that **neither** of FBR69's two sources produced — no Finger Log, no Leave Application. Targets are **named explicitly**, never discovered by pattern: a script that decides for itself which of a director's attendance to cancel is not one anybody should run twice. ⚠️ Cancel, not delete — a cancelled row keeps its number and owner, so the evidence survives |
+| `shift_holiday_migration` | 🆕 **T-34 rows 4+8 — the migration itself.** Carries the 18 Shift Types and the gazette dates to another site, regenerates the calendars, and repoints every employee. ⭐ **The only script here that reads a PAYLOAD FILE** (`data/shift_holiday_payload.json`, committed): `export` runs on the authority site, everything else on the target. ⚠️ An existing shift is **reported, not overwritten** (OD-88) unless `overwrite=1`. ⚠️ The calendars are **regenerated, not copied** — a Holiday List is 90% derived, so only ~19 gazette dates a year travel and `caf.caf.holiday_lists` builds the rest |
 | `readiness_audit` | ⭐ **15 checks; a clean run is the go-live gate** |
 
 🔴 **Identify people by `attendance_device_id`, never by `HR-EMP-xxxxx`** (T-32).
@@ -72,6 +73,25 @@ production. Identify shifts by **`caf_shift_code`**, never by name (OD-96) —
 - **Refuse when the ground has moved.** `shift_punch_rule_rollout` stops if an
   employee is not on the shift its evidence describes, rather than carrying them
   along. A script that adapts silently is worse than one that stops.
+- 🔴 **Report mode cannot catch a bug on the CREATE path**, because report mode
+  never inserts anything. `shift_holiday_migration` looked clean — 0 pending,
+  9/9 verify — while it could not build a single Shift Type: the export
+  stringified every value, so stock `Shift Type.validate()` did
+  `round(...) + "60"` and threw inside `validate_circular_shift`. ⭐ It was found
+  by **deleting the one Shift Type nothing references (`7am Schedule` — 0
+  employees, 0 Attendance, 0 Finger Log) and making the script rebuild it**,
+  then comparing all 35 fields. If a script's job is to CREATE something, prove
+  it by destroying a disposable one and watching it come back.
+- ⚠️ **`bench execute` masks the real exception** as `NameError: name 'caf' is
+  not defined`. Wrap the call in `try/except` and print `traceback.format_exc()`
+  **to stdout** — `traceback.print_exc()` writes to stderr, which does not
+  interleave back through `docker exec` and returns a blank block.
+- ⚠️ **`holiday_lists.regenerate()` cannot be asked for a year EARLIER than an
+  alternating shift's `caf_sat_anchor_date`.** `alt_saturday_rest_days()` walks
+  fortnightly forward from the anchor and refuses to walk backwards — *"The
+  anchor 2026-04-11 is after 2025; nothing to walk"*. The refusal is correct
+  (a guessed Saturday inverts every later one), so callers must pass only the
+  current year and later.
 - **The allocation is the exception to idempotence.** A Leave Allocation is a
   submitted document; two runs make two of them. That is why allocation goes
   through the **Leave Control Panel** (which skips anyone already allocated) and

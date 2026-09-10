@@ -1,0 +1,1386 @@
+{
+  "generated_from": "development.localhost",
+  "generated_on": "2026-09-11 07:24:27.125606",
+  "notes": [],
+  "placements": [
+    {
+      "device_id": "35",
+      "employee_name": "Ow Yong Mian Fatt",
+      "shift_code": "SPECIAL"
+    },
+    {
+      "device_id": "22",
+      "employee_name": "Too Poh Chin",
+      "shift_code": "ALTSAT_830_A"
+    },
+    {
+      "device_id": "224",
+      "employee_name": "Afiza binti Mustafa",
+      "shift_code": "ALTSAT_830_B"
+    },
+    {
+      "device_id": "339",
+      "employee_name": "Nur Najwa Farhana",
+      "shift_code": "ALTSAT_830_A"
+    },
+    {
+      "device_id": "442",
+      "employee_name": "Chen Xiao Natalie",
+      "shift_code": "8AM_IN_AND_OUT_NO_SAT"
+    },
+    {
+      "device_id": "457",
+      "employee_name": "Nurfarahayu Binti Ahmad",
+      "shift_code": "ALTSAT_830_B"
+    },
+    {
+      "device_id": "385",
+      "employee_name": "Ow Yong Nin Geet",
+      "shift_code": "8_30AM_IN_OR_OUT"
+    },
+    {
+      "device_id": "985",
+      "employee_name": "Seow Zi Ying",
+      "shift_code": "ALTSAT_830_A"
+    },
+    {
+      "device_id": "1005",
+      "employee_name": "Hazwani Farhana Binti Abdul Majid",
+      "shift_code": "ALTSAT_830_B"
+    },
+    {
+      "device_id": "45",
+      "employee_name": "Mursyid Bin Baharudin",
+      "shift_code": "8_30AM_SCHEDULE"
+    },
+    {
+      "device_id": "43",
+      "employee_name": "Mohd Hairy Bin Abd Latif",
+      "shift_code": "8_30AM_IN_AND_OUT"
+    },
+    {
+      "device_id": "121",
+      "employee_name": "Rukaiya binti Hosni",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "612",
+      "employee_name": "Chan Wai Khong",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "754",
+      "employee_name": "Pramod Kumar Mandal",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "755",
+      "employee_name": "Rohit Kamat",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "756",
+      "employee_name": "Kamrul Hossen",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "757",
+      "employee_name": "Liton Miah",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "759",
+      "employee_name": "Md Emran Hossain",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "762",
+      "employee_name": "Mahbub Alom",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "810",
+      "employee_name": "Md Sultan Hosen Rubel",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "12",
+      "employee_name": "Sutia",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "956",
+      "employee_name": "Nurulfarehah Binti Azmi",
+      "shift_code": "8AM_NO_OT_NO_SAT"
+    },
+    {
+      "device_id": "961",
+      "employee_name": "Chaudhary Ram",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "967",
+      "employee_name": "Nur Ezzatul Allieya Binti Raduan",
+      "shift_code": "ALTSAT_85_B"
+    },
+    {
+      "device_id": "974",
+      "employee_name": "Tham Hong Ket",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "982",
+      "employee_name": "Chin Wai Keong",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "993",
+      "employee_name": "Shahin Mia",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "994",
+      "employee_name": "Md Nurul Islam",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "995",
+      "employee_name": "Mohammed Alamgir Hossain",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "997",
+      "employee_name": "Arafat Rahman",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "998",
+      "employee_name": "Mohammad Nominor Islam",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "999",
+      "employee_name": "Shojol",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1000",
+      "employee_name": "Md Harun Or Roshid",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1001",
+      "employee_name": "Md Arif",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1002",
+      "employee_name": "Ashraful Islam",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1014",
+      "employee_name": "Mizanur Rahman",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1013",
+      "employee_name": "Md Iliach",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1015",
+      "employee_name": "Nayan Miah",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1017",
+      "employee_name": "Mun Geet Ow Yong",
+      "shift_code": "8_30AM_IN_OR_OUT"
+    },
+    {
+      "device_id": "1031",
+      "employee_name": "Muhammad Aliff Bin Mohd Azhar",
+      "shift_code": "8_30AM_IN_AND_OUT"
+    },
+    {
+      "device_id": "1029",
+      "employee_name": "Md Uzzal Hossan",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "965",
+      "employee_name": "Seriramulu A/L Apanah",
+      "shift_code": "8AM_IN_OR_OUT"
+    },
+    {
+      "device_id": "1041",
+      "employee_name": "Faruq Md Omar",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1042",
+      "employee_name": "Hossain Bappy Md Rakib",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1043",
+      "employee_name": "Mia Bayezid",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1045",
+      "employee_name": "Hossain Md Shakil",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1047",
+      "employee_name": "Islam Md Shohag",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1048",
+      "employee_name": "Islam Md Aminul",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1049",
+      "employee_name": "Khan Md Limon",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1050",
+      "employee_name": "Mia Md Milon",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1051",
+      "employee_name": "Mia Muznu",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1056",
+      "employee_name": "Hisham Fisal Hussein Al-Harazi",
+      "shift_code": "8_30AM_ROSTER"
+    },
+    {
+      "device_id": "1059",
+      "employee_name": "Noor Arifah Binti Ibrahim",
+      "shift_code": "ALTSAT_85_A"
+    },
+    {
+      "device_id": "1063",
+      "employee_name": "Mohammad Ehsan Bin Firdaus",
+      "shift_code": "8_30AM_IN_AND_OUT"
+    },
+    {
+      "device_id": "1070",
+      "employee_name": "Afriza Maulana",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1073",
+      "employee_name": "Rajaindran A/L Subramaniam",
+      "shift_code": "8_4_30_NO_OT"
+    },
+    {
+      "device_id": "1075",
+      "employee_name": "Tanisha A/P Agasteen",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1079",
+      "employee_name": "Kavithaa A/P Marimuthu",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1083",
+      "employee_name": "Nur Syamimi Binti Sadli",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1091",
+      "employee_name": "Chong Jin Yen",
+      "shift_code": "8AM_NO_OT_NO_SAT"
+    },
+    {
+      "device_id": "1092",
+      "employee_name": "Ow Yong Suit Chun",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1095",
+      "employee_name": "Khoirunnisa Binti Mohd Khalid",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1101",
+      "employee_name": "Meor Danial Rieza Bin  Meor Zamzuri",
+      "shift_code": "8_30AM_IN_AND_OUT"
+    },
+    {
+      "device_id": "1103",
+      "employee_name": "Muhammad Iqmal Bin Mohd Zaini",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1108",
+      "employee_name": "Nurul Hazirah Binti Mohamed Fikri",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1115",
+      "employee_name": "Nur Aida Basirah Binti  Mohd Adenan",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1132",
+      "employee_name": "Nur Sheriena  Binti Mohd Fakruddin",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1137",
+      "employee_name": "Siti Noratikah Binti Abdullah",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1145",
+      "employee_name": "Zin Min Paing",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1149",
+      "employee_name": "Nurul Aisyah  Binti  Hamdan",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1154",
+      "employee_name": "Nur Salsabila Binti Mohd Kalam Izad",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1155",
+      "employee_name": "Dina Laila Binti Sanim",
+      "shift_code": "8_30AM_ROSTER"
+    },
+    {
+      "device_id": "1157",
+      "employee_name": "Nurhasirah  Binti  Sufian",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1164",
+      "employee_name": "Myint  Soe",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1166",
+      "employee_name": "Khin  Shwe Yee",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1168",
+      "employee_name": "Khairol Izzah  Binti  Khairol Azmi",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1169",
+      "employee_name": "Zuzafruzaiha  Binti  Zahari",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1170",
+      "employee_name": "Rahimatul Shakirah Binti Rozie",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1172",
+      "employee_name": "Fatihah Shanisa Binti Nor Azam",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1175",
+      "employee_name": "Nur Alia Safaraz Binti Zulkifli",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1176",
+      "employee_name": "Muhammad Jamil  Bin  Mansur",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1177",
+      "employee_name": "Carolina A/P Vijian",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1178",
+      "employee_name": "Regina A/P  Arokiasamy",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1179",
+      "employee_name": "Nur Elyana Syafiqah  Binti  Saimi",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1180",
+      "employee_name": "Tinagaraj A/L Morgan",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1181",
+      "employee_name": "Hemraj A/L K.Mohan",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1182",
+      "employee_name": "Intan Nadira Shahira   Binti  Abdullah",
+      "shift_code": "8AM_SCHEDULE"
+    },
+    {
+      "device_id": "1183",
+      "employee_name": "Hairunnissa'a  Binti Noor Azmi",
+      "shift_code": "8AM_SCHEDULE"
+    }
+  ],
+  "public_holidays": {
+    "2025": [
+      {
+        "description": "NEW YEAR",
+        "holiday_date": "2025-01-01"
+      },
+      {
+        "description": "CHINESE NEW YEAR",
+        "holiday_date": "2025-01-29"
+      },
+      {
+        "description": "CHINESE NEW YEAR",
+        "holiday_date": "2025-01-30"
+      },
+      {
+        "description": "THAIPUSAM",
+        "holiday_date": "2025-02-11"
+      },
+      {
+        "description": "HARI RAYA PUASA ( AIDILFITRI )",
+        "holiday_date": "2025-03-31"
+      },
+      {
+        "description": "HARI RAYA PUASA ( AIDILFITRI )",
+        "holiday_date": "2025-04-01"
+      },
+      {
+        "description": "LABOUR DAY",
+        "holiday_date": "2025-05-01"
+      },
+      {
+        "description": "WESAK DAY",
+        "holiday_date": "2025-05-12"
+      },
+      {
+        "description": "AGONG'S BIRTHDAY",
+        "holiday_date": "2025-06-02"
+      },
+      {
+        "description": "HARI RAYA HAJI ( AIDILADHA )",
+        "holiday_date": "2025-06-07"
+      },
+      {
+        "description": "AWAL MUHARRAM",
+        "holiday_date": "2025-06-27"
+      },
+      {
+        "description": "NATIONAL DAY",
+        "holiday_date": "2025-09-01"
+      },
+      {
+        "description": "PROPHET MUHAMMAD'S BIRTHDAY",
+        "holiday_date": "2025-09-05"
+      },
+      {
+        "description": "Malaysia Day",
+        "holiday_date": "2025-09-15"
+      },
+      {
+        "description": "MALAYSIA DAY",
+        "holiday_date": "2025-09-16"
+      },
+      {
+        "description": "DEEPAVALI",
+        "holiday_date": "2025-10-20"
+      },
+      {
+        "description": "SULTAN OF SELANGOR'S BIRTHDAY",
+        "holiday_date": "2025-12-11"
+      },
+      {
+        "description": "CHRISTMAS",
+        "holiday_date": "2025-12-25"
+      }
+    ],
+    "2026": [
+      {
+        "description": "NEW YEAR",
+        "holiday_date": "2026-01-01"
+      },
+      {
+        "description": "THAIPUSAM",
+        "holiday_date": "2026-02-02"
+      },
+      {
+        "description": "COMPANY HOLIDAY (Chinese New Year eve week) — added 2026-08-12, HR confirmed",
+        "holiday_date": "2026-02-14"
+      },
+      {
+        "description": "CHINESE NEW YEAR",
+        "holiday_date": "2026-02-17"
+      },
+      {
+        "description": "CHINESE NEW YEAR",
+        "holiday_date": "2026-02-18"
+      },
+      {
+        "description": "CUTI TAMBAHAN AIDILFITRI",
+        "holiday_date": "2026-03-20"
+      },
+      {
+        "description": "HARI RAYA PUASA ( AIDILFITRI )",
+        "holiday_date": "2026-03-21"
+      },
+      {
+        "description": "HARI RAYA PUASA ( AIDILFITRI )",
+        "holiday_date": "2026-03-23"
+      },
+      {
+        "description": "LABOUR DAY",
+        "holiday_date": "2026-05-01"
+      },
+      {
+        "description": "HARI RAYA HAJI ( AIDILADHA )",
+        "holiday_date": "2026-05-27"
+      },
+      {
+        "description": "AGONG'S BIRTHDAY",
+        "holiday_date": "2026-06-01"
+      },
+      {
+        "description": "WESAK DAY",
+        "holiday_date": "2026-06-02"
+      },
+      {
+        "description": "AWAL MUHARRAM",
+        "holiday_date": "2026-06-17"
+      },
+      {
+        "description": "PROPHET MUHAMMED'S BIRTHDAY ( MAULIDUR RASUL )",
+        "holiday_date": "2026-08-25"
+      },
+      {
+        "description": "NATIONAL DAY",
+        "holiday_date": "2026-08-31"
+      },
+      {
+        "description": "MALAYSIA DAY",
+        "holiday_date": "2026-09-16"
+      },
+      {
+        "description": "DEEPAVALI",
+        "holiday_date": "2026-11-09"
+      },
+      {
+        "description": "SULTAN OF SELANGOR'S BIRTHDAY",
+        "holiday_date": "2026-12-11"
+      },
+      {
+        "description": "CHRISTMAS",
+        "holiday_date": "2026-12-25"
+      }
+    ],
+    "2027": [
+      {
+        "description": "Tahun Baharu",
+        "holiday_date": "2027-01-01"
+      },
+      {
+        "description": "Hari Thaipusam",
+        "holiday_date": "2027-01-22"
+      },
+      {
+        "description": "Tahun Baharu Cina (anggaran)",
+        "holiday_date": "2027-02-06"
+      },
+      {
+        "description": "Tahun Baharu Cina (Hari Kedua) (anggaran)",
+        "holiday_date": "2027-02-07"
+      },
+      {
+        "description": "Cuti Tahun Baharu Cina (Hari Kedua) (anggaran)",
+        "holiday_date": "2027-02-08"
+      },
+      {
+        "description": "Hari Raya Puasa (anggaran)",
+        "holiday_date": "2027-03-09"
+      },
+      {
+        "description": "Hari Pekerja",
+        "holiday_date": "2027-05-01"
+      },
+      {
+        "description": "Hari Raya Qurban (anggaran)",
+        "holiday_date": "2027-05-16"
+      },
+      {
+        "description": "Cuti Hari Raya Qurban (anggaran)",
+        "holiday_date": "2027-05-17"
+      },
+      {
+        "description": "Hari Wesak (anggaran)",
+        "holiday_date": "2027-05-20"
+      },
+      {
+        "description": "Awal Muharam (anggaran)",
+        "holiday_date": "2027-06-06"
+      },
+      {
+        "description": "Hari Keputeraan Rasmi Seri Paduka Baginda Yang di-Pertuan Agong",
+        "holiday_date": "2027-06-07"
+      },
+      {
+        "description": "Hari Keputeraan Nabi Muhammad S.A.W. (anggaran)",
+        "holiday_date": "2027-08-14"
+      },
+      {
+        "description": "Hari Kebangsaan",
+        "holiday_date": "2027-08-31"
+      },
+      {
+        "description": "Hari Malaysia",
+        "holiday_date": "2027-09-16"
+      },
+      {
+        "description": "Hari Deepavali",
+        "holiday_date": "2027-10-28"
+      },
+      {
+        "description": "Hari Keputeraan Sultan Selangor",
+        "holiday_date": "2027-12-11"
+      },
+      {
+        "description": "Hari Krismas",
+        "holiday_date": "2027-12-25"
+      }
+    ]
+  },
+  "shifts": [
+    {
+      "fields": {
+        "allow_check_out_after_shift_end_time": 60,
+        "auto_update_last_sync": 0,
+        "begin_check_in_before_shift_start_time": 60,
+        "caf_allow_ot": 0,
+        "caf_alt_sat": 0,
+        "caf_lunch_minutes": 60,
+        "caf_ot_gate_minutes": 0,
+        "caf_ot_round_minutes": 30,
+        "caf_required_punches": "In + Out + Lunch pair",
+        "caf_sat_anchor": null,
+        "caf_sat_anchor_date": null,
+        "caf_shift_code": "6AM_SCHEDULE",
+        "caf_shift_family": "06:00-14:30 · 60",
+        "caf_work_fri": 1,
+        "caf_work_mon": 1,
+        "caf_work_sat": 1,
+        "caf_work_sun": 0,
+        "caf_work_thu": 1,
+        "caf_work_tue": 1,
+        "caf_work_wed": 1,
+        "color": "Blue",
+        "determine_check_in_and_check_out": "Alternating entries as IN and OUT during the same shift",
+        "early_exit_grace_period": 0,
+        "enable_auto_attendance": 0,
+        "enable_early_exit_marking": 0,
+        "enable_late_entry_marking": 0,
+        "end_time": "14:30:00",
+        "late_entry_grace_period": 0,
+        "mark_auto_attendance_on_holidays": 0,
+        "start_time": "6:00:00",
+        "working_hours_calculation_based_on": "First Check-in and Last Check-out",
+        "working_hours_threshold_for_absent": 0.0,
+        "working_hours_threshold_for_half_day": 0.0
+      },
+      "label": "6am Schedule",
+      "mirror_code": null
+    },
+    {
+      "fields": {
+        "allow_check_out_after_shift_end_time": 60,
+        "auto_update_last_sync": 0,
+        "begin_check_in_before_shift_start_time": 60,
+        "caf_allow_ot": 1,
+        "caf_alt_sat": 0,
+        "caf_lunch_minutes": 60,
+        "caf_ot_gate_minutes": 30,
+        "caf_ot_round_minutes": 30,
+        "caf_required_punches": "In + Out + Lunch pair",
+        "caf_sat_anchor": null,
+        "caf_sat_anchor_date": null,
+        "caf_shift_code": "7AM_SCHEDULE",
+        "caf_shift_family": "07:00-15:30 · 60",
+        "caf_work_fri": 1,
+        "caf_work_mon": 1,
+        "caf_work_sat": 1,
+        "caf_work_sun": 0,
+        "caf_work_thu": 1,
+        "caf_work_tue": 1,
+        "caf_work_wed": 1,
+        "color": "Blue",
+        "determine_check_in_and_check_out": "Alternating entries as IN and OUT during the same shift",
+        "early_exit_grace_period": 0,
+        "enable_auto_attendance": 0,
+        "enable_early_exit_marking": 0,
+        "enable_late_entry_marking": 0,
+        "end_time": "15:30:00",
+        "late_entry_grace_period": 0,
+        "mark_auto_attendance_on_holidays": 0,
+        "start_time": "7:00:00",
+        "working_hours_calculation_based_on": "First Check-in and Last Check-out",
+        "working_hours_threshold_for_absent": 0.0,
+        "working_hours_threshold_for_half_day": 0.0
+      },
+      "label": "7am Schedule",
+      "mirror_code": null
+    },
+    {
+      "fields": {
+        "allow_check_out_after_shift_end_time": 60,
+        "auto_update_last_sync": 0,
+        "begin_check_in_before_shift_start_time": 60,
+        "caf_allow_ot": 0,
+        "caf_alt_sat": 0,
+        "caf_lunch_minutes": 60,
+        "caf_ot_gate_minutes": 0,
+        "caf_ot_round_minutes": 30,
+        "caf_required_punches": "In + Out + Lunch pair",
+        "caf_sat_anchor": null,
+        "caf_sat_anchor_date": null,
+        "caf_shift_code": "8_4_30_NO_OT",
+        "caf_shift_family": "08:00-16:30 · 60",
+        "caf_work_fri": 1,
+        "caf_work_mon": 1,
+        "caf_work_sat": 1,
+        "caf_work_sun": 0,
+        "caf_work_thu": 1,
+        "caf_work_tue": 1,
+        "caf_work_wed": 1,
+        "color": "Blue",
+        "determine_check_in_and_check_out": "Alternating entries as IN and OUT during the same shift",
+        "early_exit_grace_period": 0,
+        "enable_auto_attendance": 0,
+        "enable_early_exit_marking": 0,
+        "enable_late_entry_marking": 0,
+        "end_time": "16:30:00",
+        "late_entry_grace_period": 0,
+        "mark_auto_attendance_on_holidays": 0,
+        "start_time": "8:00:00",
+        "working_hours_calculation_based_on": "First Check-in and Last Check-out",
+        "working_hours_threshold_for_absent": 0.0,
+        "working_hours_threshold_for_half_day": 0.0
+      },
+      "label": "8-4.30 no OT",
+      "mirror_code": null
+    },
+    {
+      "fields": {
+        "allow_check_out_after_shift_end_time": 60,
+        "auto_update_last_sync": 0,
+        "begin_check_in_before_shift_start_time": 60,
+        "caf_allow_ot": 1,
+        "caf_alt_sat": 1,
+        "caf_lunch_minutes": 60,
+        "caf_ot_gate_minutes": 30,
+        "caf_ot_round_minutes": 30,
+        "caf_required_punches": "In + Out + Lunch pair",
+        "caf_sat_anchor": "Work",
+        "caf_sat_anchor_date": "2026-04-11",
+        "caf_shift_code": "ALTSAT_85_A",
+        "caf_shift_family": "08:00-17:00 · 60",
+        "caf_work_fri": 1,
+        "caf_work_mon": 1,
+        "caf_work_sat": 1,
+        "caf_work_sun": 0,
+        "caf_work_thu": 1,
+        "caf_work_tue": 1,
+        "caf_work_wed": 1,
+        "color": "Blue",
+        "determine_check_in_and_check_out": "Alternating entries as IN and OUT during the same shift",
+        "early_exit_grace_period": 0,
+        "enable_auto_attendance": 0,
+        "enable_early_exit_marking": 0,
+        "enable_late_entry_marking": 0,
+        "end_time": "17:00:00",
+        "late_entry_grace_period": 0,
+        "mark_auto_attendance_on_holidays": 0,
+        "start_time": "8:00:00",
+        "working_hours_calculation_based_on": "First Check-in and Last Check-out",
+        "working_hours_threshold_for_absent": 0.0,
+        "working_hours_threshold_for_half_day": 0.0
+      },
+      "label": "8-5 Alt Sat 1st-3rd",
+      "mirror_code": "ALTSAT_85_B"
+    },
+    {
+      "fields": {
+        "allow_check_out_after_shift_end_time": 60,
+        "auto_update_last_sync": 0,
+        "begin_check_in_before_shift_start_time": 60,
+        "caf_allow_ot": 1,
+        "caf_alt_sat": 1,
+        "caf_lunch_minutes": 60,
+        "caf_ot_gate_minutes": 30,
+        "caf_ot_round_minutes": 30,
+        "caf_required_punches": "In + Out + Lunch pair",
+        "caf_sat_anchor": "Rest",
+        "caf_sat_anchor_date": "2026-04-11",
+        "caf_shift_code": "ALTSAT_85_B",
+        "caf_shift_family": "08:00-17:00 · 60",
+        "caf_work_fri": 1,
+        "caf_work_mon": 1,
+        "caf_work_sat": 1,
+        "caf_work_sun": 0,
+        "caf_work_thu": 1,
+        "caf_work_tue": 1,
+        "caf_work_wed": 1,
+        "color": "Blue",
+        "determine_check_in_and_check_out": "Alternating entries as IN and OUT during the same shift",
+        "early_exit_grace_period": 0,
+        "enable_auto_attendance": 0,
+        "enable_early_exit_marking": 0,
+        "enable_late_entry_marking": 0,
+        "end_time": "17:00:00",
+        "late_entry_grace_period": 0,
+        "mark_auto_attendance_on_holidays": 0,
+        "start_time": "8:00:00",
+        "working_hours_calculation_based_on": "First Check-in and Last Check-out",
+        "working_hours_threshold_for_absent": 0.0,
+        "working_hours_threshold_for_half_day": 0.0
+      },
+      "label": "8-5 Alt Sat 2nd-4th",
+      "mirror_code": "ALTSAT_85_A"
+    },
+    {
+      "fields": {
+        "allow_check_out_after_shift_end_time": 60,
+        "auto_update_last_sync": 0,
+        "begin_check_in_before_shift_start_time": 60,
+        "caf_allow_ot": 1,
+        "caf_alt_sat": 0,
+        "caf_lunch_minutes": 60,
+        "caf_ot_gate_minutes": 30,
+        "caf_ot_round_minutes": 30,
+        "caf_required_punches": "In + Out + Lunch pair",
+        "caf_sat_anchor": null,
+        "caf_sat_anchor_date": null,
+        "caf_shift_code": "8_30AM_ROSTER",
+        "caf_shift_family": "08:30-17:00 · 60",
+        "caf_work_fri": 1,
+        "caf_work_mon": 1,
+        "caf_work_sat": 1,
+        "caf_work_sun": 0,
+        "caf_work_thu": 1,
+        "caf_work_tue": 1,
+        "caf_work_wed": 1,
+        "color": "Blue",
+        "determine_check_in_and_check_out": "Alternating entries as IN and OUT during the same shift",
+        "early_exit_grace_period": 0,
+        "enable_auto_attendance": 0,
+        "enable_early_exit_marking": 0,
+        "enable_late_entry_marking": 0,
+        "end_time": "17:00:00",
+        "late_entry_grace_period": 0,
+        "mark_auto_attendance_on_holidays": 0,
+        "start_time": "8:30:00",
+        "working_hours_calculation_based_on": "First Check-in and Last Check-out",
+        "working_hours_threshold_for_absent": 0.0,
+        "working_hours_threshold_for_half_day": 0.0
+      },
+      "label": "8.30am Roster",
+      "mirror_code": null
+    },
+    {
+      "fields": {
+        "allow_check_out_after_shift_end_time": 60,
+        "auto_update_last_sync": 0,
+        "begin_check_in_before_shift_start_time": 60,
+        "caf_allow_ot": 0,
+        "caf_alt_sat": 1,
+        "caf_lunch_minutes": 60,
+        "caf_ot_gate_minutes": 0,
+        "caf_ot_round_minutes": 30,
+        "caf_required_punches": "In + Out + Lunch pair",
+        "caf_sat_anchor": "Work",
+        "caf_sat_anchor_date": "2026-04-11",
+        "caf_shift_code": "ALTSAT_830_A",
+        "caf_shift_family": "08:30-17:30 · 60",
+        "caf_work_fri": 1,
+        "caf_work_mon": 1,
+        "caf_work_sat": 1,
+        "caf_work_sun": 0,
+        "caf_work_thu": 1,
+        "caf_work_tue": 1,
+        "caf_work_wed": 1,
+        "color": "Blue",
+        "determine_check_in_and_check_out": "Alternating entries as IN and OUT during the same shift",
+        "early_exit_grace_period": 0,
+        "enable_auto_attendance": 0,
+        "enable_early_exit_marking": 0,
+        "enable_late_entry_marking": 0,
+        "end_time": "17:30:00",
+        "late_entry_grace_period": 0,
+        "mark_auto_attendance_on_holidays": 0,
+        "start_time": "8:30:00",
+        "working_hours_calculation_based_on": "First Check-in and Last Check-out",
+        "working_hours_threshold_for_absent": 0.0,
+        "working_hours_threshold_for_half_day": 0.0
+      },
+      "label": "8:30am Alt Sat 1st-3rd",
+      "mirror_code": "ALTSAT_830_B"
+    },
+    {
+      "fields": {
+        "allow_check_out_after_shift_end_time": 60,
+        "auto_update_last_sync": 0,
+        "begin_check_in_before_shift_start_time": 60,
+        "caf_allow_ot": 0,
+        "caf_alt_sat": 1,
+        "caf_lunch_minutes": 60,
+        "caf_ot_gate_minutes": 0,
+        "caf_ot_round_minutes": 30,
+        "caf_required_punches": "In + Out + Lunch pair",
+        "caf_sat_anchor": "Rest",
+        "caf_sat_anchor_date": "2026-04-11",
+        "caf_shift_code": "ALTSAT_830_B",
+        "caf_shift_family": "08:30-17:30 · 60",
+        "caf_work_fri": 1,
+        "caf_work_mon": 1,
+        "caf_work_sat": 1,
+        "caf_work_sun": 0,
+        "caf_work_thu": 1,
+        "caf_work_tue": 1,
+        "caf_work_wed": 1,
+        "color": "Blue",
+        "determine_check_in_and_check_out": "Alternating entries as IN and OUT during the same shift",
+        "early_exit_grace_period": 0,
+        "enable_auto_attendance": 0,
+        "enable_early_exit_marking": 0,
+        "enable_late_entry_marking": 0,
+        "end_time": "17:30:00",
+        "late_entry_grace_period": 0,
+        "mark_auto_attendance_on_holidays": 0,
+        "start_time": "8:30:00",
+        "working_hours_calculation_based_on": "First Check-in and Last Check-out",
+        "working_hours_threshold_for_absent": 0.0,
+        "working_hours_threshold_for_half_day": 0.0
+      },
+      "label": "8:30am Alt Sat 2nd-4th",
+      "mirror_code": "ALTSAT_830_A"
+    },
+    {
+      "fields": {
+        "allow_check_out_after_shift_end_time": 60,
+        "auto_update_last_sync": 0,
+        "begin_check_in_before_shift_start_time": 60,
+        "caf_allow_ot": 0,
+        "caf_alt_sat": 0,
+        "caf_lunch_minutes": 60,
+        "caf_ot_gate_minutes": 0,
+        "caf_ot_round_minutes": 30,
+        "caf_required_punches": "In + Out only",
+        "caf_sat_anchor": null,
+        "caf_sat_anchor_date": null,
+        "caf_shift_code": "8_30AM_IN_AND_OUT",
+        "caf_shift_family": "08:30-17:30 · 60",
+        "caf_work_fri": 1,
+        "caf_work_mon": 1,
+        "caf_work_sat": 1,
+        "caf_work_sun": 0,
+        "caf_work_thu": 1,
+        "caf_work_tue": 1,
+        "caf_work_wed": 1,
+        "color": "Blue",
+        "determine_check_in_and_check_out": "Alternating entries as IN and OUT during the same shift",
+        "early_exit_grace_period": 0,
+        "enable_auto_attendance": 0,
+        "enable_early_exit_marking": 0,
+        "enable_late_entry_marking": 0,
+        "end_time": "17:30:00",
+        "late_entry_grace_period": 0,
+        "mark_auto_attendance_on_holidays": 0,
+        "start_time": "8:30:00",
+        "working_hours_calculation_based_on": "First Check-in and Last Check-out",
+        "working_hours_threshold_for_absent": 0.0,
+        "working_hours_threshold_for_half_day": 0.0
+      },
+      "label": "8:30am In and Out",
+      "mirror_code": null
+    },
+    {
+      "fields": {
+        "allow_check_out_after_shift_end_time": 60,
+        "auto_update_last_sync": 0,
+        "begin_check_in_before_shift_start_time": 60,
+        "caf_allow_ot": 0,
+        "caf_alt_sat": 0,
+        "caf_lunch_minutes": 60,
+        "caf_ot_gate_minutes": 0,
+        "caf_ot_round_minutes": 30,
+        "caf_required_punches": "In OR Out only",
+        "caf_sat_anchor": null,
+        "caf_sat_anchor_date": null,
+        "caf_shift_code": "8_30AM_IN_OR_OUT",
+        "caf_shift_family": "08:30-17:30 · 60",
+        "caf_work_fri": 1,
+        "caf_work_mon": 1,
+        "caf_work_sat": 1,
+        "caf_work_sun": 0,
+        "caf_work_thu": 1,
+        "caf_work_tue": 1,
+        "caf_work_wed": 1,
+        "color": "Blue",
+        "determine_check_in_and_check_out": "Alternating entries as IN and OUT during the same shift",
+        "early_exit_grace_period": 0,
+        "enable_auto_attendance": 0,
+        "enable_early_exit_marking": 0,
+        "enable_late_entry_marking": 0,
+        "end_time": "17:30:00",
+        "late_entry_grace_period": 0,
+        "mark_auto_attendance_on_holidays": 0,
+        "start_time": "8:30:00",
+        "working_hours_calculation_based_on": "First Check-in and Last Check-out",
+        "working_hours_threshold_for_absent": 0.0,
+        "working_hours_threshold_for_half_day": 0.0
+      },
+      "label": "8:30am In or Out",
+      "mirror_code": null
+    },
+    {
+      "fields": {
+        "allow_check_out_after_shift_end_time": 60,
+        "auto_update_last_sync": 0,
+        "begin_check_in_before_shift_start_time": 60,
+        "caf_allow_ot": 0,
+        "caf_alt_sat": 0,
+        "caf_lunch_minutes": 60,
+        "caf_ot_gate_minutes": 0,
+        "caf_ot_round_minutes": 30,
+        "caf_required_punches": "In + Out + Lunch pair",
+        "caf_sat_anchor": null,
+        "caf_sat_anchor_date": null,
+        "caf_shift_code": "8_30AM_SCHEDULE",
+        "caf_shift_family": "08:30-17:30 · 60",
+        "caf_work_fri": 1,
+        "caf_work_mon": 1,
+        "caf_work_sat": 1,
+        "caf_work_sun": 0,
+        "caf_work_thu": 1,
+        "caf_work_tue": 1,
+        "caf_work_wed": 1,
+        "color": "Blue",
+        "determine_check_in_and_check_out": "Alternating entries as IN and OUT during the same shift",
+        "early_exit_grace_period": 0,
+        "enable_auto_attendance": 0,
+        "enable_early_exit_marking": 0,
+        "enable_late_entry_marking": 0,
+        "end_time": "17:30:00",
+        "late_entry_grace_period": 0,
+        "mark_auto_attendance_on_holidays": 0,
+        "start_time": "8:30:00",
+        "working_hours_calculation_based_on": "First Check-in and Last Check-out",
+        "working_hours_threshold_for_absent": 0.0,
+        "working_hours_threshold_for_half_day": 0.0
+      },
+      "label": "8:30am Schedule",
+      "mirror_code": null
+    },
+    {
+      "fields": {
+        "allow_check_out_after_shift_end_time": 60,
+        "auto_update_last_sync": 0,
+        "begin_check_in_before_shift_start_time": 60,
+        "caf_allow_ot": 0,
+        "caf_alt_sat": 0,
+        "caf_lunch_minutes": 0,
+        "caf_ot_gate_minutes": 0,
+        "caf_ot_round_minutes": 30,
+        "caf_required_punches": "In + Out only",
+        "caf_sat_anchor": null,
+        "caf_sat_anchor_date": null,
+        "caf_shift_code": "8_30AM_NO_SAT",
+        "caf_shift_family": "08:30-17:00 · 0",
+        "caf_work_fri": 1,
+        "caf_work_mon": 1,
+        "caf_work_sat": 0,
+        "caf_work_sun": 0,
+        "caf_work_thu": 1,
+        "caf_work_tue": 1,
+        "caf_work_wed": 1,
+        "color": "Blue",
+        "determine_check_in_and_check_out": "Alternating entries as IN and OUT during the same shift",
+        "early_exit_grace_period": 0,
+        "enable_auto_attendance": 0,
+        "enable_early_exit_marking": 0,
+        "enable_late_entry_marking": 0,
+        "end_time": "17:00:00",
+        "late_entry_grace_period": 0,
+        "mark_auto_attendance_on_holidays": 0,
+        "start_time": "8:30:00",
+        "working_hours_calculation_based_on": "First Check-in and Last Check-out",
+        "working_hours_threshold_for_absent": 0.0,
+        "working_hours_threshold_for_half_day": 0.0
+      },
+      "label": "8:30am no Sat",
+      "mirror_code": null
+    },
+    {
+      "fields": {
+        "allow_check_out_after_shift_end_time": 60,
+        "auto_update_last_sync": 0,
+        "begin_check_in_before_shift_start_time": 60,
+        "caf_allow_ot": 0,
+        "caf_alt_sat": 0,
+        "caf_lunch_minutes": 60,
+        "caf_ot_gate_minutes": 0,
+        "caf_ot_round_minutes": 30,
+        "caf_required_punches": "In + Out only",
+        "caf_sat_anchor": null,
+        "caf_sat_anchor_date": null,
+        "caf_shift_code": "8AM_IN_AND_OUT_NO_SAT",
+        "caf_shift_family": "08:00-16:30 · 60",
+        "caf_work_fri": 1,
+        "caf_work_mon": 1,
+        "caf_work_sat": 0,
+        "caf_work_sun": 0,
+        "caf_work_thu": 1,
+        "caf_work_tue": 1,
+        "caf_work_wed": 1,
+        "color": "Blue",
+        "determine_check_in_and_check_out": "Alternating entries as IN and OUT during the same shift",
+        "early_exit_grace_period": 0,
+        "enable_auto_attendance": 0,
+        "enable_early_exit_marking": 0,
+        "enable_late_entry_marking": 0,
+        "end_time": "16:30:00",
+        "late_entry_grace_period": 0,
+        "mark_auto_attendance_on_holidays": 0,
+        "start_time": "8:00:00",
+        "working_hours_calculation_based_on": "First Check-in and Last Check-out",
+        "working_hours_threshold_for_absent": 0.0,
+        "working_hours_threshold_for_half_day": 0.0
+      },
+      "label": "8am In and Out no Sat",
+      "mirror_code": null
+    },
+    {
+      "fields": {
+        "allow_check_out_after_shift_end_time": 60,
+        "auto_update_last_sync": 0,
+        "begin_check_in_before_shift_start_time": 60,
+        "caf_allow_ot": 0,
+        "caf_alt_sat": 0,
+        "caf_lunch_minutes": 60,
+        "caf_ot_gate_minutes": 30,
+        "caf_ot_round_minutes": 30,
+        "caf_required_punches": "In OR Out only",
+        "caf_sat_anchor": null,
+        "caf_sat_anchor_date": null,
+        "caf_shift_code": "8AM_IN_OR_OUT",
+        "caf_shift_family": "08:00-16:30 · 60",
+        "caf_work_fri": 1,
+        "caf_work_mon": 1,
+        "caf_work_sat": 1,
+        "caf_work_sun": 0,
+        "caf_work_thu": 1,
+        "caf_work_tue": 1,
+        "caf_work_wed": 1,
+        "color": "Blue",
+        "determine_check_in_and_check_out": "Alternating entries as IN and OUT during the same shift",
+        "early_exit_grace_period": 0,
+        "enable_auto_attendance": 0,
+        "enable_early_exit_marking": 0,
+        "enable_late_entry_marking": 0,
+        "end_time": "16:30:00",
+        "late_entry_grace_period": 0,
+        "mark_auto_attendance_on_holidays": 0,
+        "start_time": "8:00:00",
+        "working_hours_calculation_based_on": "First Check-in and Last Check-out",
+        "working_hours_threshold_for_absent": 0.0,
+        "working_hours_threshold_for_half_day": 0.0
+      },
+      "label": "8am In or Out",
+      "mirror_code": null
+    },
+    {
+      "fields": {
+        "allow_check_out_after_shift_end_time": 60,
+        "auto_update_last_sync": 0,
+        "begin_check_in_before_shift_start_time": 60,
+        "caf_allow_ot": 1,
+        "caf_alt_sat": 0,
+        "caf_lunch_minutes": 60,
+        "caf_ot_gate_minutes": 30,
+        "caf_ot_round_minutes": 30,
+        "caf_required_punches": "In + Out + Lunch pair",
+        "caf_sat_anchor": null,
+        "caf_sat_anchor_date": null,
+        "caf_shift_code": "8AM_SCHEDULE",
+        "caf_shift_family": "08:00-16:30 · 60",
+        "caf_work_fri": 1,
+        "caf_work_mon": 1,
+        "caf_work_sat": 1,
+        "caf_work_sun": 0,
+        "caf_work_thu": 1,
+        "caf_work_tue": 1,
+        "caf_work_wed": 1,
+        "color": "Blue",
+        "determine_check_in_and_check_out": "Alternating entries as IN and OUT during the same shift",
+        "early_exit_grace_period": 0,
+        "enable_auto_attendance": 0,
+        "enable_early_exit_marking": 0,
+        "enable_late_entry_marking": 0,
+        "end_time": "16:30:00",
+        "late_entry_grace_period": 0,
+        "mark_auto_attendance_on_holidays": 0,
+        "start_time": "8:00:00",
+        "working_hours_calculation_based_on": "First Check-in and Last Check-out",
+        "working_hours_threshold_for_absent": 0.0,
+        "working_hours_threshold_for_half_day": 0.0
+      },
+      "label": "8am Schedule",
+      "mirror_code": null
+    },
+    {
+      "fields": {
+        "allow_check_out_after_shift_end_time": 60,
+        "auto_update_last_sync": 0,
+        "begin_check_in_before_shift_start_time": 60,
+        "caf_allow_ot": 0,
+        "caf_alt_sat": 0,
+        "caf_lunch_minutes": 60,
+        "caf_ot_gate_minutes": 0,
+        "caf_ot_round_minutes": 30,
+        "caf_required_punches": "In + Out + Lunch pair",
+        "caf_sat_anchor": null,
+        "caf_sat_anchor_date": null,
+        "caf_shift_code": "8AM_NO_OT_NO_SAT",
+        "caf_shift_family": "08:00-16:30 · 60",
+        "caf_work_fri": 1,
+        "caf_work_mon": 1,
+        "caf_work_sat": 0,
+        "caf_work_sun": 0,
+        "caf_work_thu": 1,
+        "caf_work_tue": 1,
+        "caf_work_wed": 1,
+        "color": "Blue",
+        "determine_check_in_and_check_out": "Alternating entries as IN and OUT during the same shift",
+        "early_exit_grace_period": 0,
+        "enable_auto_attendance": 0,
+        "enable_early_exit_marking": 0,
+        "enable_late_entry_marking": 0,
+        "end_time": "16:30:00",
+        "late_entry_grace_period": 0,
+        "mark_auto_attendance_on_holidays": 0,
+        "start_time": "8:00:00",
+        "working_hours_calculation_based_on": "First Check-in and Last Check-out",
+        "working_hours_threshold_for_absent": 0.0,
+        "working_hours_threshold_for_half_day": 0.0
+      },
+      "label": "8am no OT no Sat",
+      "mirror_code": null
+    },
+    {
+      "fields": {
+        "allow_check_out_after_shift_end_time": 60,
+        "auto_update_last_sync": 0,
+        "begin_check_in_before_shift_start_time": 60,
+        "caf_allow_ot": 1,
+        "caf_alt_sat": 0,
+        "caf_lunch_minutes": 60,
+        "caf_ot_gate_minutes": 30,
+        "caf_ot_round_minutes": 30,
+        "caf_required_punches": "In + Out + Lunch pair",
+        "caf_sat_anchor": null,
+        "caf_sat_anchor_date": null,
+        "caf_shift_code": "SPECIAL_8_5",
+        "caf_shift_family": "08:00-17:00 · 60",
+        "caf_work_fri": 1,
+        "caf_work_mon": 1,
+        "caf_work_sat": 1,
+        "caf_work_sun": 0,
+        "caf_work_thu": 1,
+        "caf_work_tue": 1,
+        "caf_work_wed": 1,
+        "color": "Blue",
+        "determine_check_in_and_check_out": "Alternating entries as IN and OUT during the same shift",
+        "early_exit_grace_period": 0,
+        "enable_auto_attendance": 0,
+        "enable_early_exit_marking": 0,
+        "enable_late_entry_marking": 0,
+        "end_time": "17:00:00",
+        "late_entry_grace_period": 0,
+        "mark_auto_attendance_on_holidays": 0,
+        "start_time": "8:00:00",
+        "working_hours_calculation_based_on": "First Check-in and Last Check-out",
+        "working_hours_threshold_for_absent": 0.0,
+        "working_hours_threshold_for_half_day": 0.0
+      },
+      "label": "Special 8-5",
+      "mirror_code": null
+    },
+    {
+      "fields": {
+        "allow_check_out_after_shift_end_time": 60,
+        "auto_update_last_sync": 0,
+        "begin_check_in_before_shift_start_time": 60,
+        "caf_allow_ot": 1,
+        "caf_alt_sat": 0,
+        "caf_lunch_minutes": 0,
+        "caf_ot_gate_minutes": 0,
+        "caf_ot_round_minutes": 30,
+        "caf_required_punches": "In + Out only",
+        "caf_sat_anchor": null,
+        "caf_sat_anchor_date": null,
+        "caf_shift_code": "SPECIAL",
+        "caf_shift_family": "09:00-18:00 · 0",
+        "caf_work_fri": 1,
+        "caf_work_mon": 1,
+        "caf_work_sat": 0,
+        "caf_work_sun": 0,
+        "caf_work_thu": 1,
+        "caf_work_tue": 1,
+        "caf_work_wed": 1,
+        "color": "Blue",
+        "determine_check_in_and_check_out": "Alternating entries as IN and OUT during the same shift",
+        "early_exit_grace_period": 0,
+        "enable_auto_attendance": 0,
+        "enable_early_exit_marking": 0,
+        "enable_late_entry_marking": 0,
+        "end_time": "18:00:00",
+        "late_entry_grace_period": 0,
+        "mark_auto_attendance_on_holidays": 0,
+        "start_time": "9:00:00",
+        "working_hours_calculation_based_on": "First Check-in and Last Check-out",
+        "working_hours_threshold_for_absent": 0.0,
+        "working_hours_threshold_for_half_day": 0.0
+      },
+      "label": "special",
+      "mirror_code": null
+    }
+  ],
+  "unmatchable": [
+    {
+      "employee": "HR-EMP-00002",
+      "employee_name": "Yow Kwee Chin",
+      "why": "no default_shift on the authority site"
+    }
+  ]
+}

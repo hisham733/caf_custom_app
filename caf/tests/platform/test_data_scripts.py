@@ -97,6 +97,9 @@ SCRIPTS = [
      "moves an employee between shifts, resolved by device id not by name (T-32)"),
     ("early_start_setting", "run", False,
      "the early-start threshold on HR Settings, and the data behind the number"),
+    ("shift_holiday_migration", "run", False,
+     "T-34 rows 4+8 — carries the 18 Shift Types and the gazette dates to another "
+     "site, regenerates the calendars and repoints every employee by device id"),
 ]
 
 VERIFIERS = [
@@ -112,6 +115,7 @@ VERIFIERS = [
     ("alt_saturday_setup", False),
     ("shift_reassign", False),
     ("early_start_setting", False),
+    ("shift_holiday_migration", False),
 ]
 
 
