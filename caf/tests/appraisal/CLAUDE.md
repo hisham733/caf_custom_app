@@ -31,6 +31,7 @@ mangles the UNC path.
 |---|---|
 | `test_2_1_to_2_4.ps1` | supervisor flow · HR flow · rejection loop · subtree |
 | `test_2_5_to_2_8.ps1` | score toggle · BR6 · edge cases · `reports_to` rules |
+| **`test_supervisor_page.ps1`** | ⭐ **T-38, built 2026-09-10 — 11/11.** The four whitelisted endpoints of `/app/supervisor-appraisal`. Runs on the **real** org tree (`SupC2`/`SupA2`/`EmpB2`), owns **A's direct reports in cycle 2026-08**, and cleans both ends |
 | `probe_2_10a.ps1` | HR Settings permlevel |
 | `probe_2_10b.ps1` | Finger Log restriction (D40) **+ Attendance Follow-Up report roles** |
 | `probe_2_10bc.ps1` | EPF permlevel · KRA permissions · workflow present |
@@ -42,7 +43,26 @@ Role keys in `credentials.ps1` (**gitignored**, values in
 
 ## ✅ T-21 CLOSED 2026-09-10 — `run_all.ps1` completes
 
-**48 passed, 8 failed — and all 8 have ONE cause**, the org-tree fixture (T-37).
+**59 passed, 8 failed — and all 8 have ONE cause**, the org-tree fixture (T-37).
+
+## T-38 — what covering the supervisor page actually established
+
+🔴 **`save_appraisal_kra` and `submit_for_review` carry no `check_permission`
+call** — only `get_appraisal_doc` got one (v1.1). ✅ **Measured: both are still
+refused (403)** — but by `doc.save()` and `apply_workflow()` downstream, **not**
+by anything the endpoint does itself. ⚠️ **That protection is incidental.** An
+`ignore_permissions=True` added to either call would open the hole with nothing
+to catch it — which is exactly what SP5 and SP6 now watch.
+
+⚠️ **A theory I had, disproved the same day, recorded so nobody re-proposes it.**
+92 of the site's 94 Employee User Permissions are self-scoping
+(`apply_to_all_doctypes = 1`), and I expected one to break the page for its
+holder. **It does not — `production1@` sees all 61 of his reports.** User
+Permissions bite at the list/report layer and in `check_permission`; this
+endpoint uses `frappe.db.exists` / `get_value` / `get_doc`, which do not consult
+them. MG's failing document was a **pre-existing** appraisal whose `reported_by`
+was an Employee outside his permitted set — narrower than "the page is broken",
+and still owed a probe (**T-38b**).
 
 ```
    test_2_1_to_2_4    0 passed   1 failed   ← stops on T-ORG, by design

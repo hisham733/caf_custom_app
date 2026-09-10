@@ -90,6 +90,23 @@ _LA_EDGES = [
     ("Rejected at Final", "Revise", "Draft"),
 ]
 
+# 🔴 T-40 / OD-87b, 2026-09-10 — THE LAST SIGNATURE MUST COME FROM A SECOND
+# PERSON. Every transition here used to carry `allow_self_approval = 1`, so the
+# creator of a leave application could walk it end to end alone. Measured, and
+# MG saw it himself: fiza@ took HR-LAP-2026-00344 from Draft to **Approved**
+# unaided, though her own leave_approver is Chen.
+#
+# ⚠️ It is deliberately on the FINAL transition ONLY. `allow_self_approval`
+# blocks `doc.owner` — and HR routinely files leave FOR other people (MG watched
+# Fiza key one in for Tham). Setting it everywhere would stop her approving
+# routine paperwork she typed herself, which is data entry, not a signature.
+# Putting it on the last step keeps the bulk path moving and still requires two
+# people before any leave becomes real.
+#
+# MG, 2026-09-10, choosing this over a blanket flag: *"Recommended: put it on
+# the FINAL transition only - accept."*
+SELF_APPROVAL_BLOCKED = {("Pending Final Approval", "Approve")}
+
 TRANSITIONS = (
     [(f, a, t, LA) for f, a, t in _LA_EDGES]
     + [(f, a, t, HRM) for f, a, t in _LA_EDGES]     # HR does the paperwork
@@ -136,9 +153,10 @@ def plan():
     print(f"\n   {'state':26s} {'ds':>2s} {'status':10s} allow-edit")
     for s, d, st, r in STATES:
         print(f"   {s:26s} {d:>2} {st:10s} {r}")
-    print(f"\n   {'from':26s} {'action':20s} {'to':26s} role")
+    print(f"\n   {'from':26s} {'action':20s} {'to':26s} {'role':16s} self-approve")
     for f, a, t, r in TRANSITIONS:
-        print(f"   {f:26s} {a:20s} {t:26s} {r}")
+        self_ok = "NO  ← T-40" if (f, a) in SELF_APPROVAL_BLOCKED else "yes"
+        print(f"   {f:26s} {a:20s} {t:26s} {r:16s} {self_ok}")
 
     missing = [s for s, _d, _st, _r in STATES
                if not frappe.db.exists("Workflow State", s)]
@@ -170,8 +188,11 @@ def apply():
         doc.append("states", {"state": s, "doc_status": d, "allow_edit": r,
                               "update_field": "status", "update_value": st})
     for f, a, t, r in TRANSITIONS:
-        doc.append("transitions", {"state": f, "action": a, "next_state": t,
-                                   "allowed": r, "allow_self_approval": 1})
+        doc.append("transitions", {
+            "state": f, "action": a, "next_state": t, "allowed": r,
+            # T-40: 0 on the final Approve only — see SELF_APPROVAL_BLOCKED
+            "allow_self_approval": 0 if (f, a) in SELF_APPROVAL_BLOCKED else 1,
+        })
     doc.flags.ignore_permissions = True
     doc.save()
     frappe.db.commit()

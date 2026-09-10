@@ -8,6 +8,7 @@ $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $scripts = @(
   "test_2_1_to_2_4.ps1",   # supervisor flow, HR flow, rejection loop, subtree
   "test_2_5_to_2_8.ps1",   # score toggle, BR6, edge cases, reports_to rules
+  "test_supervisor_page.ps1", # T-38: the 4 whitelisted endpoints of /app/supervisor-appraisal
   "probe_2_10a.ps1",       # HR Settings permlevel
   "probe_2_10b.ps1",       # Finger Log restriction
   "probe_2_10bc.ps1",      # EPF permlevel, KRA permissions, workflow present
