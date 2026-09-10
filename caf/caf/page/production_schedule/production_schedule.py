@@ -7,8 +7,34 @@ from frappe import _
 from frappe.utils import getdate, add_days
 from frappe.model.naming import make_autoname
 
+from erpnext.setup.doctype.holiday_list.holiday_list import is_holiday
+
 NO_COOKING = "No Cooking"
 CHILD_DOCTYPE = "Create ProExl Items"
+
+
+@frappe.request_cache
+def _get_caf_holiday_list() -> str:
+    """Return the Holiday List configured in Caf Settings (empty if none).
+
+    Cached per request so repeated _is_holiday() calls inside one request only
+    read the single value once; still re-read fresh on every request.
+    """
+    try:
+        return frappe.db.get_single_value("Caf Settings", "holiday_list") or ""
+    except Exception:
+        return ""
+
+
+def _is_holiday(day) -> bool:
+    """True if the given day is a holiday per Caf Settings' Holiday List."""
+    holiday_list = _get_caf_holiday_list()
+    if not holiday_list:
+        return False
+    try:
+        return bool(is_holiday(holiday_list, getdate(day)))
+    except Exception:
+        return False
 
 
 def _log_schedule_change(action_type, day=None, dp_name=None, child_row_name=None,
@@ -60,6 +86,7 @@ def _build_log_summary(action_type, recipe_name, workstation, cook_round, day, c
     action_verbs = {
         "Move": "Moved", "Swap": "Swapped", "Edit": "Edited",
         "Add Recipe": "Added", "Cancel": "Cancelled",
+        "Clear": "Cleared",
         "Create WO": "Created WOs", "Submit Week": "Submitted week",
     }
     verb = action_verbs.get(action_type, action_type)
@@ -263,6 +290,8 @@ def get_week_data(year, week_number, mode):
         date_obj = getdate(day)
         day_labels.append(f"{date_obj.strftime('%a')} {date_obj.day}")
 
+    holiday_days = [d for d in days if _is_holiday(d)]
+
     # Get workstations in the same order as the Metabase view
     workstations = get_workstations()
 
@@ -375,6 +404,7 @@ def get_week_data(year, week_number, mode):
         "workstations": workstations,
         "days": days,
         "day_labels": day_labels,
+        "holiday_days": holiday_days,
         "dp_names": dp_names,
         "dp_submit_refs": dp_submit_refs,
         "schedule": schedule,
@@ -550,6 +580,7 @@ def save_move_item(item_id, source_date, target_date, target_cooker, target_roun
         for i, r in enumerate(source_dp.production_table):
             r.idx = i + 1
 
+        source_dp.flags.skip_edit_log = True
         source_dp.save(ignore_permissions=True)
         frappe.db.commit()
 
@@ -655,9 +686,6 @@ def save_move_item(item_id, source_date, target_date, target_cooker, target_roun
     target_nc.recipe_note = old_note
     target_nc.production_plane = old_prod_plane
     target_nc.custom_yield = old_yield
-    target_nc.required_date = target_date
-    target_nc.recipe_cook_workstaion = target_cooker
-    target_nc.recipe_cook_round = int(target_round)
     target_nc.produ_status = old_status
     for i in range(1, 8):
         suffix = "" if i == 1 else f"_{i}"
@@ -671,6 +699,8 @@ def save_move_item(item_id, source_date, target_date, target_cooker, target_roun
     for i, r in enumerate(target_dp.production_table):
         r.idx = i + 1
 
+    source_dp.flags.skip_edit_log = True
+    target_dp.flags.skip_edit_log = True
     source_dp.save(ignore_permissions=True)
     target_dp.save(ignore_permissions=True)
     frappe.db.commit()
@@ -774,6 +804,60 @@ def save_item_fields(item_id, fields):
 
 
 @frappe.whitelist()
+def send_day_schedule(week_monday, day_index, custom_message=""):
+    """Send a selected day's DP schedule image to WhatsApp.
+
+    Requires the DP to be Submitted and to have at least one recipe scheduled
+    for that day — Work Orders do not need to be created yet. Returns a JSON
+    response.
+
+    Args:
+        week_monday: Date string of the Monday
+        day_index: 0=Mon, 1=Tue, ..., 5=Sat
+        custom_message: Optional text appended to the WhatsApp image caption.
+    """
+    from datetime import timedelta
+
+    monday = getdate(week_monday)
+    day = monday + timedelta(days=int(day_index))
+
+    dp_name = frappe.db.get_value(
+        "Daily Production",
+        {"required_by": str(day), "docstatus": 0},
+        "name",
+        order_by="name desc",
+    )
+    if not dp_name:
+        return {"success": False, "message": _("No Daily Production for {0}.").format(str(day))}
+
+    dp = frappe.get_doc("Daily Production", dp_name)
+    if dp.workflow_state != "Submitted":
+        return {
+            "success": False,
+            "message": _("Daily Production for {0} is not Submitted yet. Please Submit it first.").format(str(day)),
+        }
+
+    has_recipe = any(
+        row.recipe_name and row.recipe_name != "No Cooking"
+        for row in dp.production_table
+    )
+    if not has_recipe:
+        return {
+            "success": False,
+            "message": _("No recipe is scheduled for {0}. Please add a recipe first.").format(str(day)),
+        }
+
+    try:
+        from caf.caf.utils.notifications import notify_dp_schedule
+        frappe.enqueue(notify_dp_schedule, dp_name=dp.name, queue="short", caption_extra=custom_message)
+    except Exception:
+        frappe.log_error(title="Send day schedule failed", message=frappe.get_traceback())
+        return {"success": False, "message": _("Failed to queue the WhatsApp message.")}
+
+    return {"success": True, "message": _("Schedule for {0} sent to WhatsApp.").format(str(day))}
+
+
+@frappe.whitelist()
 def process_day_dp(week_monday, day_index):
     """Synchronously run process_manual_updates for one day's DP.
 
@@ -792,6 +876,9 @@ def process_day_dp(week_monday, day_index):
 
     monday = getdate(week_monday)
     day = monday + timedelta(days=int(day_index))
+
+    if _is_holiday(str(day)):
+        return {"success": False, "message": _("Holiday — no Work Orders for {0}.").format(str(day))}
 
     dp_name = frappe.db.get_value(
         "Daily Production",
@@ -857,12 +944,17 @@ def submit_week(week_monday):
 
     submitted = 0
     skipped_past = 0
+    skipped_holiday = 0
     skipped_no_dp = 0
     skipped_empty = 0
 
     for day in days:
         if day < today:
             skipped_past += 1
+            continue
+
+        if _is_holiday(str(day)):
+            skipped_holiday += 1
             continue
 
         dp_name = frappe.db.get_value(
@@ -897,11 +989,12 @@ def submit_week(week_monday):
 
     _log_schedule_change("Submit Week", day=str(monday), old_data={},
                          new_data={"submitted": submitted, "skipped_past": skipped_past,
+                                   "skipped_holiday": skipped_holiday,
                                    "skipped_empty": skipped_empty})
 
     return {
         "success": True,
-        "message": _("Submitted {0} DP(s). Skipped {1} past, {2} empty.").format(submitted, skipped_past, skipped_empty),
+        "message": _("Submitted {0} DP(s). Skipped {1} past, {2} holiday, {3} empty.").format(submitted, skipped_past, skipped_holiday, skipped_empty),
     }
 
 
@@ -909,7 +1002,7 @@ def submit_week(week_monday):
 def edit_week(week_monday):
     """Switch all DPs for the week Mon-Sat to Edit mode.
 
-    For each day Mon-Sat:
+    For each day Mon-Sat (skipping past days):
     - If a DP exists and is in Submitted state → flips workflow_state to ""
     - If no DP exists → creates an empty DP with No Cooking placeholders
 
@@ -920,11 +1013,22 @@ def edit_week(week_monday):
 
     monday = getdate(week_monday)
     days = [monday + datetime.timedelta(days=i) for i in range(6)]
+    today = datetime.date.today()
 
     edited = 0
     created = 0
+    skipped_past = 0
+    skipped_holiday = 0
 
     for day in days:
+        if day < today:
+            skipped_past += 1
+            continue
+
+        if _is_holiday(str(day)):
+            skipped_holiday += 1
+            continue
+
         # Check if DP already exists for this date
         dp_name = frappe.db.get_value(
             "Daily Production",
@@ -961,7 +1065,9 @@ def edit_week(week_monday):
 
     return {
         "success": True,
-        "message": _("Switched {0} DP(s) to Edit mode, created {1} new DP(s).").format(edited, created),
+        "message": _("Switched {0} DP(s) to Edit mode, created {1} new DP(s). Skipped {2} past, {3} holiday.").format(
+            edited, created, skipped_past, skipped_holiday
+        ),
     }
 
 
@@ -1059,6 +1165,7 @@ def add_recipe(day, recipe, size, cooker, pack_count, round_num, **kwargs):
     for i, r in enumerate(dp.production_table):
         r.idx = i + 1
 
+    dp.flags.skip_edit_log = True
     dp.save(ignore_permissions=True)
     frappe.db.commit()
 
@@ -1159,6 +1266,8 @@ def swap_recipes(source_id, target_id):
         new_a = {fn: row_a.get(fn) for fn in swappable}
         new_b = {fn: row_b.get(fn) for fn in swappable}
 
+        src_doc.flags.skip_edit_log = True
+        tgt_doc.flags.skip_edit_log = True
         src_doc.save(ignore_permissions=True)
         tgt_doc.save(ignore_permissions=True)
         frappe.db.commit()
@@ -1224,6 +1333,7 @@ def swap_recipes(source_id, target_id):
         row_a.rq_status = "Processing"
         row_b.rq_status = "Processing"
 
+    dp.flags.skip_edit_log = True
     dp.save(ignore_permissions=True)
     frappe.db.commit()
 
@@ -1406,7 +1516,7 @@ def get_recipe_bom_data(recipe_name):
     """
     bom = frappe.db.get_value(
         "BOM",
-        {"item": recipe_name, "docstatus": 1, "is_active": 1},
+        {"item": recipe_name, "docstatus": 1, "is_active": 1, "is_default": 1},
         ["name", "custom_yield", "custom_raw_materails"],
         as_dict=True,
         order_by="modified desc",
@@ -1727,6 +1837,128 @@ def cancel_item(item_id):
     return {"success": True, "message": _("Cancelled")}
 
 
+@frappe.whitelist()
+def clear_item(item_id):
+    """Reset a production item row to a clean 'No Cooking' slot.
+
+    Intended for rows that have no Work Orders (no mr_reference or no
+    production_plane). Resets recipe, size, packs, status, notes and
+    reference fields so the slot becomes an empty addable slot again.
+    No WOs are cancelled here — the callers only show the button when
+    no WOs exist.
+    """
+    row_data = frappe.db.get_value(
+        CHILD_DOCTYPE, {"name": item_id},
+        ["name", "parent", "rq_status", "recipe_name", "recipe_cook_workstaion",
+         "recipe_cook_round", "required_date", "produ_status"],
+        as_dict=True,
+    )
+    if not row_data:
+        return {"success": False, "message": "Item not found"}
+
+    if row_data.rq_status == "Processing":
+        return {"success": False, "message": "Work Orders are being processed. Please wait."}
+
+    values = {
+        "recipe_name": NO_COOKING,
+        "size": 0,
+        "produ_status": "",
+        "number_of_pack": 0,
+        "production_type": "",
+        "urgent_check": 0,
+        "recipe_note": "",
+        "custom_yield": 0,
+        "recipe_cook_time": None,
+        "mr_reference": "",
+        "wo_list": "",
+        "wo_list_with_type": "",
+        "production_plane": "",
+        "custom_pair_id": "",
+        "rq_status": "",
+        "custom_wo_error": "",
+    }
+    for i in range(1, 8):
+        suffix = "" if i == 1 else f"_{i}"
+        values[f"pack_name{suffix}"] = None
+        values[f"pack_qty{suffix}"] = 0
+        values[f"pack_remark{suffix}"] = None
+
+    frappe.db.set_value(CHILD_DOCTYPE, item_id, values)
+
+    _log_schedule_change("Clear", day=row_data.required_date, dp_name=row_data.parent,
+                         child_row_name=item_id, recipe_name=row_data.recipe_name,
+                         workstation=row_data.recipe_cook_workstaion,
+                         cook_round=row_data.recipe_cook_round,
+                         old_data={"recipe_name": row_data.recipe_name,
+                                   "produ_status": row_data.produ_status},
+                         new_data={"recipe_name": NO_COOKING, "produ_status": ""})
+
+    frappe.db.commit()
+    return {"success": True, "message": _("Slot cleared")}
+
+
+@frappe.whitelist()
+def copy_item(source_id, target_id):
+    """Copy a recipe slot's production data into an empty target slot.
+
+    Used by the WhatsApp AI planner (copy_recipe_slot). Copies the data
+    fields and sets produ_status = 'New Schedule'. The target keeps its
+    own link_id / workstation / round; the source is left untouched.
+    """
+    src = frappe.db.get_value(
+        CHILD_DOCTYPE, {"name": source_id},
+        ["name", "recipe_name", "size", "number_of_pack", "production_type",
+         "urgent_check", "recipe_note", "recipe_cook_time", "custom_yield"],
+        as_dict=True,
+    )
+    if not src or not src.recipe_name or src.recipe_name == NO_COOKING:
+        return {"success": False, "message": _("Source slot has no recipe to copy")}
+
+    tgt = frappe.db.get_value(
+        CHILD_DOCTYPE, {"name": target_id},
+        ["name", "parent", "recipe_name", "rq_status", "recipe_cook_workstaion",
+         "recipe_cook_round", "required_date"],
+        as_dict=True,
+    )
+    if not tgt:
+        return {"success": False, "message": _("Target slot not found")}
+    if tgt.recipe_name != NO_COOKING:
+        return {"success": False, "message": _("Target slot is not empty")}
+    if tgt.rq_status == "Processing":
+        return {"success": False, "message": _("Work Orders are being processed. Please wait.")}
+
+    values = {
+        "recipe_name": src.recipe_name,
+        "size": src.size or 0,
+        "number_of_pack": src.number_of_pack or 0,
+        "production_type": src.production_type or "",
+        "urgent_check": src.urgent_check or 0,
+        "recipe_note": src.recipe_note or "",
+        "recipe_cook_time": src.recipe_cook_time,
+        "custom_yield": src.custom_yield or 0,
+        "produ_status": "New Schedule",
+    }
+    for i in range(1, 8):
+        suffix = "" if i == 1 else f"_{i}"
+        values[f"pack_name{suffix}"] = src.get(f"pack_name{suffix}")
+        values[f"pack_qty{suffix}"] = src.get(f"pack_qty{suffix}") or 0
+        values[f"pack_remark{suffix}"] = src.get(f"pack_remark{suffix}")
+
+    frappe.db.set_value(CHILD_DOCTYPE, target_id, values)
+
+    _log_schedule_change("Add Recipe", day=tgt.required_date, dp_name=tgt.parent,
+                         child_row_name=target_id, recipe_name=src.recipe_name,
+                         workstation=tgt.recipe_cook_workstaion,
+                         cook_round=tgt.recipe_cook_round,
+                         old_data={"recipe_name": NO_COOKING},
+                         new_data={"recipe_name": src.recipe_name,
+                                   "size": src.size or 0,
+                                   "produ_status": "New Schedule"})
+
+    frappe.db.commit()
+    return {"success": True, "message": _("Recipe copied")}
+
+
 def _background_change_recipe(item_id, dp_name, new_recipe):
     """Background worker: reprocess WOs after recipe change via DP's process_recipe_change_or_size_change."""
     try:
@@ -1798,6 +2030,7 @@ def _background_cancel_item(item_id, dp_name):
                 row.set(f"pack_name{suffix}", None)
                 row.set(f"pack_qty{suffix}", 0)
                 row.set(f"pack_remark{suffix}", None)
+            dp.flags.skip_edit_log = True
             dp.save(ignore_permissions=True)
             frappe.db.commit()
         else:

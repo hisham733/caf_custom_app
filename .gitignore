@@ -14,3 +14,37 @@ caf/tests/appraisal/credentials.ps1
 
 # Commit-message scratch file - protocol 4b writes it, then deletes it.
 .commitmsg
+
+# AI assistant (not committed)
+caf/caf/ai_assistant/
+caf/caf/doctype/ai_assistant_audit_log/
+caf/caf/doctype/ai_chat_conversation/
+caf/caf/doctype/ai_chat_message/
+caf/caf/page/ai_assistant/
+caf/public/js/ai_assistant.js
+caf/public/js/ai_assistant_widget.js
+
+# Workflow / design docs (not committed)
+caf/caf/doctype/daily_production/workflow/*.md
+caf/caf/doctype/daily_production/workflow/*.mmd
+caf/caf/page/production_schedule/workflow/
+caf/caf/page/production_schedule/CHANGE_SLOT_FLOW.md
+caf/caf/page/production_schedule/UI_TEST_PLAN.md
+
+# Test scripts & local assets (not committed)
+caf/caf/utils/test_waha.py
+caf/caf/utils/test_shortage_report.py
+Git-Workflow-Guide.pdf
+caf/caf/utils/WhatsApp*.jpeg
+
+# Operator Production Form (not committed)
+caf/caf/page/operator_production_form/
+
+# Procedure Table schema — ignored for now (monitoring fields not yet committed)
+caf/caf/doctype/procedure_table/procedure_table.json
+
+# Design / reference docs & local test (not committed)
+/STOCK_PROJECTED_QTY.md
+/BOM_QTY_CHANGE_PLAN.md
+/caf_server_vs_build_COMPARISON.md
+caf/caf/doctype/caf_settings/test_caf_settings.py

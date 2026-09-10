@@ -69,6 +69,15 @@ class CustomProductionPlan(ProductionPlan):
         material_request_list = []
         material_request_map = {}
 
+        # Phase 4: Batch Sales Order queries — single query instead of N+1
+        so_names = [i.sales_order for i in self.mr_items if i.sales_order]
+        so_projects = {}
+        if so_names:
+            so_data = frappe.get_all("Sales Order",
+                filters={"name": ["in", so_names]},
+                fields=["name", "project"])
+            so_projects = {s.name: s.project for s in so_data}
+
         for item in self.mr_items:
             item_doc = frappe.get_cached_doc("Item", item.item_code)
 
@@ -113,7 +122,7 @@ class CustomProductionPlan(ProductionPlan):
                     "sales_order": item.sales_order,
                     "production_plan": self.name,
                     "material_request_plan_item": item.name,
-                    "project": frappe.db.get_value("Sales Order", item.sales_order, "project")
+                    "project": so_projects.get(item.sales_order)
                     if item.sales_order
                     else None,
                 },
@@ -413,33 +422,40 @@ class CustomProductionPlan(ProductionPlan):
         return wo
 
     def fetch_warehouse_details_from_lookup_table(self, wo):
-        """Fetch and assign WIP & FG warehouses for a Work Order (WO) based on Lookup table."""
+        """Fetch and assign WIP & FG warehouses for a Work Order (WO) based on Lookup table.
 
-        # Retrieve item_code from item dictionary
+        Phase 4: Batch warehouse lookups — first call fetches all, subsequent calls use cache.
+        """
         item_code = wo.get("production_item")
         if not item_code:
             return None
 
-        wip_warehouse = frappe.db.get_value(
-            "lookup", {
-                "production_item": item_code},
-                  "wip_warehouse"
-        )
+        # Build cache on first call
+        if not hasattr(self, "_warehouse_cache"):
+            self._warehouse_cache = {}
+            wo_items = getattr(self, "_wo_items_to_cache", [])
+            if wo_items:
+                lookup_data = frappe.get_all("lookup",
+                    filters={"production_item": ["in", wo_items]},
+                    fields=["production_item", "wip_warehouse", "fg_warehouse"])
+                self._warehouse_cache = {l.production_item: l for l in lookup_data}
 
+        cached = self._warehouse_cache.get(item_code)
+        if cached:
+            wo.wip_warehouse = cached.wip_warehouse
+            wo.fg_warehouse = cached.fg_warehouse
+            return wo
+
+        # Fallback: individual query (shouldn't happen if cache is pre-warmed)
+        wip_warehouse = frappe.db.get_value("lookup", {"production_item": item_code}, "wip_warehouse")
         if not wip_warehouse:
             frappe.throw(f"No WIP Warehouse found for Item Code ({item_code})\nPlease add item in Lookup Item.")
-
         wo.wip_warehouse = wip_warehouse
 
-        fg_warehouse = frappe.db.get_value(
-            "lookup", {
-                "production_item": item_code},
-                  "fg_warehouse"
-        )
+        fg_warehouse = frappe.db.get_value("lookup", {"production_item": item_code}, "fg_warehouse")
         if not fg_warehouse:
             frappe.throw(f"No Target Warehouse found for Item Code ({item_code}).")
-
-        wo.fg_warehouse = fg_warehouse 
+        wo.fg_warehouse = fg_warehouse
 
         return wo
 
@@ -763,6 +779,16 @@ class CustomProductionPlan(ProductionPlan):
                     }
                     frappe.msgprint(_("Items in the Delete table will be removed from Sub Assembly table"), alert=True)
 
+            # Phase 4: Batch item_group lookup — single query instead of N+1
+            item_group_map = {}
+            if remove_deleted:
+                item_codes = [r.get("parent_item_code") for r in sub_assembly_items_store if r.get("parent_item_code")]
+                if item_codes:
+                    items_data = frappe.get_all("Item",
+                        filters={"name": ["in", item_codes]},
+                        fields=["name", "item_group"])
+                    item_group_map = {i.name: i.item_group for i in items_data}
+
             for row in sub_assembly_items_store:
 
                 # Skip rows if they are in delete list AND remove_deleted is checked
@@ -780,7 +806,7 @@ class CustomProductionPlan(ProductionPlan):
                     row.get("type_of_manufacturing"),
                 ]
                 if remove_deleted:
-                    item_group = frappe.db.get_value("Item", {"item_code": row.get("parent_item_code")}, "item_group")
+                    item_group = item_group_map.get(row.get("parent_item_code"))
                     if item_group != "Products":
                         key_parts.append(row.get("parent_item_code"))
 
@@ -813,6 +839,13 @@ class CustomProductionPlan(ProductionPlan):
         self.make_subcontracted_purchase_order(subcontracted_po, po_list)
         self.show_list_created_message("Work Order", wo_list)
         self.show_list_created_message("Purchase Order", po_list)
+
+        # Phase 4: Pre-warm warehouse cache for all WOs
+        if wo_list:
+            wo_items = frappe.get_all("Work Order",
+                filters={"name": ["in", wo_list]},
+                fields=["name", "production_item"])
+            self._wo_items_to_cache = [w.production_item for w in wo_items if w.production_item]
 
         for wo in wo_list:
             wor = frappe.get_doc("Work Order", wo)

@@ -61,7 +61,7 @@ def _sync_row_notes_to_wos(row, child_doctype: str) -> None:
 # ══════════════════════════════════════════════════════════════════════════════
 
 @frappe.whitelist()
-def rws(doc_or_name, child_doctype: str) -> None:
+def rws(doc_or_name, child_doctype: str, row_name: str = None) -> None:
     """
     Iterates through all production rows and ensures the linked 
     Work Orders (found via Link ID) have updated notes.
@@ -71,12 +71,15 @@ def rws(doc_or_name, child_doctype: str) -> None:
     doc_name = doc_or_name.name if hasattr(doc_or_name, 'name') else doc_or_name
     
     # Fetch only rows that have a pack_name (avoids loading 64 empty rows)
+    filters = {
+        "parent": doc_name,
+        "pack_name": ["!=", ""],
+    }
+    if row_name:
+        filters["name"] = row_name
     rows = frappe.get_all(
         child_doctype,
-        filters={
-            "parent": doc_name,
-            "pack_name": ["!=", ""],
-        },
+        filters=filters,
         fields=["name", "pack_name", "link_id", "pack_note", "recipe_note", "parent", "idx"],
         order_by="idx asc"
     )

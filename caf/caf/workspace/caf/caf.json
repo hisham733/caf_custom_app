@@ -1,6 +1,6 @@
 {
  "charts": [],
- "content": "[{\"id\":\"a-ye929j6T\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">CAF</span>\",\"col\":12}},{\"id\":\"gxIM-tFDrP\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Dashboard \",\"col\":12}},{\"id\":\"9e6YTjVdro\",\"type\":\"card\",\"data\":{\"card_name\":\"Planner\",\"col\":3}},{\"id\":\"DQpknSTbzE\",\"type\":\"card\",\"data\":{\"card_name\":\"Operator\",\"col\":3}},{\"id\":\"V68z7nlH5p\",\"type\":\"card\",\"data\":{\"card_name\":\"Quality Control \",\"col\":3}},{\"id\":\"k2pNhkhfXl\",\"type\":\"card\",\"data\":{\"card_name\":\"CAF HR\",\"col\":6}}]",
+ "content": "[{\"id\":\"a-ye929j6T\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">CAF</span>\",\"col\":12}},{\"id\":\"gxIM-tFDrP\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Dashboard \",\"col\":12}},{\"id\":\"9e6YTjVdro\",\"type\":\"card\",\"data\":{\"card_name\":\"Planner\",\"col\":3}},{\"id\":\"DQpknSTbzE\",\"type\":\"card\",\"data\":{\"card_name\":\"Operator\",\"col\":3}},{\"id\":\"V68z7nlH5p\",\"type\":\"card\",\"data\":{\"card_name\":\"Quality Control \",\"col\":3}},{\"id\":\"k2pNhkhfXl\",\"type\":\"card\",\"data\":{\"card_name\":\"CAF HR\",\"col\":6}},{\"id\":\"8EmVOCCceN\",\"type\":\"card\",\"data\":{\"card_name\":\"Settings\",\"col\":4}}]",
  "creation": "2025-02-25 11:27:34.409631",
  "custom_blocks": [],
  "docstatus": 0,
@@ -375,6 +375,25 @@
    "label": "Ingress",
    "link_count": 0,
    "link_to": "Ingress Import Batch",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Settings",
+   "link_count": 1,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "CAF Settings",
+   "link_count": 0,
+   "link_to": "Caf Settings",
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"

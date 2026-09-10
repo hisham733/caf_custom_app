@@ -37,6 +37,7 @@ doctype_js = {
     # CAF appraisal (2026-08-05)
     "Appraisal": "public/js/appraisal.js",
 }
+calendars = ["Meeting Room Reservation"]
 override_whitelisted_methods = {
     "erpnext.manufacturing.doctype.production_plan.production_plan.combine_subassembly_items": "caf.caf.overrides.production_plan.combine_subassembly_items",
     "erpnext.manufacturing.doctype.production_plan.production_plan.get_raw_materials_of_sub_assembly_items": "caf.caf.overrides.production_plan.get_raw_materials_of_sub_assembly_items",
@@ -57,7 +58,12 @@ override_whitelisted_methods = {
 # ------------------
 
 # include js, css files in header of desk.html
-app_include_css = ["/assets/caf/css/ai_assistant.css"]
+app_include_css = [
+    "/assets/caf/css/ai_assistant.css",
+    # upstream/develop, merged 2026-09-11 (T-18)
+    "/assets/caf/css/settings_cards.css",
+    "/assets/caf/css/calendar.css",
+]
 app_include_js = [
     "/assets/caf/js/ai_assistant_widget.js",
     # Chunk 7.5 — the "Trade a Saturday" dialog, shared by the Shift Assignment
@@ -203,9 +209,25 @@ page_js = {"ai-assistant" : "public/js/ai_assistant.js"}
 # ---------------
 scheduler_events = {
       "cron": {
-        "0 9 * * *": [
-            "caf.caf.overrides.work_order.send_work_order_daly_report"
+        # --- production scheduling (upstream/develop, merged 2026-09-11) -----
+        # ⚠️ NOT a union with our side. Upstream MOVED this job out of
+        # `caf.caf.overrides.work_order` into `caf.caf.utils.work_order_report`
+        # and re-timed it 09:00 -> 10:30. Our branch still carried the old path,
+        # and after the merge `send_work_order_daly_report` exists ONLY in the
+        # new module (verified by grep) — so keeping both lines would have
+        # scheduled a daily call to a function that is no longer there, failing
+        # silently in the scheduler log every morning on production.
+        # Upstream owns this job; upstream's line wins.
+        "30 10 * * *": [
+            "caf.caf.utils.work_order_report.send_work_order_daly_report"
         ],
+        "0 8-18 * * *": [
+            "caf.caf.utils.shortage_report.send_shortage_warning"
+        ],
+        "* * * * *": [
+            "caf.caf.utils.morning_dispatcher.run_due_reports"
+        ],
+        # --- CAF HR (this branch) --------------------------------------------
         # CAF N1 (2026-08-13) - plan §4378. 1 November, 08:00. Builds next
         # year's skeleton (the public-holiday list HR fills in, the Leave Period
         # and 12 Appraisal Cycles) and notifies every HR Manager that the gazette

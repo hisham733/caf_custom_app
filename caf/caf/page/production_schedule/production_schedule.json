@@ -5,7 +5,7 @@
  "doctype": "Page",
  "icon": "fa fa-calendar",
  "idx": 0,
- "modified": "2026-06-23 13:23:24.643455",
+ "modified": "2026-08-10 13:40:55.029839",
  "modified_by": "Administrator",
  "module": "Caf",
  "name": "production-schedule",
@@ -14,11 +14,14 @@
  "roles": [
   {
    "role": "System Manager"
+  },
+  {
+   "role": "Manufacturing Manager"
   }
  ],
  "script": null,
  "standard": "Yes",
  "style": null,
  "system_page": 0,
- "title": "Production Schedule"
+ "title": "WDP"
 }

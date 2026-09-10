@@ -1,0 +1,191 @@
+{
+ "actions": [],
+ "autoname": "MRR-.YYYY.-.#####",
+ "creation": "2026-08-20 12:02:46.479746",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_time",
+  "starts_on",
+  "ends_on",
+  "amended_from",
+  "column_break_xyzg",
+  "starts_time",
+  "ends_time",
+  "section_break_qwql",
+  "booking_type",
+  "employee",
+  "visitor_name",
+  "room",
+  "column_break_1",
+  "purpose",
+  "remarks",
+  "status"
+ ],
+ "fields": [
+  {
+   "fieldname": "booking_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Booking Type",
+   "options": "Internal\nExternal",
+   "reqd": 1
+  },
+  {
+   "depends_on": "eval:doc.booking_type === 'Internal'",
+   "description": "Employee who is booking the room",
+   "fieldname": "employee",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Staff",
+   "mandatory_depends_on": "eval:doc.booking_type === 'Internal'",
+   "options": "Employee"
+  },
+  {
+   "depends_on": "eval:doc.booking_type === 'External'",
+   "description": "Name of visitor or company this booking is for",
+   "fieldname": "visitor_name",
+   "fieldtype": "Data",
+   "label": "Visitor",
+   "mandatory_depends_on": "eval:doc.booking_type === 'External'"
+  },
+  {
+   "default": "Meeting Room",
+   "fieldname": "room",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Room",
+   "options": "Room",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "purpose",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Purpose / Subject",
+   "reqd": 1
+  },
+  {
+   "fieldname": "remarks",
+   "fieldtype": "Small Text",
+   "label": "Remarks"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Draft\nBooked\nCancelled",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_time",
+   "fieldtype": "Section Break",
+   "label": "Booking Time"
+  },
+  {
+   "fieldname": "starts_on",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Starts On",
+   "reqd": 1
+  },
+  {
+   "fieldname": "starts_time",
+   "fieldtype": "Select",
+   "label": "Starts Time",
+   "options": "08:00\n08:30\n09:00\n09:30\n10:00\n10:30\n11:00\n11:30\n12:00\n12:30\n13:00\n13:30\n14:00\n14:30\n15:00\n15:30\n16:00\n16:30\n17:00\n17:30\n18:00",
+   "reqd": 1
+  },
+  {
+   "fieldname": "ends_on",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Ends On",
+   "reqd": 1
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Meeting Room Reservation",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "column_break_xyzg",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "ends_time",
+   "fieldtype": "Select",
+   "label": "Ends Time",
+   "options": "08:00\n08:30\n09:00\n09:30\n10:00\n10:30\n11:00\n11:30\n12:00\n12:30\n13:00\n13:30\n14:00\n14:30\n15:00\n15:30\n16:00\n16:30\n17:00\n17:30\n18:00",
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_break_qwql",
+   "fieldtype": "Section Break"
+  }
+ ],
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-08-20 13:57:14.297361",
+ "modified_by": "Administrator",
+ "module": "Caf",
+ "name": "Meeting Room Reservation",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "amend": 1,
+   "cancel": 1,
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "amend": 1,
+   "cancel": 1,
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Booking User",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "Employee"
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

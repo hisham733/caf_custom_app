@@ -12,7 +12,6 @@ from caf.caf.doctype.daily_production.rws import rws
 from .rearrange_and_change_slot import process_slot_swaps , process_switch
 from .change_size import process_recipe_change_or_size_change
 from .change_pack import process_pack_change_or_add
-
 import json
 import datetime
 # from caf.caf.overrides.production_plan import get_items_for_material_requests
@@ -33,6 +32,56 @@ NON_DATA_FIELDTYPES = {
 }
 
 
+def _canonical_time(t):
+    """Return a stable string for a datetime.time, normalizing seconds padding
+    and microsecond trailing zeros (e.g. '13:02:9.305347' == '13:02:09.3053470')."""
+    return t.strftime("%H:%M:%S.%f").rstrip("0").rstrip(".")
+
+
+def _normalize_log_value(field, value):
+    """Normalize a child-row field value for stable old→new diff comparison.
+
+    Date/Time/Datetime values come back from the DB as datetime objects while
+    the saved doc may hold strings (e.g. '13:02:9.305347' vs '13:02:09.305347')
+    — normalize both sides so formatting differences don't show up as edits.
+    """
+    if value is None:
+        return None
+    ftype = field.fieldtype
+    try:
+        if ftype == "Date":
+            if isinstance(value, datetime.datetime):
+                return value.date().isoformat()
+            if isinstance(value, datetime.date):
+                return value.isoformat()
+            return str(value)
+        if ftype == "Time":
+            if isinstance(value, datetime.time):
+                return _canonical_time(value)
+            s = str(value).strip()
+            m = re.match(r"^(\d{1,2}):(\d{1,2}):(\d{1,2})(?:\.(\d+))?$", s)
+            if m:
+                h, mi, sec, frac = int(m.group(1)), int(m.group(2)), int(m.group(3)), (m.group(4) or "")
+                frac = int((frac + "000000")[:6]) if frac else 0
+                return _canonical_time(datetime.time(h, mi, sec, frac))
+            return s
+        if ftype == "Datetime":
+            if isinstance(value, datetime.datetime):
+                return value.isoformat()
+            return str(value)
+        if ftype == "Check":
+            return 1 if value else 0
+        if ftype in ("Float", "Currency", "Int", "Percent"):
+            return float(value)
+        if ftype == "Link":
+            return value or None
+        if isinstance(value, (datetime.datetime, datetime.date, datetime.time)):
+            return str(value)
+        return value
+    except (TypeError, ValueError):
+        return str(value)
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  Daily Production Document Class
 # ══════════════════════════════════════════════════════════════════════════════
@@ -42,20 +91,23 @@ class DailyProduction(Document):
 
         Rules:
         1. Row with existing WOs cannot be set to "New Schedule"
-        2. Row with "No Cooking" cannot have any status except "Change Slot"
+        2. Row with "No Cooking" cannot have any status except "Change Slot"/"New Schedule"
         3. Non-cooking rows must have a size > 0
         4. On submit, at least one row must have a produ_status
         """
         if not self.workflow_state:
             self.workflow_state = "Draft"
         for item in self.production_table:
-            # It CANNOT be set to "New Schedule" (preventing duplicate creation)
-            if item.produ_status == NEW_SCHEDULE and item.wo_list and item.mr_reference:
+            # It CANNOT be set to "New Schedule" (preventing duplicate creation),
+            # unless it was already processed (rq_status="Done" — the kept marker
+            # that lets the planner trace a processed New Schedule row).
+            if (item.produ_status == NEW_SCHEDULE and item.wo_list and item.mr_reference
+                    and item.rq_status != "Done"):
                 frappe.throw(
                     _("Row {0}: This row already has Work Orders. You cannot select <b>{1}</b>. Please clear the status.")
                     .format(item.idx, NEW_SCHEDULE)
                 )
-            if item.produ_status and item.produ_status != "Change Slot" and item.recipe_name == NO_COOKING:
+            if item.produ_status and item.produ_status not in ("Change Slot", NEW_SCHEDULE) and item.recipe_name == NO_COOKING:
                 frappe.throw(
                     _("Row Number {0}: You cannot set a Production Status <strong>\"{2}\"</strong> if the Recipe is <b>{1}</b>. Please clear the status or select a valid recipe.")
                     .format(item.idx, NO_COOKING, item.produ_status)
@@ -65,7 +117,47 @@ class DailyProduction(Document):
                     _("Row {0}: Size can't be 0 or Empty for Recipe: <strong>{1}</strong>")
                     .format(item.idx, item.recipe_name)
                 )
+        self._recompute_yield_fields()
         self.validate_table_fields()
+
+    def _recompute_yield_fields(self):
+        """Persist yield/total_input/total_output from BOM data on every save.
+
+        These fields are computed client-side from async BOM lookups, which can
+        race the save (the dialog's frm.save() serializes the row before the
+        lookup callback writes the values), leaving 0 in the database. Recomputing
+        here makes the DB authoritative so reloads after processing ("run raw",
+        Create WO, Recipe Change) show correct values.
+
+        Rows with no default active BOM are left untouched (never zeroed) so a
+        missing BOM never blocks or corrupts a save.
+        """
+        recipe_cache = {}
+
+        for row in self.production_table:
+            if not row.recipe_name or row.recipe_name == NO_COOKING:
+                continue
+
+            if row.recipe_name not in recipe_cache:
+                recipe_cache[row.recipe_name] = frappe.db.get_value(
+                    "BOM",
+                    {"item": row.recipe_name, "is_default": 1, "is_active": 1, "docstatus": 1},
+                    ["custom_yield", "custom_raw_materails"],
+                    as_dict=True,
+                    order_by="modified desc",
+                )
+
+            bom = recipe_cache[row.recipe_name]
+            if not bom:
+                continue
+
+            yield_kg = frappe.utils.flt(bom.custom_yield)
+            raw_kg = frappe.utils.flt(bom.custom_raw_materails)
+            total_input = raw_kg * frappe.utils.flt(row.size)
+
+            row.custom_yield = yield_kg
+            row.total_input = total_input
+            row.total_output = total_input * yield_kg
 
     def onload(self):
         """Ensure workflow_state is never falsy when form loads."""
@@ -296,6 +388,92 @@ class DailyProduction(Document):
         self._fill_missing_slots()
         self._assign_link_id()  # re-assign to cover new placeholder rows
 
+    def on_update(self):
+        """Log DP-form row edits to Schedule Change Log (matching WPD "Edit" entries).
+
+        Compares the production_table before/after the save and inserts one
+        "Edit" log per changed row with an old→new field diff. Skips system /
+        WO-writeback fields, No Cooking placeholder rows, and normalizes values
+        so only user-visible edits are recorded. WPD flows that call dp.save()
+        and already log their own action set self.flags.skip_edit_log to avoid
+        double logging.
+        """
+        try:
+            if self.flags.get("skip_edit_log"):
+                return
+
+            before = self.get_doc_before_save()
+            if not before:
+                return
+
+            before_rows = {r.name: r for r in before.get("production_table") or []}
+            current_rows = {r.name: r for r in self.get("production_table") or []}
+
+            excluded = {
+                "name", "owner", "creation", "modified", "modified_by",
+                "parent", "parentfield", "parenttype", "doctype", "idx",
+                "link_id", "rq_status", "custom_pair_id", "workflow_state",
+                "wo_list", "wo_list_with_type", "mr_reference", "production_plane",
+                # Derived fields recomputed server-side on every save — not user edits.
+                "custom_yield", "total_input", "total_output",
+            }
+
+            for row_name, new_row in current_rows.items():
+                # No Cooking placeholder slots are never user edits (WPD doesn't log them).
+                if new_row.recipe_name == NO_COOKING:
+                    continue
+
+                old_row = before_rows.get(row_name)
+                if old_row is None:
+                    continue
+
+                changes = []
+                for field in frappe.get_meta(CHILD_DOCTYPE).fields:
+                    fn = field.fieldname
+                    if fn in excluded:
+                        continue
+                    old_val = _normalize_log_value(field, old_row.get(fn))
+                    new_val = _normalize_log_value(field, new_row.get(fn))
+                    if old_val != new_val:
+                        changes.append({"field": fn, "old": old_val, "new": new_val})
+
+                if not changes:
+                    continue
+
+                self._insert_edit_log(new_row, changes)
+        except Exception:
+            frappe.log_error(title="DP after_save edit log failed", message=frappe.get_traceback())
+
+    def _insert_edit_log(self, row, changes):
+        """Insert a Schedule Change Log "Edit" entry for one changed child row."""
+        field_labels = {
+            "recipe_name": "Recipe", "size": "Size", "number_of_pack": "Number of Packs",
+            "production_type": "Production Type", "urgent_check": "Urgent Order",
+            "recipe_note": "Recipe Note", "produ_status": "Production Status",
+            "required_date": "Required Date", "recipe_cook_time": "Cook Time",
+            "pack_time": "Pack Time",
+        }
+        parts = []
+        for c in changes:
+            label = field_labels.get(c["field"], c["field"].replace("_", " ").title())
+            parts.append("{}: {} → {}".format(label, c["old"] or "—", c["new"] or "—"))
+        summary = "Edited row {0}: {1}".format(row.idx, "; ".join(parts))
+
+        frappe.get_doc({
+            "doctype": "Schedule Change Log",
+            "change_datetime": frappe.utils.now_datetime(),
+            "changed_by": frappe.session.user,
+            "action_type": "Edit",
+            "day": getdate(self.required_by) if self.required_by else None,
+            "dp_name": self.name,
+            "child_row_name": row.name,
+            "recipe_name": row.recipe_name or "",
+            "workstation": row.recipe_cook_workstaion or "",
+            "cook_round": row.recipe_cook_round or None,
+            "summary": summary,
+            "changes_json": frappe.as_json(changes, indent=None),
+        }).insert(ignore_permissions=True)
+
     # ── Submit Hook ───────────────────────────────────────────────────────────
     def before_submit(self):
         """Redirect to custom submit — just sets workflow_state, no docstatus change."""
@@ -305,9 +483,8 @@ class DailyProduction(Document):
         pass
                 
     @frappe.whitelist()
-    def process_manual_updates(self):
+    def process_manual_updates(self, row_name=None):
         """Orchestrate all post-submit production workflows.
-
         Called from on_submit (after DB commit). Runs each workflow step
         sequentially. If any step throws, the entire transaction is rolled back.
 
@@ -322,6 +499,11 @@ class DailyProduction(Document):
         8. _process_new_schedules   – Create MRs + WOs for new schedule rows
         9. _obsolete_older_records  – Mark same-date DPs as Obsolete
 
+        Scoped mode (row_name set — dialog save): only that row is processed and
+        its produ_status marker is KEPT (rq_status="Done") so the planner can
+        trace New Schedule / Recipe Change / Pack Change / Only Remark. Unscoped
+        (Create WO / WPD): all rows processed, statuses cleared as before.
+
         On success: sets custom_submit_ref, commits (if not in_submit).
         On failure: rolls back, logs error, throws user message.
         """
@@ -334,18 +516,20 @@ class DailyProduction(Document):
                 if not has_mr:
                     self.db_set("custom_submit_ref", "")
                     frappe.db.commit()
-
-            process_cancellations(self.name, self.doctype, CHILD_DOCTYPE)
-            process_recipe_change_or_size_change(self, CHILD_DOCTYPE)
-            process_slot_swaps(self, CHILD_DOCTYPE)
-            process_switch(self, CHILD_DOCTYPE)
-            process_pack_change_or_add(self, CHILD_DOCTYPE)
+                    
+            process_cancellations(self.name, self.doctype, CHILD_DOCTYPE, row_name)
+            process_recipe_change_or_size_change(self, CHILD_DOCTYPE, row_name)
+            process_slot_swaps(self, CHILD_DOCTYPE, row_name)
+            switch_rows = process_switch(self, CHILD_DOCTYPE, row_name)
+            process_pack_change_or_add(self, CHILD_DOCTYPE, row_name)
             
-            rws(self, CHILD_DOCTYPE)
+            rws(self, CHILD_DOCTYPE, row_name)
 
             # Pre-validate: "New Schedule" rows must have pack fields before creating MRs
             for row in self.production_table:
-                if row.produ_status == NEW_SCHEDULE:
+                if row_name and row.name != row_name:
+                    continue
+                if row.produ_status == NEW_SCHEDULE and row.recipe_name != NO_COOKING:
                     count = int(row.number_of_pack or 0)
                     if count == 0:
                         frappe.throw(
@@ -360,8 +544,26 @@ class DailyProduction(Document):
                             .format(row.idx, row.recipe_name)
                         )
 
-            self._process_new_schedules()
+            self._process_new_schedules(row_name)
             self._obsolete_older_records()
+
+            # 1b. Status handling after processing.
+            # Scoped (dialog save): keep the row's produ_status marker for the
+            # planner and mark it Done so it is not reprocessed. Unscoped (Create
+            # WO / WPD): clear all statuses (rows go back to a blank state).
+            if row_name:
+                frappe.db.set_value(CHILD_DOCTYPE, row_name, "rq_status", "Done")
+            else:
+                for row in self.production_table:
+                    frappe.db.set_value(CHILD_DOCTYPE, row.name, "produ_status", "")
+
+            # 1c. Re-apply visual marker for just-processed rearranges only.
+            # The rows are marked rq_status="Done" so they are not re-processed on
+            # the next run; the markers are wiped on the next edit/save that runs
+            # process_manual_updates (blanket clear above). Change Slot rows end
+            # with a blank status (no marker).
+            for switch_row in (switch_rows or []):
+                frappe.db.set_value(CHILD_DOCTYPE, switch_row, "produ_status", "Rearrange")
 
             # 2. Update the reference flag
             # We use db_set to update the value without triggering another save cycle
@@ -387,7 +589,30 @@ class DailyProduction(Document):
             # Message for the user
             frappe.throw(_("Update failed and changes were rolled back. Error: {0}").format(str(e)))
 
-               
+    @frappe.whitelist()
+    def start_background_processing(self):
+        """Mark pending rows 'Processing' and enqueue the background worker.
+
+        Used by the DP form's save flow (WPD-style): rows with a status are
+        locked (Processing) and processed in the background; on success their
+        status is cleared and rq_status set to 'Done'.
+        """
+        pending = [
+            r for r in self.production_table
+            if r.recipe_name != NO_COOKING and r.produ_status and r.rq_status not in ("Done", "Processing")
+        ]
+        for r in pending:
+            frappe.db.set_value(CHILD_DOCTYPE, r.name, "rq_status", "Processing")
+        frappe.db.commit()
+
+        if pending:
+            frappe.enqueue(
+                "caf.caf.doctype.daily_production.daily_production._background_process_dp",
+                dp_name=self.name,
+                queue="short",
+            )
+        return {"success": True, "pending": len(pending)}
+
     # ── Production Table Flow ─────────────────────────────────────────────────
     def _on_submit_production_table(self) -> None:
         """Validate rows → group by recipe → create one MR per group."""
@@ -402,7 +627,7 @@ class DailyProduction(Document):
         """Return a single-element group (row itself). Legacy compatibility."""
         return [row_doc]
 
-    def _process_new_schedules(self):
+    def _process_new_schedules(self, row_name=None):
         """Create Material Requests for 'New Schedule' rows.
 
         Collects recipe rows (one per non-No-Cooking row), creates one MR per row, then:
@@ -413,11 +638,19 @@ class DailyProduction(Document):
         rolls back the entire transaction (no partial WOs created).
         """
         recipe_groups = _get_recipe_rows(self.production_table)
+        print("recipe_groups", len(recipe_groups))
         for group in recipe_groups:
-            if group["rows"][0].produ_status == NEW_SCHEDULE or (not group["rows"][0].mr_reference and not group["rows"][0].production_plane):
+            first = group["rows"][0]
+            if row_name and first.name != row_name:
+                continue
+            is_new_schedule = first.produ_status == NEW_SCHEDULE
+            no_references = not first.mr_reference and not first.production_plane and not first.wo_list
+            # WDP-style: "Recipe Change" without MR/PP is a passive editable
+            # marker, not a request to create MRs.
+            if is_new_schedule or (no_references and first.produ_status != "Recipe Change"):
                 self.create_material_request(group["recipe"], group["rows"])
-                link_id = group["rows"][0].link_id
-                reheat = group["rows"][0].production_type
+                link_id = first.link_id
+                reheat = first.production_type
                 if link_id and reheat == "Reheat":
                     remove_all_wip_wo(link_id, work=True)
 
@@ -502,6 +735,42 @@ class DailyProduction(Document):
             newly_born_wos = getattr(new_mr, "wo_list", [])
             _write_back_to_row_additive(rows[0], new_mr.name, new_mr)
             return newly_born_wos
+
+
+def _background_process_dp(dp_name):
+    """Background worker: run process_manual_updates, mark rows Done + clear status.
+
+    On failure the Processing rows are marked 'Failed' with the error message.
+    """
+    try:
+        dp = frappe.get_doc("Daily Production", dp_name)
+        pending = frappe.get_all(
+            CHILD_DOCTYPE,
+            filters={"parent": dp_name, "rq_status": "Processing"},
+            fields=["name"],
+        )
+        dp.process_manual_updates()
+        for r in pending:
+            frappe.db.set_value(CHILD_DOCTYPE, r.name, {"rq_status": "Done", "produ_status": ""})
+        frappe.db.commit()
+    except Exception:
+        frappe.log_error(title="DP background processing failed", message=frappe.get_traceback())
+        rows = frappe.get_all(
+            CHILD_DOCTYPE,
+            filters={"parent": dp_name, "rq_status": "Processing"},
+            fields=["name"],
+        )
+        for r in rows:
+            frappe.db.set_value(CHILD_DOCTYPE, r.name, {"rq_status": "Failed"})
+        frappe.db.commit()
+
+
+@frappe.whitelist()
+def get_dp_row_statuses(dp_name):
+    """Return whether any row is still Processing (poll for the background worker)."""
+    any_processing = frappe.db.exists(CHILD_DOCTYPE, {"parent": dp_name, "rq_status": "Processing"})
+    return {"any_processing": bool(any_processing)}
+
 
 #  Material Request Helpers  (module-level, no self needed)
 # ══════════════════════════════════════════════════════════════════════════════
@@ -973,13 +1242,18 @@ def get_bom_info(item_code: str) -> dict:
         item_code: Item code to look up
 
     Returns:
-        Dict with "bom_total" and "bom_yield", or None for No Cooking
+        Dict with "bom_total" and "bom_yield", or None if no default active BOM
     """
     if item_code == NO_COOKING:
         return
-    bom = frappe.db.get_value("BOM", {"item": item_code, "is_default": 1}, "name")
+    bom = frappe.db.get_value(
+        "BOM",
+        {"item": item_code, "is_default": 1, "is_active": 1, "docstatus": 1},
+        "name",
+        order_by="modified desc",
+    )
     if not bom:
-        frappe.throw(_("No Default BOM found for item {0}").format(item_code))
+        return
 
     bom_items = frappe.get_all("BOM Item", filters={"parent": bom}, fields=["item_code", "qty"])
     bom_total = sum(
@@ -988,9 +1262,7 @@ def get_bom_info(item_code: str) -> dict:
         for bi in bom_items
     )
 
-    bom_yield = frappe.db.get_value("BOM", bom, "custom_yield")
-    if not bom_yield:
-        frappe.throw(_("No Yield value found or Yield = 0 in BOM for item {0}").format(item_code))
+    bom_yield = frappe.db.get_value("BOM", bom, "custom_yield") or 0
 
     return {"bom_total": bom_total, "bom_yield": bom_yield}
 
@@ -1595,6 +1867,7 @@ def add_extra_round(docname, workstation, total_rounds):
     for i, r in enumerate(dp.get("production_table"), 1):
         r.idx = i
 
+    dp.flags.skip_edit_log = True
     dp.save(ignore_permissions=True)
 
     # Log the change
@@ -1649,7 +1922,7 @@ def submit_dp(docname):
     if dp.workflow_state == "Submitted":
         frappe.throw(_("Daily Production is already submitted."))
 
-    if all(d.recipe_name == NO_COOKING and not d.produ_status for d in dp.production_table):
+    if all(d.recipe_name == NO_COOKING for d in dp.production_table):
         frappe.throw(_("All rows have recipe <strong>No Cooking</strong> — not allowed"))
 
     for row in dp.production_table:

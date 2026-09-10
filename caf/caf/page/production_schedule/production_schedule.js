@@ -27,6 +27,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			schedule: {},
 			day_round_keys: {},
 			past_days: [],
+			holiday_days: [],
 			ws_problems: [],
 			last_action: null,
 		};
@@ -35,7 +36,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 		console.log("this.state",this.state);
 		this.page = frappe.ui.make_app_page({
 			parent: wrapper,
-			title: __("Production Schedule"),
+			title: __("WDP"),
 			single_column: false,
 		});
 		this.make();
@@ -120,6 +121,10 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			'  </div>' +
 			'  <div class="schedule-actions">' +
 			'    <span class="schedule-week-info" id="schedule-week-range" aria-live="polite"></span>' +
+			'    <button class="btn btn-default btn-sm" id="schedule-send-btn"' +
+			'      title="' + __("Send a day's schedule to WhatsApp") + '">' +
+			'      <svg class="icon icon-sm"><use href="#icon-message"></use></svg> ' + __("Send Schedule") +
+			'    </button>' +
 			'    <button class="btn btn-default btn-sm" id="schedule-rounds-btn"' +
 			'      title="' + __("Add extra rounds to a DP") + '">' +
 			'      + ' + __("Add Extra Rounds") +
@@ -178,6 +183,10 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			me._submit_week();
 		});
 
+		m.find("#schedule-send-btn").on("click", function () {
+			me._send_day_schedule();
+		});
+
 		m.find("#schedule-rounds-btn").on("click", function () {
 			me._show_add_rounds_dialog();
 		});
@@ -215,10 +224,15 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 		});
 
 		m.on("click", ".round-slot .schedule-item", function () {
+			if (me.state.paste_mode) {
+				me._cancel_paste_mode();
+				frappe.show_alert({ message: __("Paste cancelled"), indicator: "orange" });
+				return;
+			}
 			var slot = this.closest(".round-slot");
 			var row = slot ? slot.closest("tr") : null;
 			var ws = row ? row.dataset.workstation : "";
-			if (slot && (me.state.past_days.indexOf(slot.dataset.day) !== -1 || me.state.mode === "View Schedule" || me.state.ws_problems.indexOf(ws) !== -1)) {
+			if (slot && (me._is_locked_day(slot.dataset.day) || me.state.mode === "View Schedule" || me.state.ws_problems.indexOf(ws) !== -1)) {
 				me._show_edit_dialog(this, true);
 				return;
 			}
@@ -239,7 +253,11 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			if (!slot) return;
 			var row = slot.closest("tr");
 			var ws = row ? row.dataset.workstation : "";
-			if (me.state.past_days.indexOf(slot.dataset.day) !== -1 || me.state.ws_problems.indexOf(ws) !== -1) return;
+			if (me._is_locked_day(slot.dataset.day) || me.state.ws_problems.indexOf(ws) !== -1) return;
+			if (me.state.paste_mode) {
+				me._paste_to_slot(slot);
+				return;
+			}
 			me._show_add_dialog(slot);
 		});
 
@@ -249,7 +267,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			var day = cell.dataset.day;
 			var row = cell.closest("tr");
 			var ws = row ? row.dataset.workstation : "";
-			if (me.state.past_days.indexOf(day) !== -1 || me.state.ws_problems.indexOf(ws) !== -1) return;
+			if (me._is_locked_day(day) || me.state.ws_problems.indexOf(ws) !== -1) return;
 			var items = $(cell.closest("tr")).find(".schedule-item[data-wo-status='Processing']");
 			if (items.length) {
 				frappe.show_alert({ message: __("Work Orders are being processed. Please wait…"), indicator: "orange" });
@@ -263,6 +281,13 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			if (this.disabled) return;
 			var day = this.dataset.day;
 			me._create_work_order_for_day(day);
+		});
+
+		$(document).on("keydown.schedulePasteMode", function (e) {
+			if (e.key === "Escape" && me.state.paste_mode) {
+				me._cancel_paste_mode();
+				frappe.show_alert({ message: __("Paste cancelled"), indicator: "orange" });
+			}
 		});
 
 	}
@@ -290,6 +315,68 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 	_update_action_btns() {
 		this._update_submit_btn();
 		this._update_rounds_btn();
+		this._update_send_btn();
+	}
+
+	_update_send_btn() {
+		var btn = this.page.main.find("#schedule-send-btn");
+		btn.toggle(this.state.mode === "View Schedule");
+	}
+
+	_send_day_schedule() {
+		var me = this;
+		var days = this.state.days || [];
+		if (!days.length) {
+			frappe.show_alert({ message: __("No days loaded for this week."), indicator: "orange" });
+			return;
+		}
+		var day_opts = days.map(function (d, i) {
+			var label = (me.state.day_labels && me.state.day_labels[i]) || d;
+			var has_wo = (me.state.dp_submit_refs && me.state.dp_submit_refs[d]) ? " ✓ WO" : "";
+			return { value: String(i), label: label + " — " + d + has_wo };
+		});
+		var d = new frappe.ui.Dialog({
+			title: __("Send Schedule to WhatsApp"),
+			fields: [
+				{
+					fieldname: "day_index",
+					fieldtype: "Select",
+					label: __("Day"),
+					options: day_opts,
+					reqd: 1,
+				},
+				{
+					fieldname: "custom_message",
+					fieldtype: "Small Text",
+					label: __("Message"),
+					placeholder: __("Optional message to send with the schedule"),
+				},
+			],
+			primary_action_label: __("Send"),
+			primary_action: function () {
+				var values = d.get_values();
+				if (!values) return;
+				d.hide();
+				frappe.call({
+					method: "caf.caf.page.production_schedule.production_schedule.send_day_schedule",
+					args: {
+						week_monday: me._fmt(me.state.week_monday),
+						day_index: values.day_index,
+						custom_message: values.custom_message,
+					},
+					freeze: true,
+					freeze_message: __("Sending schedule…"),
+					callback: function (r) {
+						if (r.message && r.message.success) {
+							frappe.show_alert({ message: r.message.message, indicator: "green" });
+						} else {
+							frappe.show_alert({ message: r.message ? r.message.message : __("Failed"), indicator: "red" });
+						}
+					},
+				});
+			},
+		});
+		d.show();
 	}
 
 	_update_rounds_btn() {
@@ -317,6 +404,13 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 	// ══════════════════════════════════════════════════════════════
 	//  WEEK HELPERS
 	// ══════════════════════════════════════════════════════════════
+
+	_is_locked_day(day) {
+		if (!day) return false;
+		if (this.state.past_days && this.state.past_days.indexOf(day) !== -1) return true;
+		if (this.state.holiday_days && this.state.holiday_days.indexOf(day) !== -1) return true;
+		return false;
+	}
 
 	_compute_iso_week(date) {
 		var d = new Date(date);
@@ -351,6 +445,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 
 	_load_week() {
 		var me = this;
+		this._cancel_paste_mode();
 		this._read_inputs();
 		this._set_week_monday();
 		if (!this.state.week || !this.state.year) {
@@ -382,6 +477,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 						me.state.dp_submit_refs = r.message.dp_submit_refs || {};
 						me.state.schedule = r.message.schedule || {};
 						me.state.day_round_keys = r.message.day_round_keys || {};
+						me.state.holiday_days = r.message.holiday_days || [];
 
 						var today_str = me._fmt(new Date());
 						me.state.past_days = [];
@@ -427,7 +523,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 		this.page.main
 			.find("#schedule-week-range")
 			.text(mn[mon.getMonth()] + " " + mon.getDate() + " – " + mn[sat.getMonth()] + " " + sat.getDate());
-		this.page.set_title(__("Production Schedule") + " — W" + this.state.week);
+		this.page.set_title(__("WDP") + " — W" + this.state.week);
 	}
 
 	// ══════════════════════════════════════════════════════════════
@@ -453,7 +549,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			var day = this.state.days[di];
 			var has_dp = this.state.dp_names[day] !== null;
 			var cls = has_dp ? " schedule-has-dp" : " schedule-no-dp";
-			var is_past = me.state.past_days.indexOf(day) !== -1;
+			var is_past = me._is_locked_day(day);
 			var past_cls = is_past ? " schedule-past-day" : "";
 			var label_html = this.state.day_labels[di];
 
@@ -511,7 +607,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 
 			for (var di = 0; di < this.state.days.length; di++) {
 				var day = this.state.days[di];
-				var is_past_cell = me.state.past_days.indexOf(day) !== -1;
+				var is_past_cell = me._is_locked_day(day);
 				var past_cell_cls = is_past_cell ? " schedule-past-day" : "";
 				var day_rk = me.state.day_round_keys[day] || ["1"];
 				var info = ws_schedule[day] || (function() {
@@ -817,7 +913,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 		function lock_all() {
 			Object.keys(dlg.fields_dict).forEach(function (fn) {
 				var f = dlg.fields_dict[fn];
-				if (f && f.df && f.df.fieldtype !== "Section Break" && f.df.fieldtype !== "Column Break" && f.df.fieldtype !== "HTML") {
+				if (f && f.df && f.df.fieldtype !== "Section Break" && f.df.fieldtype !== "Column Break" && f.df.fieldtype !== "HTML" && f.df.fieldtype !== "Button") {
 					config[fn] = 1;
 				}
 			});
@@ -885,7 +981,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			if (status_val === "New Schedule") except.push("recipe");
 			Object.keys(dlg.fields_dict).forEach(function (fn) {
 				var f = dlg.fields_dict[fn];
-				if (f && f.df && f.df.fieldtype !== "Section Break" && f.df.fieldtype !== "Column Break" && f.df.fieldtype !== "HTML") {
+				if (f && f.df && f.df.fieldtype !== "Section Break" && f.df.fieldtype !== "Column Break" && f.df.fieldtype !== "HTML" && f.df.fieldtype !== "Button") {
 					if (except.indexOf(fn) === -1 && ALWAYS_READ_ONLY.indexOf(fn) === -1) {
 						config[fn] = 1;
 					}
@@ -906,7 +1002,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 
 		Object.keys(dlg.fields_dict).forEach(function (fn) {
 			var field = dlg.get_field(fn);
-			if (field && field.df && field.df.fieldtype !== "Section Break" && field.df.fieldtype !== "Column Break" && field.df.fieldtype !== "HTML") {
+			if (field && field.df && field.df.fieldtype !== "Section Break" && field.df.fieldtype !== "Column Break" && field.df.fieldtype !== "HTML" && field.df.fieldtype !== "Button") {
 				var value = config[fn] !== undefined ? config[fn] : 0;
 				if (value === 0 && ALWAYS_READ_ONLY.indexOf(fn) !== -1) {
 					return;
@@ -925,7 +1021,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 		function lock_all() {
 			Object.keys(dlg.fields_dict).forEach(function (fn) {
 				var f = dlg.fields_dict[fn];
-				if (f && f.df && f.df.fieldtype !== "Section Break" && f.df.fieldtype !== "Column Break" && f.df.fieldtype !== "HTML") {
+				if (f && f.df && f.df.fieldtype !== "Section Break" && f.df.fieldtype !== "Column Break" && f.df.fieldtype !== "HTML" && f.df.fieldtype !== "Button") {
 					config[fn] = 1;
 				}
 			});
@@ -991,7 +1087,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 		if (no_recipe) {
 			Object.keys(dlg.fields_dict).forEach(function (fn) {
 				var f = dlg.fields_dict[fn];
-				if (f && f.df && f.df.fieldtype !== "Section Break" && f.df.fieldtype !== "Column Break" && f.df.fieldtype !== "HTML") {
+				if (f && f.df && f.df.fieldtype !== "Section Break" && f.df.fieldtype !== "Column Break" && f.df.fieldtype !== "HTML" && f.df.fieldtype !== "Button") {
 					if (fn !== "recipe" && fn !== "produ_status") {
 						config[fn] = 1;
 					}
@@ -1012,7 +1108,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 
 		Object.keys(dlg.fields_dict).forEach(function (fn) {
 			var field = dlg.get_field(fn);
-			if (field && field.df && field.df.fieldtype !== "Section Break" && field.df.fieldtype !== "Column Break" && field.df.fieldtype !== "HTML") {
+			if (field && field.df && field.df.fieldtype !== "Section Break" && field.df.fieldtype !== "Column Break" && field.df.fieldtype !== "HTML" && field.df.fieldtype !== "Button") {
 				var value = config[fn] !== undefined ? config[fn] : 0;
 				if (value === 0 && ALWAYS_READ_ONLY.indexOf(fn) !== -1) {
 					return;
@@ -1318,6 +1414,58 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 		}
 	}
 
+	// ══════════════════════════════════════════════════════════════
+	//  COPY / PASTE  (Edit mode)
+	// ══════════════════════════════════════════════════════════════
+
+	_start_paste_mode(source_id, recipe_label, prefill) {
+		this._copy_source_id = source_id;
+		this._copy_source = prefill || null;
+		this.state.paste_mode = true;
+		this._set_paste_banner(recipe_label);
+		this.page.main.find("#schedule-board").addClass("paste-mode");
+	}
+
+	_cancel_paste_mode() {
+		if (!this.state || !this.state.paste_mode) return;
+		this.state.paste_mode = false;
+		this._copy_source_id = null;
+		this._copy_source = null;
+		this.page.main.find("#schedule-board").removeClass("paste-mode");
+		this._set_paste_banner("");
+	}
+
+	_set_paste_banner(label) {
+		var el = this.page.main.find("#schedule-status");
+		if (label) {
+			el.text(__("Paste mode: click an empty slot to copy {0}, or press Esc to cancel.", [label]));
+		} else {
+			el.text("");
+		}
+	}
+
+	_extract_source_from_item(el) {
+		var pack_items = [];
+		try { pack_items = JSON.parse(el.dataset.packItems || "[]"); } catch (e) {}
+		return {
+			recipe: el.dataset.recipe || "",
+			size: parseFloat(el.dataset.size) || 0,
+			pack_count: parseInt(el.dataset.packCount) || 0,
+			production_type: el.dataset.productionType || "",
+			urgent: el.dataset.urgent === "1",
+			recipe_note: el.dataset.recipeNote || "",
+			cook_time: el.dataset.cookTime || "",
+			pack_items: pack_items,
+		};
+	}
+
+	_paste_to_slot(slot) {
+		var me = this;
+		var prefill = me._copy_source;
+		me._cancel_paste_mode();
+		me._show_add_dialog(slot, prefill);
+	}
+
 
 	// ══════════════════════════════════════════════════════════════
 	//  DIALOGS  (Edit mode)
@@ -1355,7 +1503,8 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 		if (is_no_cook) {
 			_status_options = "\nNew Schedule";
 		} else if (!mr_reference) {
-			_status_options = "\nNew Schedule\nRecipe Change";
+			_status_options = "New Schedule";
+			if (status && status !== "New Schedule" && _status_options.indexOf(status) === -1) _status_options += "\n" + status;
 		} else {
 			_status_options = "\nRecipe Change\nOnly Remark\nPack Change";
 		}
@@ -1509,7 +1658,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			fields.push(
 				{ fieldname: "sec_actions", fieldtype: "Section Break", label: __("Actions") },
 				{
-					label: __("Cancel Recipe"), fieldname: "btn_cancel", fieldtype: "Button",
+					label: __("Cancel Recipe"), fieldname: "btn_cancel", fieldtype: "Button", input_class: "btn-danger",
 					click: function () {
 						if (status === "Cancelled") {
 							frappe.msgprint(__("This item is already cancelled."));
@@ -1567,6 +1716,21 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 		save_fields.push(
 			{ field: "recipe_note", dialog_field: "recipe_note" },
 		);
+
+		// ── Copy / Clear slot buttons (side by side) ──
+		var top_actions_html = "";
+		if (!is_past && !is_no_cook) {
+			top_actions_html += '<button type="button" class="btn btn-default btn-xs slot-btn-copy">' + __("Copy") + '</button>';
+		}
+		if (!is_past && (!mr_reference || !production_plane)) {
+			top_actions_html += '<button type="button" class="btn btn-default btn-xs slot-btn-clear">' + __("Clear") + '</button>';
+		}
+		if (top_actions_html) {
+			fields.unshift({
+				fieldname: "slot_actions_html", fieldtype: "HTML",
+				options: '<div class="slot-action-btns">' + top_actions_html + '</div>',
+			});
+		}
 
 		var dialog_opts = {
 			title: (is_past ? __("View: ") : __("Edit: ")) + recipe,
@@ -1763,6 +1927,28 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 		d._orig_recipe = orig_recipe;
 		d.show();
 
+		$(d.wrapper).on("click", ".slot-btn-copy", function () {
+			me._start_paste_mode(item_id, recipe, me._extract_source_from_item(el));
+			d.hide();
+		});
+		$(d.wrapper).on("click", ".slot-btn-clear", function () {
+			frappe.call({
+				method: "caf.caf.page.production_schedule.production_schedule.clear_item",
+				args: { item_id: item_id },
+				freeze: true,
+				freeze_message: __("Clearing slot…"),
+				callback: function (r) {
+					if (r.message && r.message.success) {
+						frappe.show_alert({ message: r.message.message, indicator: "green" });
+						d.hide();
+						me._load_week();
+					} else {
+						frappe.show_alert({ message: r.message ? r.message.message : __("Clear failed"), indicator: "orange" });
+					}
+				},
+			});
+		});
+
 		$(d.wrapper).find("form").on("submit", function (e) {
 			e.preventDefault();
 		});
@@ -1796,17 +1982,18 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 				var recipe_val = d.get_value("recipe");
 				var no_cook = !recipe_val || recipe_val === "No Cooking";
 				var status_field = d.get_field("status");
+				var cur_status = d.get_value("status") || "";
 				if (status_field) {
 				if (no_cook) {
 					status_field.df.options = "\nNew Schedule";
 				} else if (!mr_reference) {
-					status_field.df.options = "\nNew Schedule\nRecipe Change";
+					status_field.df.options = "New Schedule";
+					if (cur_status && cur_status !== "New Schedule" && status_field.df.options.indexOf(cur_status) === -1) status_field.df.options += "\n" + cur_status;
 				} else {
 					status_field.df.options = "\nRecipe Change\nOnly Remark\nPack Change";
 				}
 					status_field.set_options();
 				}
-			var cur_status = d.get_value("status") || "";
 			me._apply_dialog_restrictions(d, cur_status, no_cook);
 			if (cur_status === "Recipe Change" && recipe_val !== recipe) {
 				d.set_value("size", 0);
@@ -1969,12 +2156,17 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 		}
 	}
 
-	_show_add_dialog(slot) {
+	_show_add_dialog(slot, prefill) {
 		var me = this;
 		var ws = slot.dataset.workstation;
 		var day = slot.dataset.day;
 		var round = parseInt(slot.dataset.round, 10);
 		var link_id = slot.dataset.linkId || "";
+
+		var slot_row = null;
+		if (me.state.schedule && me.state.schedule[ws] && me.state.schedule[ws][day]) {
+			slot_row = me.state.schedule[ws][day].rounds[String(round)] || null;
+		}
 
 		var fields = [
 			{ fieldname: "sec_slot", fieldtype: "Section Break", label: __("Slot Info") },
@@ -2116,6 +2308,31 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			},
 		
 		);
+
+		// ── Clear slot button (only when no Work Orders exist) ──
+		if (slot_row && (!slot_row.mr_reference || !slot_row.production_plane)) {
+			fields.unshift({
+				fieldname: "btn_clear", fieldtype: "Button",
+				label: __("Clear"),
+				click: function () {
+					frappe.call({
+						method: "caf.caf.page.production_schedule.production_schedule.clear_item",
+						args: { item_id: slot_row.id },
+						freeze: true,
+						freeze_message: __("Clearing slot…"),
+						callback: function (r) {
+							if (r.message && r.message.success) {
+								frappe.show_alert({ message: r.message.message, indicator: "green" });
+								d.hide();
+								me._load_week();
+							} else {
+								frappe.show_alert({ message: r.message ? r.message.message : __("Clear failed"), indicator: "orange" });
+							}
+						},
+					});
+				},
+			});
+		}
 
 		var d = new frappe.ui.Dialog({
 			title: __("Add Recipe"),
@@ -2322,6 +2539,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 					dlg.set_value("output", 0);
 				}
 			};
+			d._on_recipe_change = _on_recipe_change;
 			recipe_f.$input.on('awesomplete-selectcomplete', function () {
 				setTimeout(_on_recipe_change, 50);
 			});
@@ -2393,6 +2611,34 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			if (debounce) clearTimeout(debounce);
 			d._pack_weight_timer = setTimeout(_validate_pack_weights, 300);
 		});
+
+		// ── Pre-fill from copied source (paste mode) ──
+		if (prefill) {
+			d.set_value("recipe", prefill.recipe || "");
+			d.set_value("size", prefill.size || 0);
+			d.set_value("pack_count", String(prefill.pack_count || 1));
+			d.set_value("production_type", prefill.production_type || "New");
+			d.set_value("urgent_check", prefill.urgent ? 1 : 0);
+			d.set_value("recipe_note", prefill.recipe_note || "");
+			for (var i = 1; i <= 7; i++) {
+				var s = i === 1 ? "" : "_" + i;
+				var pi = (prefill.pack_items || [])[i - 1] || {};
+				d.set_value("pack_name" + s, pi.name || "");
+				d.set_value("pack_qty" + s, pi.qty || 0);
+				d.set_value("pack_remark" + s, pi.remark || "");
+			}
+			if (typeof d._on_recipe_change === "function") {
+				d._on_recipe_change();
+			}
+			var n = parseInt(d.get_value("pack_count")) || 0;
+			for (var i = 1; i <= 7; i++) {
+				var s = i === 1 ? "" : "_" + i;
+				var show = i <= n;
+				["pack_name", "pack_qty", "pack_remark"].forEach(function (p) {
+					$(d.wrapper).find('[data-fieldname="' + p + s + '"]').toggle(show);
+				});
+			}
+		}
 
 		setTimeout(function () {
 			me._apply_add_dialog_restrictions(d, "New Schedule", true);
@@ -2672,6 +2918,7 @@ caf.production_schedule.ScheduleBoard = class ScheduleBoard {
 			"Edit": "label-success",
 			"Add Recipe": "label-success",
 			"Cancel": "label-danger",
+			"Clear": "label-danger",
 			"Create WO": "label-warning",
 			"Submit Week": "label-default",
 		};

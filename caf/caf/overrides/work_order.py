@@ -6,8 +6,6 @@ from erpnext.manufacturing.doctype.work_order.work_order import WorkOrder
 from frappe.utils import flt
 from caf.caf.overrides.stock_entry import CustomStockEntry
 from frappe import _
-import requests
-from frappe.utils import add_days, today, getdate
 
 class CustomWorkOrder(WorkOrder):
 
@@ -385,12 +383,28 @@ def make_stock_entry(
             #     frappe.throw(frappe._("Balance Item is greater than the total quantity to produce"))
             else:
                 item.qty = total_balance
-                item.custom_table_link_id = work_order.custom_link_id
-                item.t_warehouse = warehouse or (
+                item.transfer_qty = total_balance
+                scrap_wh = warehouse or (
                     scrap_target_warehouse
                     if frappe.db.exists("Warehouse", {"name": scrap_target_warehouse, "is_group": 0})
                     else item.s_warehouse
                 )
+                from erpnext.stock.stock_ledger import get_valuation_rate
+                rate_wh = frappe.db.get_value(
+                    "Item Default",
+                    {"parent": item.item_code, "company": stock_entry.company},
+                    "default_warehouse",
+                ) or scrap_wh
+                rate = flt(get_valuation_rate(
+                    item.item_code, rate_wh, "Stock Entry", "",
+                    allow_zero_rate=True, company=stock_entry.company, raise_error_if_no_rate=False,
+                ))
+
+                if rate > 0:
+                    item.basic_rate = rate
+                item.basic_amount = flt(total_balance) * flt(item.basic_rate)
+                item.custom_table_link_id = work_order.custom_link_id
+                item.t_warehouse = scrap_wh
         if item.item_code == work_order.production_item and item.is_finished_item == 1:
             if total_pack_qty != 0:
                 item.qty = total_pack_qty
@@ -399,6 +413,17 @@ def make_stock_entry(
         stock_entry.set_serial_no_batch_for_finished_good()
 
     CustomStockEntry.set_qi_items(stock_entry)
+
+    outgoing = sum(flt(i.basic_amount) for i in stock_entry.items if i.s_warehouse and not i.t_warehouse)
+    scrap = sum(flt(i.basic_amount) for i in stock_entry.items if i.is_scrap_item)
+    fg_qty = sum(flt(i.transfer_qty) for i in stock_entry.items if i.is_finished_item)
+    rate = (outgoing - scrap) / fg_qty if fg_qty else 0
+    if rate < -0.01:
+        frappe.throw(
+            frappe._("Scrap credit ({0}) exceeds material cost ({1}) — reduce balance qty or check scrap item valuation.").format(
+                flt(scrap, 2), flt(outgoing, 2)
+            )
+        )
 
     return stock_entry.as_dict()
 
@@ -864,74 +889,3 @@ def update_workstation(work_order_name, changes):
     }
 
 
-def send_work_order_daly_report():
-    report_date = add_days(today(), -1)
-
-    # 1. Fetch data - Ensure field name is 'custom_item_type'
-    work_orders = frappe.get_all("Work Order",
-        filters={
-            "creation": ["between", [f"{report_date} 00:00:00", f"{report_date} 23:59:59"]]
-        },
-        fields=["name", "status", "custom_item_type"]
-    )
-
-    if not work_orders:
-        return
-
-    # 2. Initialize with CORRECT spelling (WIP, not WOP / Pending, not Panding)
-    report_data = {
-        "WIP":  {"Completed": 0, "Pending": 0},
-        "Pack": {"Completed": 0, "Pending": 0},
-        "Cook": {"Completed": 0, "Pending": 0},
-    } 
-
-    for wo in work_orders:
-        # Use .get to safely handle the field name
-        tipe = wo.get("custom_item_type") or "Other"
-        
-        # If a new type appears (like 'Other'), initialize it
-        if tipe not in report_data:
-            report_data[tipe] = {"Completed": 0, "Pending": 0}
-            
-        # Count based on status
-        if wo.status == "Completed":
-            report_data[tipe]["Completed"] += 1
-        else:
-            report_data[tipe]["Pending"] += 1
-
-    # 3. Format Message
-    message = f"📊 *Daily Work Order Report*\n"
-    message += f"📅 Date: {report_date}\n"
-    message += "--------------------------\n\n"
-
-    for tipe, counts in report_data.items():
-        total = counts["Completed"] + counts["Pending"]
-        if total > 0:
-            message += f"*{tipe} Summary:*\n"
-            message += f"✅ Completed: {counts['Completed']}\n"
-            message += f"⏳ Not Finished: {counts['Pending']}\n"
-            message += f"📈 Total: {total}\n\n"
-
-    send_to_telegram(message)
-
-def send_to_telegram(msg):
-    # Fix: Ensure these keys exist in your site_config.json
-    token = frappe.conf.get("telegram_bot_token")
-    chat_id = frappe.conf.get("telegram_chat_id")
-    
-    if not token or not chat_id:
-        frappe.log_error("Telegram token or chat_id missing in site_config.json", "Telegram Report Error")
-        return
-
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-
-    try:
-        response = requests.post(url, data={
-            "chat_id": chat_id,
-            "text": msg,
-            "parse_mode": "Markdown" # Fix: changed "parse_made" to "parse_mode"
-        })
-        if response.status_code != 200:
-            frappe.log_error(response.text, "Telegram Report Error")
-    except Exception as e:
-        frappe.log_error(frappe.get_traceback(), "Telegram Connection Error")

@@ -5,7 +5,7 @@ from .cancellation import cancel_wos_by_link_id, cleanup_wos_by_type
 # Constants
 STATUS_CHANGE_PACK = "Pack Change"
 @frappe.whitelist()
-def process_pack_change_or_add(doc_or_name, child_doctype: str) -> None:
+def process_pack_change_or_add(doc_or_name, child_doctype: str, row_name: str = None) -> None:
     """
     Workflow for 'Chang or add Pack':
     1. Find existing Pack WO for the row.
@@ -20,9 +20,12 @@ def process_pack_change_or_add(doc_or_name, child_doctype: str) -> None:
     doc_name = parent_doc.name
     start_time = now_datetime()
     
+    filters = {"parent": doc_name, "produ_status": STATUS_CHANGE_PACK}
+    if row_name:
+        filters["name"] = row_name
     rows = frappe.get_all(
         child_doctype,
-        filters={"parent": doc_name, "produ_status": STATUS_CHANGE_PACK},
+        filters=filters,
         fields=["name", "link_id", "pack_name", "idx", "production_plane", "recipe_name"]
     )
 
