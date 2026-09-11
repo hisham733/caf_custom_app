@@ -314,11 +314,12 @@ def _placement_plan(payload):
 def run(apply=0, overwrite=0, years=None, current_year=None):
     payload = _load()
     apply, overwrite = int(apply), int(overwrite)
+    current_year = int(current_year or getdate(frappe.utils.nowdate()).year)
 
     print("\n%s\nSHIFT + CALENDAR MIGRATION  (T-34 rows 4+8)\n%s" % ("=" * 78, "=" * 78))
     print("payload generated %s from %s"
           % (payload["generated_on"], payload["generated_from"]))
-    print("this site: %s\n" % frappe.local.site)
+    print("this site: %s · current year %s\n" % (frappe.local.site, current_year))
 
     # --- shifts --------------------------------------------------------------
     splan = _shift_plan(payload)
@@ -344,6 +345,19 @@ def run(apply=0, overwrite=0, years=None, current_year=None):
     ph_todo = {}
     for year, rows in sorted(payload["public_holidays"].items()):
         name = PH_LIST.format(year=year)
+        # 🔴 CURRENT YEAR AND LATER ONLY, and it is not merely tidiness.
+        # `Holiday List.on_update` is hooked to `on_public_holidays_changed`,
+        # which immediately regenerates that year's derived calendars — and
+        # `alt_saturday_rest_days()` refuses to walk backwards from an
+        # alternating shift's anchor: "The anchor 2026-04-11 is after 2025;
+        # nothing to walk". So merely CREATING a 2025 list throws, on a site
+        # whose anchor is 2026. Found 2026-09-11 on the empty-site rehearsal.
+        # T-34 wants the same thing for its own reason: history is ⚪ leave.
+        if int(year) < current_year:
+            print("   %-28s ⚪ skipped — earlier than %s, and T-34 leaves history "
+                  "alone (creating it would also trip the anchor walk)"
+                  % (name, current_year))
+            continue
         if frappe.db.exists("Holiday List", name):
             here = {str(r.holiday_date) for r in frappe.get_all(
                 "Holiday", filters={"parent": name, "weekly_off": 0},
@@ -398,9 +412,22 @@ def _apply(payload, splan, ph_todo, pplan, overwrite, years, current_year):
     frappe.set_user("Administrator")
     made, updated, holidays_written, moved, skipped = [], [], [], [], []
 
-    # 1 · the shifts, without their mirror and without a holiday list ----------
-    #     Both are Links that cannot resolve yet: the mirror is another shift in
-    #     this same batch, and the calendars do not exist until step 3.
+    # 1 · the shifts — mirror blank, and alternation temporarily OFF ------------
+    #     Neither Link can resolve yet: the mirror is another shift in this same
+    #     batch, and the calendars do not exist until step 3.
+    #
+    #     🔴 AND `caf_alt_sat` HAS TO GO IN AS 0. `guard_alt_sat_pairing` (FBR57)
+    #     refuses to save a shift that says it alternates and does not name a
+    #     mirror — *"An alternating-Saturday shift needs Mirror Shift"* — and the
+    #     mirror it wants is a shift this same loop has not created yet. A needs
+    #     B, B needs A, and neither exists: there is no legal order, which is
+    #     OD-89's dead end in a new place.
+    #
+    #     ⚠️ Invisible on the authority site, because both halves were already
+    #     there. Found 2026-09-11 on a purpose-built empty site — the first run
+    #     that ever exercised this branch. Step 2 turns it back on and then saves
+    #     the finished pair THROUGH the guard, so nothing skips validation; only
+    #     the impossible intermediate state does.
     for p in splan:
         if p["existing"]:
             if overwrite and p["drift"]:
@@ -421,25 +448,51 @@ def _apply(payload, splan, ph_todo, pplan, overwrite, years, current_year):
         doc.name = p["label"]
         for f, v in p["fields"].items():
             doc.set(f, v)
+        if p.get("mirror_code"):
+            doc.caf_alt_sat = 0
         doc.flags.ignore_permissions = True
         doc.insert()
         made.append(p["label"])
 
     frappe.db.commit()
 
-    # 2 · the mirrors, now that both halves exist -----------------------------
+    # 2 · the pairs — turn alternation back on, then save THROUGH the guard ----
+    def _by_code(code):
+        return frappe.db.get_value("Shift Type", {"caf_shift_code": code}, "name")
+
+    # 2a · both halves must already say they alternate before either may name
+    #      the other: the guard refuses a mirror that is not itself an
+    #      alternating shift. `db.set_value` because this one flag, on its own,
+    #      is the state the guard exists to forbid — it lives only between here
+    #      and 2b. ⚠️ If 2b throws, readiness check `alt_pairs` reports exactly
+    #      this: a shift marked alternating with no partner. That is the right
+    #      failure — loud, and named.
+    pairs = []
     for p in splan:
         if not p.get("mirror_code"):
             continue
-        me = frappe.db.get_value("Shift Type", {"caf_shift_code": p["code"]}, "name")
-        other = frappe.db.get_value("Shift Type",
-                                    {"caf_shift_code": p["mirror_code"]}, "name")
+        me, other = _by_code(p["code"]), _by_code(p["mirror_code"])
         if not me or not other:
             skipped.append("mirror %s -> %s: one half is missing"
                            % (p["code"], p["mirror_code"]))
             continue
-        if frappe.db.get_value("Shift Type", me, "caf_sat_mirror") != other:
-            frappe.db.set_value("Shift Type", me, "caf_sat_mirror", other)
+        frappe.db.set_value("Shift Type", me, "caf_alt_sat", 1, update_modified=False)
+        frappe.db.set_value("Shift Type", other, "caf_alt_sat", 1, update_modified=False)
+        pairs.append((me, other))
+    frappe.db.commit()
+    frappe.clear_cache(doctype="Shift Type")
+
+    # 2b · and now a real save, so `guard_alt_sat_pairing` validates the FINISHED
+    #      pair: same contracted day (FBR53), same anchor date, opposite anchor
+    #      sides. `complete_alt_sat_pairing` fills the other direction from
+    #      `on_update`, so one save per pair is enough.
+    for me, other in pairs:
+        if frappe.db.get_value("Shift Type", me, "caf_sat_mirror") == other:
+            continue
+        doc = frappe.get_doc("Shift Type", me)
+        doc.caf_sat_mirror = other
+        doc.flags.ignore_permissions = True
+        doc.save()
 
     frappe.db.commit()
 
@@ -469,7 +522,6 @@ def _apply(payload, splan, ph_todo, pplan, overwrite, years, current_year):
     from caf.caf import holiday_lists
 
     known = sorted(int(y) for y in payload["public_holidays"])
-    current_year = int(current_year or getdate(frappe.utils.nowdate()).year)
 
     # 🔴 ONLY THE CURRENT YEAR AND LATER, and there are two independent reasons.
     #
@@ -583,7 +635,15 @@ def verify():
     check("SHM-MIRRORS", not broken, "every alternating pair points at its partner; "
                                      "broken %s" % broken)
 
+    # Same rule as the run: the current year and later. A historical list is not
+    # created here (T-34 leaves history alone, and creating one trips the anchor
+    # walk), so asserting its presence would fail a correct migration.
+    this_year = getdate(frappe.utils.nowdate()).year
     for year, rows in sorted(payload["public_holidays"].items()):
+        if int(year) < this_year:
+            print("%-22s %s  %s" % ("SHM-PH-%s" % year, "SKIP",
+                                    "earlier than %s — not carried by design" % this_year))
+            continue
         name = PH_LIST.format(year=year)
         have = {str(h.holiday_date) for h in frappe.get_all(
             "Holiday", filters={"parent": name, "weekly_off": 0},
