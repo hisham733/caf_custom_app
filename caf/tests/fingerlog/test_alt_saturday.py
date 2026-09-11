@@ -207,6 +207,32 @@ def run():
                                     update_modified=False)
             frappe.db.commit()
 
+        # ---------------------------------------------------------- ALT-REANCHOR
+        # MG, 2026-09-11, accepting the RE-ANCHOR FORWARD habit: "do build some
+        # way to trace when was the last re-anchor" — and then "add this in the
+        # full test suite".
+        #
+        # 🔴 What this guards is NOT "is the anchor set". It is how much HISTORY
+        # the walk has to cross to reach today, because every Saturday public
+        # holiday it crosses is a chance for the record to be wrong, and one wrong
+        # one INVERTS every Saturday after it. A year with no public-holiday list
+        # is worse still: `alt_saturday_rest_days()` refuses to walk it at all.
+        #
+        # ⚠️ Deliberately NOT an assertion about the anchor's AGE. An old anchor
+        # that crosses no Saturday holidays is perfectly safe — today's is 153
+        # days old and crosses zero — so failing on age would cry wolf. The thing
+        # that actually breaks is a missing year.
+        ra = holiday_lists.reanchor_history()
+        traced = [s for s in ra["shifts"] if s["last_move"]]
+        check("ALT-REANCHOR", not ra["missing_years"],
+              f"every alternating anchor can still be walked from: oldest is "
+              f"{ra['worst_age_days']} days old, crossing "
+              f"{ra['sat_holidays_crossed']} Saturday public holiday(s); "
+              f"years with no public-holiday list: {ra['missing_years'] or 'none'}. "
+              f"{len(traced)} of {len(ra['shifts'])} anchors carry a Version trail "
+              f"saying when they were last moved — a re-anchor written with "
+              f"db.set_value would leave none (OD-26)")
+
         # ------------------------------------------------------------- ALT7 🔴
         # Stock's daily job flips an expired assignment to Inactive with a raw
         # db_set. Before R5 that removed it from resolution, so re-resolving a

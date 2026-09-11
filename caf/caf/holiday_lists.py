@@ -45,11 +45,12 @@ Re-runnable: an existing generated list is rebuilt in place, so its name — and
 therefore every Employee and Shift Type pointing at it — survives.
 """
 
+import json
 import re
 
 import frappe
 from frappe import _
-from frappe.utils import getdate, strip_html
+from frappe.utils import getdate, nowdate, strip_html
 from datetime import date, timedelta
 
 DOW = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
@@ -170,6 +171,33 @@ def alt_saturday_rest_days(year: int, anchor_date, anchor_rests: bool) -> set:
 
     `anchor_rests` says what this pattern does on `anchor_date`; its mirror does
     the opposite, which is the whole of the mirror relationship.
+
+    🔴 ONLY A PUBLIC HOLIDAY THAT FALLS ON A SATURDAY CAN MOVE THE ALTERNATION.
+    ---------------------------------------------------------------------------
+    MG, 2026-09-11, and it is worth stating plainly because the arithmetic looks
+    much bigger than it is. The loop below flips `state` only inside
+    `if d.weekday() == 5 and d not in ph`, so:
+
+        a holiday on a Tuesday          ->  nothing happens to the sequence
+        a holiday ON A SATURDAY         ->  nobody worked, nothing alternated,
+                                            the SAME half rests again next week
+                                            = the whole sequence shifts one week
+
+    Measured on this site: 2026 has **19** public holidays and only **2** on a
+    Saturday (14 Feb, 21 Mar) — and both fall BEFORE the 2026-04-11 anchor, so
+    the 2026 walk crosses none at all.
+
+    ⭐ WHICH IS WHY KEEPING `CAF Public Holidays <year>` CURRENT MATTERS TO AN
+    ALTERNATING SHIFT, and to no other kind. A Saturday holiday recorded late
+    does not lose one day; it inverts every Saturday after it. `_ph_dates_between`
+    throws rather than guess a year for exactly this reason, and the comment
+    below about the retroactive 14 February — agreement with Ingress falling from
+    26/32 to 13/32 — is what that looks like in practice.
+
+    ⚠️ The corollary MG drew, and it is the right one: the anchor is the LAST
+    KNOWN CORRECT SEQUENCE, so it should be moved FORWARD to a recently confirmed
+    Saturday rather than left in the past. See `caf.scripts.alt_saturday_setup`
+    and `reanchor_history()` in this module.
     """
     year = int(year)
     anchor_date, end = getdate(anchor_date), date(year, 12, 31)
@@ -323,6 +351,138 @@ def generate_holiday_lists(year: int, repoint: bool = True,
                 frappe.db.set_value("Shift Type", shift, "holiday_list", name)
 
     return made
+
+
+def reanchor_history(year=None):
+    """When was each alternating shift's anchor last moved, and is it still safe?
+
+        bench --site <site> execute caf.caf.holiday_lists.reanchor_history
+
+    MG, 2026-09-11, accepting the RE-ANCHOR FORWARD habit: *"do build some way to
+    trace when was the last re-anchor."* This is it.
+
+    🔴 WHY THE ANCHOR AGES BADLY, which is the whole reason to watch it.
+    `alt_saturday_rest_days()` WALKS forward from the anchor, and every Saturday
+    public holiday it crosses is one more chance for the record to be wrong — and
+    a single wrong one INVERTS every Saturday after it. So the health of the
+    alternation is not "is the anchor set" but "how much history does it have to
+    cross to reach today".
+
+        anchor last Saturday   ->  crosses ~0 Saturday holidays  ->  ~0 ways to be wrong
+        anchor 5 years back    ->  crosses every one since       ->  and 2023's and
+                                                                    2021's lists do
+                                                                    not even exist,
+                                                                    so it THROWS
+
+    ⭐ The habit: when HR confirms a month's roster is correct, move
+    `caf_sat_anchor_date` to a recent confirmed Saturday and set each half's side
+    from what actually happened. The anchor then records a FACT rather than
+    history, and a wrongly-recorded holiday from two years ago can no longer
+    invert anything.
+
+    ⚠️ The trail is the `Version` row, which exists because `Shift Type` carries
+    `track_changes = 1` — verified. A desk edit is recorded; a `frappe.db.set_value`
+    is NOT (OD-26), which is exactly why `alt_saturday_setup.ensure_shifts()`
+    touches the three PAIRING fields and deliberately never the anchor. If this
+    reports "no Version", the anchor was set by something that bypassed the
+    document, and that is worth knowing on its own.
+    """
+    year = int(year or getdate(nowdate()).year)
+    today = getdate(nowdate())
+    shifts = frappe.get_all(
+        "Shift Type",
+        filters={"caf_alt_sat": 1},
+        fields=["name", "caf_shift_code", "caf_sat_anchor_date", "caf_sat_anchor"],
+        order_by="caf_shift_code")
+
+    if not shifts:
+        print("no alternating shifts on this site")
+        return {"shifts": [], "worst_age_days": 0, "sat_holidays_crossed": 0}
+
+    out = []
+    for s in shifts:
+        anchor = getdate(s.caf_sat_anchor_date) if s.caf_sat_anchor_date else None
+        age = (today - anchor).days if anchor else None
+
+        # the Version trail, newest first — only rows that actually touched the anchor
+        last_move = None
+        for v in frappe.get_all("Version",
+                                filters={"ref_doctype": "Shift Type", "docname": s.name},
+                                fields=["name", "owner", "creation", "data"],
+                                order_by="creation desc", limit=40):
+            if "caf_sat_anchor" not in (v.data or ""):
+                continue
+            changed = []
+            try:
+                for row in json.loads(v.data).get("changed", []):
+                    if row and str(row[0]).startswith("caf_sat_anchor"):
+                        changed.append("%s %r -> %r" % (row[0], row[1], row[2]))
+            except Exception:
+                changed.append("(unreadable Version payload)")
+            if changed:
+                last_move = {"when": str(v.creation)[:19], "who": v.owner,
+                             "what": "; ".join(changed)}
+                break
+
+        out.append({"shift": s.name, "code": s.caf_shift_code,
+                    "anchor": str(anchor) if anchor else None,
+                    "side": s.caf_sat_anchor, "age_days": age,
+                    "last_move": last_move})
+
+    # How much history does the walk actually cross from the oldest anchor?
+    oldest = min((getdate(o["anchor"]) for o in out if o["anchor"]), default=None)
+    crossed = []
+    if oldest:
+        for y in range(oldest.year, year + 1):
+            name = PH_LIST.format(year=y)
+            if not frappe.db.exists("Holiday List", name):
+                crossed.append((y, None))
+                continue
+            sats = [d for d, _ in _public_holidays_in(name, y)
+                    if getdate(d).weekday() == 5 and getdate(d) >= oldest]
+            crossed.append((y, len(sats)))
+
+    print("=" * 78)
+    print("ALTERNATE-SATURDAY ANCHORS — as at %s" % today)
+    print("=" * 78)
+    for o in out:
+        print("  %-26s %-16s anchor %s = %-5s  (%s days old)"
+              % (o["shift"], o["code"], o["anchor"], o["side"],
+                 o["age_days"] if o["age_days"] is not None else "?"))
+        if o["last_move"]:
+            print("      last moved %s by %s — %s"
+                  % (o["last_move"]["when"], o["last_move"]["who"],
+                     o["last_move"]["what"]))
+        else:
+            print("      ⚠️ no Version records the anchor being set — it was written "
+                  "outside the document (OD-26), or never changed since creation")
+
+    print()
+    print("  the walk crosses, from the oldest anchor (%s):" % oldest)
+    missing, total_sats = [], 0
+    for y, n in crossed:
+        if n is None:
+            missing.append(y)
+            print("    %s  🔴 CAF Public Holidays %s DOES NOT EXIST — the walk THROWS"
+                  % (y, y))
+        else:
+            total_sats += n
+            print("    %s  %d Saturday public holiday(s)" % (y, n))
+    worst = max((o["age_days"] or 0) for o in out)
+    print()
+    print("  ⭐ oldest anchor is %d days old and the walk crosses %d Saturday "
+          "holiday(s)." % (worst, total_sats))
+    if missing:
+        print("  🔴 %s has no public-holiday list, so this configuration cannot be "
+              "walked at all." % missing)
+    elif total_sats == 0:
+        print("  ✅ Zero Saturday holidays to cross — the safest position there is.")
+    else:
+        print("  ⚠️ Each one is a chance for the record to be wrong, and a wrong one "
+              "inverts every Saturday after it. Consider re-anchoring forward.")
+
+    return {"shifts": out, "worst_age_days": worst,
+            "sat_holidays_crossed": total_sats, "missing_years": missing}
 
 
 def rest_saturdays_in(list_name) -> set:
