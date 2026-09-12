@@ -63,6 +63,40 @@ def suspended():
         _set(before)
 
 
+@contextmanager
+def armed_from(start):
+    """The OPPOSITE of `suspended()` — turn the gate ON for a month of our choosing.
+
+        with armed_from("2026-06-01"):
+            ...assert that a June Finger Log is REFUSED until June is confirmed...
+
+    🔴 WHY THIS EXISTS — T-45, the guard ladder (2026-09-12)
+    -------------------------------------------------------
+    Every other suite wants the gate OUT of the way, so `suspended()` was the only
+    direction anybody needed. The guard ladder is the first suite for which **the
+    gate is a RUNG** — it has to fire, be cleared by confirming the month, and then
+    let the log through.
+
+    That creates a bind `suspended()` cannot solve: the live gate starts
+    **2026-09-01**, and every month clean enough to build fixtures in (June, per
+    the suite convention — July holds imported logs) is BEFORE it. So the ladder
+    cannot use the real gate date and must not permanently move it.
+
+    ⚠️ Restores by MEANING for the same reason `suspended()` does — see this
+    module's header. Clearing a Date on a **Single** leaves a sentinel that reads
+    back as `0001-01-01`, which is not "off", it is "refuse everything ever
+    recorded". The snapshot is what `gate_from()` returns, never the raw field.
+
+    ⚠️ The caller must still assert `restored(before)`. A helper that puts the gate
+    back silently is one failed restore away from leaving a site ungated.
+    """
+    before = mrc.gate_from()
+    try:
+        yield _set(start)
+    finally:
+        _set(before)
+
+
 def restored(before):
     """(ok, detail) — for the suite's own RESTORE assertion."""
     now = mrc.gate_from()
