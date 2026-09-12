@@ -566,9 +566,37 @@ def on_public_holidays_changed(doc, method=None):
           "<b>{0} Saturdays moved</b>.</p><ul>{1}</ul>"
           "<p>Work and rest have changed on those dates. Any Finger Log, "
           "Attendance, Leave Application or Shift Assignment already filed "
-          "against them needs checking and amending.</p>{2}").format(
-              total, lines, _affected_appraisals_html(moved)),
+          "against them needs checking and amending.</p>{2}{3}").format(
+              total, lines, _records_on_html(moved),
+              _affected_appraisals_html(moved)),
         title=_("Alternate-Saturday calendar changed"), indicator="orange")
+
+
+def _records_on_html(moved):
+    """How many real records sit on the moved dates — L4, 2026-09-12.
+
+    🔴 **The message said what to check and never how much there was to check.**
+    Measured by the L4 climb: one Saturday holiday inserted at 2026-07-04 moved
+    **51 Saturdays** — and **343 submitted Finger Logs** were sitting on them.
+    HR was told the calendar changed and left to discover the volume herself.
+
+    ⭐ Same principle FBR96 already established for appraisals — *name what the
+    change lands on* — applied to the records the sentence above actually tells
+    her to go and check. Additive: it adds a count, changes no behaviour.
+    """
+    dates = sorted({d for v in moved.values() for d in v})
+    if not dates:
+        return ""
+    logs = frappe.db.count("Finger Log", {"work_date": ("in", dates),
+                                          "docstatus": 1})
+    att = frappe.db.count("Attendance", {"attendance_date": ("in", dates),
+                                         "docstatus": 1})
+    if not logs and not att:
+        return _("<p>✅ No submitted Finger Log or Attendance record sits on any "
+                 "of those dates, so there is nothing to amend.</p>")
+    return _("<p>🔴 <b>{0} submitted Finger Log(s)</b> and <b>{1} Attendance "
+             "record(s)</b> already sit on those dates. That is the size of the "
+             "worklist this edit has just created.</p>").format(logs, att)
 
 
 def _affected_appraisals_html(moved):
