@@ -47,6 +47,11 @@ function esc(value) {
 	return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+function date_only(value) {
+	const s = String(value || "").replace("T", " ").trim();
+	return s.split(" ")[0];
+}
+
 function scale_parts(value) {
 	const parts = String(value || "").split(":");
 	const score = score_of_option(value);
@@ -69,34 +74,34 @@ const GRADE_CLASS_MAP = {
 };
 
 function build_evaluation_html(row, frm) {
+	const scale_scores = [1, 2, 3, 4, 5];
 	const criteria_rows = get_criteria_meta()
 		.map((c, i) => {
 			const p = scale_parts(row[c.fieldname]);
-			const zebra = i % 2 === 1 ? " zebra" : "";
+			const cells = scale_scores
+				.map(
+					(n) =>
+						`<td class="num"><span class="rate-num ${p.score === n ? "circled" : ""}">${n}</span></td>`
+				)
+				.join("");
 			return (
-				`<tr class="crit-row${zebra}">` +
-				`<td class="crit-idx">${i + 1}</td>` +
-				`<td class="crit-label">${esc(c.label)}</td>` +
-				`<td class="crit-rating"><span class="chip">${esc(p.rating)}</span></td>` +
-				`<td class="crit-score">${p.score}</td>` +
+				`<tr>` +
+				`<td class="crit-no">${i + 1}</td>` +
+				`<td class="crit-label"><span class="head">${esc(c.label)}</span></td>` +
+				cells +
 				`</tr>`
 			);
 		})
 		.join("");
 
-	const overall = [
+	const overall_rows = [
 		["custom_exceeded_my_expectation", "Exceeded my expectation"],
 		["custom_met_my_expectation", "Met my expectation"],
 		["custom_failed_to_meet_my_expectation", "Failed to meet my expectation"],
-	];
-	const overall_rows = overall
+	]
 		.map(
 			([f, label]) =>
-				`<div class="assessment-row ${row[f] ? "is-on" : ""}">` +
-				`<span class="assess-dot">${row[f] ? "●" : "○"}</span>` +
-				`<span class="assess-label">${esc(label)}</span>` +
-				`<span class="badge ${row[f] ? "yes" : "no"}">${row[f] ? "Yes" : "No"}</span>` +
-				`</div>`
+				`<div class="tick-item"><span class="tick-box">${row[f] ? "✓" : ""}</span>${esc(label)}</div>`
 		)
 		.join("");
 
@@ -116,7 +121,18 @@ function build_evaluation_html(row, frm) {
 
 	const total = row.custom_total_marks || 0;
 	const result = row.custom_result || "";
-	const result_class = GRADE_CLASS_MAP[result] || "grade-neutral";
+	const RESULT_BANDS = [
+		{ grade: "Very Good", marks: "36-40 Marks", label: "Very good" },
+		{ grade: "Good", marks: "30-35 Marks", label: "Good" },
+		{ grade: "Ordinary", marks: "20-29 Marks", label: "Ordinary" },
+		{ grade: "Bad", marks: "0 - 20 Marks", label: "Bad" },
+	];
+	const result_rows = RESULT_BANDS.filter((b) => b.grade === result)
+		.map(
+			(b) =>
+				`<div class="result-row"><span class="band">${b.marks}</span><span>${b.label}</span></div>`
+		)
+		.join("");
 
 	return (
 		`<!DOCTYPE html>
@@ -126,140 +142,191 @@ function build_evaluation_html(row, frm) {
 	<title>Training Evaluation Report</title>
 	<style>
 		* { box-sizing: border-box; }
-		body { margin: 0; padding: 0 0 24px; font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; color: #0f172a; background: #fff; font-size: 13px; }
-		.sheet { max-width: 820px; margin: 0 auto; }
+		html, body { margin: 0; padding: 0; }
+		body {
+			font-family: "Times New Roman", Times, serif;
+			color: #000;
+			font-size: 11.5px;
+			line-height: 1.3;
+			background: #d9d9d9;
+			padding: 18px 12px;
+		}
 
-		.topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 20px 24px; background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%); color: #fff; border-radius: 0 0 14px 14px; }
-		.topbar .brand { font-size: 16px; letter-spacing: .3px; opacity: .92; }
-		.topbar .doctitle { font-size: 22px; font-weight: 700; margin-top: 2px; }
-		.topbar .formno { flex: 0 0 auto; background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.25); padding: 6px 12px; border-radius: 999px; font-size: 11px; letter-spacing: .5px; white-space: nowrap; }
+		.sheet {
+			max-width: 760px;
+			width: 100%;
+			margin: 0 auto;
+			background: #fff;
+			box-shadow: 0 1px 3px rgba(0,0,0,.15), 0 8px 20px rgba(0,0,0,.12);
+			padding: 20px 28px 16px;
+		}
 
-		.card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px 18px; margin: 14px 18px 0; box-shadow: 0 1px 2px rgba(15,23,42,.04); }
-		.sect-title { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; color: #0f766e; margin-bottom: 12px; }
-		.sect-title::before { content: ""; width: 10px; height: 10px; border-radius: 3px; background: #0f766e; }
+		.doc-header { display: flex; justify-content: space-between; font-size: 10.5px; margin-bottom: 8px; }
 
-		.info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 24px; }
-		.info-item .info-label { font-size: 10px; text-transform: uppercase; letter-spacing: .6px; color: #64748b; margin-bottom: 2px; }
-		.info-item .info-value { font-size: 14px; font-weight: 600; }
+		.company { text-align: center; font-size: 20px; margin: 0 0 4px; }
+		.report-title { text-align: center; font-size: 14px; font-weight: 700; text-decoration: underline; letter-spacing: .5px; margin-bottom: 6px; }
+		.instruction { font-style: italic; font-size: 11.5px; margin-bottom: 6px; }
 
-		table.crit { width: 100%; border-collapse: collapse; }
-		table.crit thead th { background: #f8fafc; color: #64748b; font-size: 10px; text-transform: uppercase; letter-spacing: .6px; text-align: left; padding: 8px 10px; border-bottom: 1px solid #e2e8f0; }
-		table.crit thead th:first-child { text-align: center; width: 36px; }
-		table.crit td { padding: 9px 10px; border-bottom: 1px solid #e2e8f0; }
-		table.crit .crit-idx { color: #64748b; font-weight: 600; text-align: center; }
-		table.crit .crit-label { font-weight: 600; }
-		table.crit .crit-rating { text-align: center; }
-		table.crit .crit-score { text-align: center; font-weight: 700; }
-		table.crit .zebra td { background: #fcfdff; }
+		.outer-box { border: 1.5px solid #000; }
 
-		.chip { display: inline-block; padding: 2px 10px; border-radius: 999px; background: #ccfbf1; color: #115e59; font-size: 12px; font-weight: 600; }
+		.emp-box { padding: 6px 12px; }
+		.info-grid { display: flex; flex-direction: column; gap: 4px; }
+		.info-item .info-label { font-weight: 700; }
+		.info-item .info-value { font-weight: 400; }
 
-		.stat-row { display: flex; gap: 14px; margin-top: 14px; }
-		.stat { flex: 1; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px; text-align: center; }
-		.stat .stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: .6px; color: #64748b; margin-bottom: 4px; }
-		.stat .num { font-size: 26px; font-weight: 800; }
-		.stat.total .num { color: #0f766e; }
-		.grade-very-good .num { color: #15803d; }
-		.grade-good .num { color: #2563eb; }
-		.grade-ordinary .num { color: #d97706; }
-		.grade-bad .num { color: #dc2626; }
-		.grade-neutral .num { color: #64748b; }
+		.section-band { border-top: 1.5px solid #000; border-bottom: 1px solid #000; text-align: center; font-weight: 700; font-size: 11.5px; padding: 3px 0; }
 
-		.overall { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
-		.assessment-row { display: flex; align-items: center; gap: 8px; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 12px; background: #f8fafc; }
-		.assess-dot { font-size: 14px; color: #cbd5e1; }
-		.assessment-row.is-on { background: #f0fdf4; border-color: #bbf7d0; }
-		.assessment-row.is-on .assess-dot { color: #22c55e; }
-		.assess-label { flex: 1; font-size: 12px; font-weight: 600; }
-		.badge { padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; }
-		.badge.yes { background: #dcfce7; color: #15803d; }
-		.badge.no { background: #fee2e2; color: #b91c1c; }
+		table.crit { width: calc(100% - 16px); border-collapse: collapse; font-size: 11px; }
+		table.crit td, table.crit th { padding: 2px 4px; vertical-align: middle; }
+		table.crit tr { page-break-inside: avoid; break-inside: avoid; }
+		table.crit thead .circle-hdr { text-align: center; font-weight: 400; border-bottom: 1px solid #000; padding-bottom: 1px; }
+		table.crit thead .col-label { text-align: center; font-weight: 400; padding-top: 1px; font-size: 10px; }
+		table.crit .crit-no { width: 30px; text-align: center; }
+		table.crit .crit-label .head { font-weight: 700; font-style: italic; }
+		table.crit td.num { text-align: center; width: 44px; }
 
-		.comments { min-height: 70px; border: 1px dashed #cbd5e1; border-radius: 10px; padding: 12px; background: #f8fafc; white-space: pre-wrap; }
+		.rate-num { display: inline-block; width: 18px; text-align: center; }
+		.rate-num.circled {
+			border: 1.5px solid #000;
+			border-radius: 50%;
+			width: 20px; height: 20px;
+			line-height: 17px;
+			background: #000; color: #fff;
+			font-weight: 700;
+		}
 
-		.footer-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; padding: 8px 18px 32px; }
-		.sign-block .sign-label { font-size: 10px; text-transform: uppercase; letter-spacing: .6px; color: #64748b; margin-bottom: 4px; }
-		.sign-block .sign-value { font-size: 14px; font-weight: 700; padding-bottom: 6px; border-bottom: 1px solid #0f172a; min-height: 24px; }
-		.sign-block.right { text-align: right; }
+		.total-row { display: flex; justify-content: flex-end; gap: 30px; padding: 4px 16px 1px 0; font-weight: 700; font-size: 11.5px; }
+
+		.result-block { padding: 2px 16px 6px 0; font-size: 11.5px; text-align: right; }
+		.result-title { font-weight: 700; text-decoration: underline; margin-bottom: 1px; }
+		.result-row { display: flex; gap: 10px; justify-content: flex-end; }
+		.result-row .band { width: 88px; }
+		.result-row.is-active { font-weight: 700; }
+
+		.section2 { padding: 6px 16px 2px 12px; font-size: 11.5px; }
+		.section2 .q { font-weight: 700; font-style: italic; }
+		.tick-row { display: flex; gap: 24px; margin-top: 4px; flex-wrap: wrap; }
+		.tick-item { display: flex; align-items: center; gap: 5px; }
+		.tick-box { width: 14px; height: 14px; border: 1.2px solid #000; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; }
+
+		.section3 { padding: 8px 16px 2px 12px; font-size: 11.5px; }
+		.section3 .q { font-weight: 700; font-style: italic; margin-bottom: 4px; }
+		.dotted-line { border-bottom: 1px dotted #000; min-height: 16px; margin-bottom: 2px; }
+
+		.sign-area { padding: 10px 16px 2px 12px; font-size: 11.5px; }
+		.sign-area > div:first-child { font-weight: 700; }
+		.sign-line { display: flex; gap: 40px; align-items: flex-end; margin-top: 14px; }
+		.sign-line .field { flex: 1; border-bottom: 1px dotted #000; min-height: 12px; }
+		.sign-line .field.short { flex: 0 0 200px; }
+		.sign-caption { display: flex; gap: 40px; margin-top: 2px; font-size: 11.5px; }
+		.sign-caption .cap { flex: 1; }
+		.sign-caption .cap.short { flex: 0 0 200px; }
+
+		.hr-band { border-top: 1.5px solid #000; border-bottom: 1px solid #000; font-weight: 700; font-size: 11.5px; padding: 3px 12px; }
+		.hr-box { border-bottom: 1.5px solid #000; padding: 8px 12px 4px; min-height: 36px; white-space: pre-wrap; }
+		.hr-sign { padding: 2px 12px 8px; }
 
 		@media print {
-			body { background: #fff; }
-			.topbar { border-radius: 0; }
-			@page { size: A4; margin: 12mm; }
+			html, body { background: #fff !important; }
+			body { padding: 0; }
+			.sheet { box-shadow: none; max-width: none; padding: 6px 8px; }
+			.outer-box { page-break-inside: avoid; break-inside: avoid; }
+			@page { size: A4; margin: 9mm 12mm; }
 		}
 	</style>
 </head>
 <body>
 	<div class="sheet">
-		<div class="topbar">
-			<div>
-				<div class="brand">CAF Food Products Sdn Bhd</div>
-				<div class="doctitle">Training Evaluation Report</div>
+		<div class="doc-header">
+			<div>FORM NO: HR-PR-01-F</div>
+			<div>REV:00 (1/12/2003)</div>
+		</div>
+
+		<div class="company">CAF Food Products Sdn Bhd</div>
+		<div class="report-title">TRAINING EVALUATION REPORT</div>
+		<div class="instruction">This report should be filled by the HOD in order to evaluate their sub-ordinate's competency after attend the training.</div>
+
+		<div class="outer-box">
+			<div class="emp-box">
+				<div class="info-grid">${info_html}</div>
 			</div>
-			<div class="formno">HR-PR-01-F &nbsp;·&nbsp; REV 00</div>
-		</div>
 
-		<div class="card">
-			<div class="sect-title">Employee Details</div>
-			<div class="info-grid">${info_html}</div>
-		</div>
+			<div class="section-band">EVALUATION ON THE EMPLOYEE PERFORMANCE AFTER THE TRAINING</div>
 
-		<div class="card">
-			<div class="sect-title">1 · Performance Evaluation</div>
 			<table class="crit">
+				<colgroup>
+					<col style="width:34px">
+					<col>
+					<col style="width:44px"><col style="width:44px"><col style="width:44px"><col style="width:44px"><col style="width:44px">
+				</colgroup>
 				<thead>
 					<tr>
-						<th>#</th>
-						<th>Criteria</th>
-						<th style="text-align:center;">Rating</th>
-						<th style="text-align:center;">Marks</th>
+						<td></td>
+						<td></td>
+						<td colspan="5" class="circle-hdr">Please Circle</td>
+					</tr>
+					<tr>
+						<td></td>
+						<td></td>
+						<td class="col-label">Very<br>Poor</td>
+						<td class="col-label">Poor</td>
+						<td class="col-label">Satisfied</td>
+						<td class="col-label">Good</td>
+						<td class="col-label">Excellent</td>
 					</tr>
 				</thead>
 				<tbody>${criteria_rows}</tbody>
 			</table>
-			<div class="stat-row">
-				<div class="stat total">
-					<div class="stat-label">Total Marks</div>
-					<div class="num">${total}</div>
+
+			<div class="total-row"><span>Total Marks</span><span>${total}/40</span></div>
+
+			<div class="result-block">
+				<div class="result-title">RESULT</div>
+				${result_rows}
+			</div>
+
+			<div class="section2">
+				<span class="q">2. Your overall assessment of the employee :</span>&nbsp;&nbsp;&nbsp;Please Tick (√)
+				<div class="tick-row">${overall_rows}</div>
+			</div>
+
+			<div class="section3">
+				<div class="q">3. Please summarize your comments on your sub-ordinate :</div>
+				<div class="dotted-line">${esc(row.comments)}</div>
+			</div>
+
+			<div class="sign-area">
+				<div>Submitted by</div>
+				<div class="sign-caption">
+					<div class="cap short">Name : ${esc(frm.doc.custom_submitted_by)}</div>
+					<div class="cap short">Date&nbsp;&nbsp;&nbsp;${esc(date_only(frm.doc.custom_submitted_date))}</div>
 				</div>
-				<div class="stat ${result_class}">
-					<div class="stat-label">Result</div>
-					<div class="num">${esc(result)}</div>
+				<div class="sign-line">
+					<div class="field short"></div>
+					<div class="field short"></div>
 				</div>
 			</div>
-		</div>
 
-		<div class="card">
-			<div class="sect-title">2 · Overall Assessment</div>
-			<div class="overall">${overall_rows}</div>
-		</div>
-
-		<div class="card">
-			<div class="sect-title">3 · Comments</div>
-			<div class="comments">${esc(row.comments)}</div>
-		</div>
-
-		<div class="footer-grid">
-			<div class="sign-block">
-				<div class="sign-label">Submitted by</div>
-				<div class="sign-value">${esc(frm.doc.custom_submitted_by)}</div>
-				<div class="sign-label" style="margin-top:10px;">Submitted Date</div>
-				<div class="sign-value">${esc(frm.doc.custom_submitted_date)}</div>
-			</div>
-			<div class="sign-block right">
-				<div class="sign-label">Reviewed by HR Head</div>
-				<div class="sign-value">${esc(frm.doc.custom_reviewed_by_hr_head)}</div>
-				<div class="sign-label" style="margin-top:10px;">Date</div>
-				<div class="sign-value">${esc(frm.doc.custom_date)}</div>
+			<div class="hr-band">EVALUATION BY THE HEAD OF HR DEPARTMENT</div>
+			<div class="hr-box"></div>
+			<div class="hr-sign">
+				<div class="sign-caption">
+					<div class="cap short">Reviewed by HR Head : ${esc(frm.doc.custom_reviewed_by_hr_head)}</div>
+					<div class="cap short">Date&nbsp;&nbsp;&nbsp;${esc(date_only(frm.doc.custom_date))}</div>
+				</div>
+				<div class="sign-line">
+					<div class="field short"></div>
+					<div class="field short"></div>
+				</div>
 			</div>
 		</div>
 	</div>
 </body>
 </html>`
-	);
-}
+			);
+		}
 
-function print_html_evaluation(row, frm) {
+		function print_html_evaluation(row, frm) {
 	const w = window.open("", "_blank", "width=900,height=760");
 	if (!w) {
 		frappe.msgprint(__("Pop-up was blocked. Please allow pop-ups for this site and try again."));
