@@ -62,7 +62,7 @@ the climb and restores it by MEANING afterwards. ⚠️ `seed()` deliberately do
 import traceback
 
 import frappe
-from frappe.utils import strip_html
+from frappe.utils import add_days, getdate, strip_html
 
 
 # ── the window ──────────────────────────────────────────────────────────────
@@ -142,6 +142,17 @@ CAST = {
                "the supervisor test logins — so the climb can genuinely change "
                "hands between roles.",
     },
+    # Appended 2026-09-12 for L5. Selected the same way: by rule, then recorded.
+    "NEW": {
+        "device": "1083",
+        "why": "joined 2025-08-01, so **under 12 months** at a mid-2026 date and "
+               "the anniversary (2026-08-01) is the date the annual-leave bar "
+               "lifts. Holds a submitted MC allocation, so the 'medical is "
+               "untouched' rung can run — and holds **no Annual allocation**, "
+               "which is not a quirk of this person: measured 2026-09-12, "
+               "**0 of 28 under-a-year employees hold one**, so CAF is running "
+               "option A's data behind option B's guard.",
+    },
 }
 
 LEAVE_TYPE = "MC"
@@ -153,6 +164,20 @@ OT_APPROVED_LOW = 1.0           # deliberately less than the clocked figure
 
 def _fail(msg):
     frappe.throw(f"[chain.dataset] {msg}")
+
+
+def names_date(message, date):
+    """Does this refusal name that date — in EITHER form?
+
+    🔴 ONE PREDICATE, BECAUSE TWO SUITES MADE THE SAME MISTAKE IN ONE HOUR.
+    A message written for a reader formats the date the way the reader expects
+    (`01-08-2026`), not in ISO. Asserting `"2026-08-01" in msg` fails against a
+    perfectly good refusal, and the failure looks like a product fault.
+    """
+    from frappe.utils import formatdate, getdate
+
+    d = getdate(date)
+    return any(f in (message or "") for f in (str(d), formatdate(d)))
 
 
 # ── the cast ────────────────────────────────────────────────────────────────
@@ -172,6 +197,54 @@ def employee(role="OLD", required=True):
 def _shift_of(emp):
     from caf.caf.shift_resolution import resolve_day_type
     return resolve_day_type(emp, LADDER_DAY)
+
+
+def free_workdays(emp, count=1, start="2026-06-01", end="2026-12-31"):
+    """`count` dates that are a Workday for `emp` and carry nothing at all.
+
+    🔴 WHY THIS IS MEASURED AND NOT A CONSTANT. The playbooks hard-coded their
+    dates, and by the fifth climb June was exhausted — every weekday was taken by
+    L1, L2, L5, a suite, or a real OT Approval this employee already holds. A
+    hard-coded date in a regression suite is a collision waiting for whoever adds
+    the next one.
+
+    "Carries nothing" is deliberately strict, and each clause was paid for:
+      · no Finger Log            — the day is already decided
+      · no live Attendance       — same
+      · no leave spanning it     — a leave clash would refuse the submit first
+      · no OT Approval for HIM   — 🔴 an existing approval SILENTLY SATISFIES an
+                                   "overtime has no approval" rung, which then
+                                   passes while testing nothing
+      · a Workday                — nothing is expected of an unscheduled day
+    """
+    from caf.caf.shift_resolution import resolve_day_type
+
+    out, day, last = [], getdate(start), getdate(end)
+    while day <= last and len(out) < count:
+        d = str(day)
+        day = add_days(day, 1)
+        if d == HOLIDAY:
+            continue
+        if resolve_day_type(emp, d)[0] != "Workday":
+            continue
+        if frappe.db.exists("Finger Log", {"employee": emp, "work_date": d}):
+            continue
+        if frappe.db.exists("Attendance", {"employee": emp, "attendance_date": d,
+                                           "docstatus": ("<", 2)}):
+            continue
+        if frappe.db.exists("Leave Application",
+                            {"employee": emp, "from_date": ("<=", d),
+                             "to_date": (">=", d), "docstatus": ("<", 2)}):
+            continue
+        if _ot_approvals(emp, [d]):
+            continue
+        out.append(d)
+
+    if len(out) < count:
+        _fail(f"only {len(out)} clear Workday(s) between {start} and {end} for "
+              f"{emp}; {count} were needed. Widen the range or pick another cast "
+              f"member — do NOT reuse a day that already carries something.")
+    return out
 
 
 # ── builders ────────────────────────────────────────────────────────────────

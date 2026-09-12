@@ -46,7 +46,7 @@ LEAVE_DAY = "2026-06-30"
 
 def check(tid, ok, detail):
     RESULTS.append((tid, bool(ok), detail))
-    print(f"{tid:<10}{'PASS' if ok else 'FAIL'}  {detail}")
+    print(f"{tid:<20}{'PASS' if ok else 'FAIL'}  {detail}")
     return ok
 
 
