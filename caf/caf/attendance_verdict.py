@@ -199,8 +199,17 @@ def cancel_attendance(doc):
     ⚠️ **Measured both ways, 2026-09-12.** Through the DESK it never fired:
     Frappe's *"Cancel All Documents"* cascade calls a plain `att.cancel()`, so
     D-12 refused and the Finger Log stayed submitted. It fired only on the
-    PROGRAMMATIC route — `doc.cancel()` from re-resolve, the API or `bench` —
-    which is the one nobody watches.
+    PROGRAMMATIC route — `doc.cancel()` on the Finger Log itself — which is the
+    one nobody watches.
+
+    🔴 **CORRECTION (same day): re-resolve is NOT one of those routes**, and I
+    said it was before checking. `re_resolve` has its own `reconcile_attendance`
+    and never calls this function; it has carried the equivalent FDR4 check in
+    **both** branches since D-12. Grepped: the only programmatic callers of
+    `FingerLog.cancel()` in app code are **`ingress/sync.py`'s batch revert** and
+    the cancel-and-amend route (OD-48 Path 2) — plus anything a script or the API
+    does. **The batch revert is the realistic one**, and it needed its own guard;
+    see the `leave_owns_the_day` check there.
 
     ⭐ **Skips, never throws**, matching `re_resolve`'s *"left alone (leave)"*:
     a bulk cancel over a month must not abort on one day that a leave owns.

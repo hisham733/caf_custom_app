@@ -62,6 +62,7 @@ import frappe
 from frappe import _
 from frappe.utils import add_days, getdate, now_datetime, nowdate
 
+from caf.caf.attendance_verdict import leave_owns_the_day
 from caf.caf.ingress import source as src
 
 # The punch fields, in the order a human reads them. Also exactly the fields that
@@ -866,6 +867,25 @@ def revert_batch(batch_name: str, force: bool = False):
             continue
         if doc.modified_by != doc.owner and not force:
             refused.append(f"{doc.name} (modified by {doc.modified_by})")
+            continue
+
+        # 🔴 A DAY A LEAVE HAS SINCE TAKEN IS NOT THIS BATCH'S TO UNDO.
+        # Added 2026-09-12 alongside the T-44 fix, and it is the same hole seen
+        # from the other end. The loop below force-DELETES every Attendance
+        # linked to this log; once `cancel_attendance()` started (correctly)
+        # leaving a leave-owned row standing, that loop would have deleted it
+        # permanently while the Leave Application stayed Approved — worse than
+        # the cancel it replaced, because a delete cannot be undone.
+        # The log itself is still removed: the observation was this batch's, the
+        # DECISION on the day was not.
+        owned = [r for r in frappe.get_all(
+            "Attendance", filters={"caf_finger_log": doc.name, "docstatus": 1},
+            fields=["name", "leave_type", "leave_application"])
+            if leave_owns_the_day(r)]
+        if owned and not force:
+            refused.append(
+                f"{doc.name} (an approved leave owns that day: "
+                f"{', '.join(r.leave_application for r in owned)})")
             continue
 
         doc.flags.ignore_permissions = True
