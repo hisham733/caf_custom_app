@@ -344,15 +344,22 @@ def _notify_daily_output_failure(doc, row, exc):
 def background_process_all(doc_name):
     doc = frappe.get_doc("Daily Output Record", doc_name)
     try:
+        frappe.flags.in_dor_batch = True
         for row in doc.items:
             if row.status == "Done":
                 doc._validate_row(row)
                 continue
+
+            savepoint = f"dor_row_{row.name}"
+            frappe.db.savepoint(savepoint)
             try:
                 doc._process_row(row)
                 frappe.db.set_value("Daily Output Item", row.name, "status", "Done")
                 row.status = "Done"
+                frappe.db.release_savepoint(savepoint)
+                frappe.db.commit()
             except Exception as e:
+                frappe.db.rollback(save_point=savepoint)
                 frappe.log_error(frappe.get_traceback(), "Daily Output Row {0} failed".format(row.idx))
                 _notify_daily_output_failure(doc, row, e)
                 frappe.db.set_value("Daily Output Item", row.name, "status", "Failed")
@@ -368,3 +375,5 @@ def background_process_all(doc_name):
         frappe.db.set_value("Daily Output Record", doc_name, "custom_process_status", "Failed")
         frappe.log_error(frappe.get_traceback(), "Daily Output Record {0} background processing failed".format(doc_name))
         _notify_daily_output_failure(doc, None, e)
+    finally:
+        frappe.flags.in_dor_batch = False

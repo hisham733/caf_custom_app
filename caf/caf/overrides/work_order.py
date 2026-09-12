@@ -469,7 +469,8 @@ def automate_start_finish(work_order_name, total_balance=0, total_pack_qty=0):
                 )
 
                 frappe.db.set_value("Work Order", work_order.name, "status", "In Process")
-                frappe.db.commit()
+                if not frappe.flags.get("in_dor_batch"):
+                    frappe.db.commit()
                 work_order.reload()
 
         # --- STEP 2: FINISH / Manufacture ---
@@ -493,7 +494,8 @@ def automate_start_finish(work_order_name, total_balance=0, total_pack_qty=0):
             )
 
             frappe.db.set_value("Work Order", work_order.name, "status", "Completed")
-            frappe.db.commit()
+            if not frappe.flags.get("in_dor_batch"):
+                frappe.db.commit()
 
         else:
             frappe.msgprint(
@@ -674,6 +676,7 @@ def get_item_warehouse_qty(item_code, warehouse):
 
 @frappe.whitelist()
 def create_recook_stock_entry_backend(work_order_name, qty, source_warehouse, auto_submit=1):
+    savepoint = None
     try:
         # 1. Validate Work Order
         if not frappe.db.exists("Work Order", work_order_name):
@@ -756,6 +759,8 @@ def create_recook_stock_entry_backend(work_order_name, qty, source_warehouse, au
             "t_warehouse": wo.wip_warehouse,
         })
 
+        savepoint = "recook_se"
+        frappe.db.savepoint(savepoint)
         se.insert(ignore_permissions=True)
         se_name = se.name
 
@@ -799,7 +804,8 @@ def create_recook_stock_entry_backend(work_order_name, qty, source_warehouse, au
             }
 
     except Exception as e:
-        frappe.db.rollback()
+        if savepoint:
+            frappe.db.rollback(save_point=savepoint)
         frappe.log_error(frappe.get_traceback(), "Recook SE Creation Failed")
         return {"success": False, "message": _("Unexpected Error: {0}").format(str(e))}
 
