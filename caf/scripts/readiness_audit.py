@@ -381,12 +381,74 @@ def check_self_service_attendance():
                 "; ".join(bits) or "no auto-attendance, no create, nobody holds ESS")
 
 
+def check_ingress_connection():
+    """🔴 Can this site actually reach the Ingress machine? Added 2026-09-12.
+
+    WHY THIS EXISTS, and it is a measured failure rather than a precaution.
+    ------------------------------------------------------------------------
+    The Ingress import stopped working on **2026-09-01** and nobody noticed for
+    **eleven days**. Thirteen `Ingress Import Batch` records, every one `Failed`,
+    and the last success was `INGB-2026-00117` on 18 August. The only trace was a
+    pile of Failed rows in a list nobody opens.
+
+    🔴 AND PRODUCTION INHERITS THE SAME BLIND SPOT, for a good reason.
+    `Ingress Sync Settings` is deliberately NOT a fixture — a database password
+    must never be committed to git — so prod-test is built with the host, user
+    and password **empty**, and the first import there fails exactly as
+    invisibly. The credentials are a go-live STEP that nothing currently checks.
+
+    ⚠️ The 16:00 reminder (`ingress.reminder.daily_import_check`) does ask "is
+    there a completed batch covering yesterday?" and emails HR when there is not
+    — but it is a scheduled job, and **the scheduler is off in developer mode**,
+    which is why it stayed silent here. This check needs no scheduler: it runs
+    inside the audit everybody already runs before go-live.
+
+    ⚠️ Unreachable is a NORMAL state, not a fault — "Natalie" is a desktop that
+    sleeps (§6.5 blocker 7). So an unreachable machine is a **WARN**; settings
+    that are not filled in at all are a **BLOCK**, because that is a migration
+    step somebody forgot rather than a PC that is asleep.
+    """
+    try:
+        s = frappe.get_doc("Ingress Sync Settings")
+    except Exception as e:
+        return _row("BLOCK", "Ingress connection", 1,
+                    f"Ingress Sync Settings unreadable: {str(e)[:90]}")
+
+    if (s.source_mode or "") == "Snapshot CSV":
+        return _row("note", "Ingress connection", 0,
+                    f"reading a snapshot ({s.snapshot_path}), not the machine — "
+                    f"fine for testing, never for production")
+
+    missing = [f for f in ("host", "port", "db_name", "db_user") if not s.get(f)]
+    if not (s.get_password("db_password", raise_exception=False) or ""):
+        missing.append("db_password")
+    if missing:
+        return _row("BLOCK", "Ingress connection", len(missing),
+                    f"not configured: {', '.join(missing)} — the importer will "
+                    f"fail on every run, and only a Failed batch record will say so")
+
+    from caf.caf.doctype.ingress_sync_settings.ingress_sync_settings import (
+        test_connection)
+
+    res = test_connection() or {}
+    if res.get("ok"):
+        return _row("ok", "Ingress connection", 0, str(res.get("detail"))[:150])
+
+    detail = str(res.get("detail") or "refused")[:150]
+    # Access denied is a CREDENTIAL problem and will never fix itself; a timeout
+    # or a refused socket is usually just the desktop asleep.
+    credential = "denied" in detail.lower() or "1045" in detail
+    return _row("BLOCK" if credential else "WARN", "Ingress connection", 1,
+                detail + ("  ← credentials, not the PC being asleep"
+                          if credential else "  (a sleeping desktop reads like this)"))
+
+
 CHECKS = [check_naming, check_default_shift, check_holiday_list, check_shift_lists,
           check_alt_pairs, check_manager_logins, check_attendance_device,
           check_org_chart, check_org_tree_sync,
           check_approver_matches_manager, check_leave_period,
           check_next_year_holidays, check_missing_mc, check_missing_annual,
-          check_self_service_attendance]
+          check_self_service_attendance, check_ingress_connection]
 
 
 def audit():

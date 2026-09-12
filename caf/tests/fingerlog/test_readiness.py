@@ -86,6 +86,34 @@ def run():
               f"{mc['count'] if mc else '?'} holding leave with no medical "
               f"entitlement — the one the HR document still names")
 
+        # --------------------------------------------------------- RDY-INGRESS
+        # 🔴 Added 2026-09-12, after the import failed for ELEVEN DAYS unnoticed:
+        # thirteen `Ingress Import Batch` records, every one Failed, last success
+        # 18 August. The only trace was a list nobody opens.
+        #
+        # This asserts the check is PRESENT and classifies correctly, because the
+        # classification is the whole value:
+        #
+        #   settings empty            -> BLOCK  a go-live step somebody forgot
+        #   access denied / 1045      -> BLOCK  credentials; it will never self-heal
+        #   timeout / refused socket  -> WARN   "Natalie" is a desktop that sleeps,
+        #                                       which is a NORMAL state (§6.5)
+        #
+        # ⚠️ It deliberately does NOT require a live connection — that would make
+        # the suite fail whenever the office PC is asleep, which is most of the
+        # time, and a suite that is red for a normal condition gets ignored.
+        ing = by_name(base, "Ingress connection")
+        sleeping = ing and ing["severity"] == "WARN"
+        connected = ing and ing["severity"] == "ok"
+        credentials = ing and ing["severity"] == "BLOCK"
+        check("RDY-INGRESS", bool(ing) and (sleeping or connected or credentials),
+              f"the audit carries an Ingress connection row and classifies it: "
+              f"{ing['severity'] if ing else 'MISSING'} — "
+              f"{(ing['detail'] if ing else 'the check is not in CHECKS at all')[:110]}. "
+              f"⚠️ WARN is expected when the PC is asleep; BLOCK means credentials "
+              f"or an unconfigured doctype, and prod-test starts UNCONFIGURED "
+              f"because the password is deliberately not a fixture")
+
         # -------------------------------------------------------- RDY-SEVERITY
         # 🔴 The distinction that keeps the list readable. 8 people have MC and
         # no Annual, which for a new joiner may be correct; 2 have Annual and no
