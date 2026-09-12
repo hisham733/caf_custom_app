@@ -15,6 +15,7 @@ override_doctype_class = {
     "Quality Review": "caf.caf.overrides.quality_review.CustomQualityReview",
     "BOM": "caf.caf.overrides.bom.CustomBOM",
     "Purchase Receipt": "caf.caf.overrides.purchase_receipt.CustomPurchaseReceipt",
+    "Training Result": "caf.caf.overrides.training_result.CustomTrainingResult",
 }
 doctype_js = {
     "Job Card": "public/js/job_card.js",
@@ -26,7 +27,8 @@ doctype_js = {
     "BOM":"public/js/bom.js",
     "Purchase Receipt":"public/js/purchase_receipt.js",
     "Material Request":"public/js/material_request.js",
-    "Task":"public/js/task.js"
+    "Task":"public/js/task.js",
+    "Training Result": "public/js/training_result.js"
 }
 calendars = ["Meeting Room Reservation"]
 override_whitelisted_methods = {
@@ -519,10 +521,19 @@ doc_events = {
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
 
-after_migrate = ["caf.setup.add_manufacturing_fields"]
+# after_migrate = ["caf.setup.add_manufacturing_fields"]
 
 # Fixtures
 fixtures = [
     {"dt": "Property Setter"},
     {"dt": "Custom Field"},
+    {"dt": "Workflow", "filters": [["name", "=", "Training Result"]]},
+    {
+        "dt": "Workflow State",
+        "filters": [["name", "in", ["Draft", "Submitted", "Approved", "Rejected"]]],
+    },
+    {
+        "dt": "Workflow Action Master",
+        "filters": [["name", "in", ["Submit", "Approve", "Reject"]]],
+    },
 ]
