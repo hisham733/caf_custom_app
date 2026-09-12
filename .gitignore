@@ -48,3 +48,7 @@ caf/caf/doctype/procedure_table/procedure_table.json
 /BOM_QTY_CHANGE_PLAN.md
 /caf_server_vs_build_COMPARISON.md
 caf/caf/doctype/caf_settings/test_caf_settings.py
+
+# Throwaway probes (caf/scratch). The package __init__ is tracked; nothing else is.
+caf/scratch/*
+!caf/scratch/__init__.py
