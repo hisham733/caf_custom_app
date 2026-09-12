@@ -94,6 +94,38 @@ ISO_DAYS = {
     "clean":       "2026-06-16",   # nothing wrong: the control. It must SUBMIT
 }
 
+# ── L2, appended 2026-09-12 ────────────────────────────────────────────────
+# ⭐ APPENDED, NOT EDITED — MG's contract for this file. L1's days above are
+# untouched, so a playbook confirmed against them still means what it meant.
+#
+# Both days are clean logs with NO overtime: L2 is about LEAVE, and an OT rung
+# firing first (measured in L1: it fires before everything) would stop the climb
+# before it reached the thing being tested.
+#
+# ⚠️ Dates chosen the same way as L1's — a Workday for this employee, with no
+# pre-existing OT Approval, Attendance or leave. 06-04/05/10/22/23/24/25 all
+# carry real approvals for him and are avoided.
+# 🔴 CORRECTED WITHIN THE SAME SESSION, BEFORE ANY RUNG WAS CONFIRMED AGAINST IT
+# — so the "append, never edit" contract is intact; nothing downstream had yet
+# been proved against the first shape.
+#
+# The first version made `late_over_submitted` an ORDINARY worked day. Stock
+# then refused the late leave outright:
+#
+#     AttendanceAlreadyMarkedError: Attendance for employee HR-EMP-00045 is
+#     already marked for the following dates: 19-06-2026
+#
+# ⭐ Because `validate_attendance()` in hrms filters on **status in (Present,
+# Work From Home)**. An **Absent** row is not refused — it is silently
+# reconciled, and THAT is the shape T-44 is about. So the day a late leave lands
+# on must be an ABSENT day, and the Present case becomes a rung of its own,
+# because its refusal is something HR will meet.
+L2_DAYS = {
+    "late_over_absent":    "2026-06-19",  # submitted, nobody came -> Absent
+    "late_over_present":   "2026-06-26",  # submitted, worked      -> Present
+    "late_over_draft":     "2026-06-18",  # never submitted        -> no row
+}
+
 # The cast, by DEVICE ID (T-32 — `HR-EMP-xxxxx` is a per-site counter and is a
 # different person on production). Measured 2026-09-12: of 70 active employees on
 # an OT-allowing shift, exactly **4** are also clear of Finger Logs, Attendance
@@ -146,7 +178,7 @@ def _shift_of(emp):
 NO_PUNCH = "00:00:00"
 
 
-def _log(emp, date, ot=0, missing_punch=False):
+def _log(emp, date, ot=0, missing_punch=False, absent=False):
     """One DRAFT Finger Log. Never submitted here — climbing is the playbook's job.
 
     🔴 "NO PUNCH" IS `"00:00:00"`, NEVER `None`. MEASURED THE HARD WAY 2026-09-12.
@@ -177,6 +209,15 @@ def _log(emp, date, ot=0, missing_punch=False):
 
     punches = {"time_in": "08:00:00", "break": "12:00:00",
                "resume": "13:00:00", "out": "20:00:00"}
+
+    if absent:
+        # ⭐ THE ABSENT ROW: nobody punched at all. It is **complete by absence**
+        # — `is_all_zero()` returns early from `missing_punches()`, so it is NOT
+        # "not a full day"; it is the observation that he did not come, and it is
+        # what FBR37 counts as unexplained absence. It submits cleanly and writes
+        # Attendance `Absent` carrying `caf_finger_log` — which is the exact
+        # starting state T-44 is about.
+        punches = dict.fromkeys(punches, NO_PUNCH)
 
     if missing_punch:
         _day, shift = resolve_day_type(emp, date)
@@ -260,7 +301,7 @@ def _leave(emp, date):
 
 # ── what this module OWNS, and nothing else ─────────────────────────────────
 def _owned_dates():
-    return [LADDER_DAY] + sorted(ISO_DAYS.values())
+    return [LADDER_DAY] + sorted(ISO_DAYS.values()) + sorted(L2_DAYS.values())
 
 
 def _ot_approvals(emp, dates):
@@ -361,6 +402,7 @@ def report():
         print(f"\n  {'date':<12}{'day type':<11}{'pre-existing on it':<22}rung")
         labels = {LADDER_DAY: "LADDER DAY (all faults)"}
         labels.update({v: k for k, v in ISO_DAYS.items()})
+        labels.update({v: f"L2 · {k}" for k, v in L2_DAYS.items()})
         for date in _owned_dates():
             day_type, _shift = resolve_day_type(emp, date)
             prior = []
@@ -547,6 +589,33 @@ def seed():
         l6 = _log(emp, ISO_DAYS["clean"])
         made.append(f"Finger Log {l6.name} — the CONTROL: nothing wrong with it")
 
+        # ── L2 — the leave ladder ──────────────────────────────────────────
+        # 🔴 One of these is SUBMITTED here on purpose. L2's whole question is
+        # what a late leave does to a day the clock has ALREADY decided, and a
+        # draft cannot answer it. No OT on either: L1 measured that the OT guard
+        # fires first, so overtime would stop the climb short of the leave rules.
+        def _submit_and_report(date, label, **kw):
+            log = _log(emp, date, **kw)
+            log.submit()
+            att = frappe.db.get_value(
+                "Attendance", {"employee": emp, "attendance_date": date,
+                               "docstatus": 1},
+                ["name", "status", "caf_finger_log"], as_dict=True)
+            made.append(f"Finger Log {log.name} SUBMITTED -> Attendance "
+                        f"{att and att.name} ({att and att.status}, "
+                        f"caf_finger_log={att and att.caf_finger_log}) — {label}")
+
+        _submit_and_report(L2_DAYS["late_over_absent"], absent=True,
+                           label="L2: nobody came. A late leave RECONCILES this "
+                                 "row — T-44 lives here")
+        _submit_and_report(L2_DAYS["late_over_present"],
+                           label="L2: he worked. A late leave is REFUSED over "
+                                 "this row by stock")
+
+        l8 = _log(emp, L2_DAYS["late_over_draft"])
+        made.append(f"Finger Log {l8.name} left as a DRAFT — the third order: "
+                    f"the leave gets there first")
+
         frappe.db.commit()
         print("=" * 74)
         print(f"chain.dataset — SEEDED for {emp} in {MONTH}")
@@ -619,13 +688,19 @@ def verify():
             ISO_DAYS["held"]: "missing lunch-IN",
             ISO_DAYS["leave_clash"]: "approved leave owns the day",
             ISO_DAYS["clean"]: "nothing wrong — must SUBMIT",
+            L2_DAYS["late_over_draft"]: "L2 — leave gets there first (draft log)",
+            L2_DAYS["late_over_absent"]:
+                "L2 — ABSENT day + late leave: reconciled (T-44 lives here)",
+            L2_DAYS["late_over_present"]:
+                "L2 — PRESENT day + late leave: stock REFUSES it",
         }
 
         print("=" * 74)
         print(f"chain.dataset — VERIFY · {emp} · {MONTH}")
         print("=" * 74)
-        print(f"  {'date':<12}{'docstatus':<11}{'held':<6}{'ot_in_hour':<12}"
-              f"{'leave':<8}what it is for")
+        print(f"  {'date':<12}{'FL ds':<7}{'held':<6}{'OT':<6}{'leave':<7}"
+              f"{'attendance (status / leave_type / caf_finger_log)':<50}"
+              f"what it is for")
         ok = True
         for date, why in sorted(expect.items()):
             fl = frappe.db.get_value(
@@ -639,8 +714,14 @@ def verify():
                 ok = False
                 print(f"  {date:<12}🔴 MISSING — run seed()")
                 continue
-            print(f"  {date:<12}{fl.docstatus:<11}{fl.caf_not_full_day:<6}"
-                  f"{fl.ot_in_hour or 0:<12}{'yes' if lv else '-':<8}{why}")
+            att = frappe.db.get_value(
+                "Attendance", {"employee": emp, "attendance_date": date,
+                               "docstatus": 1},
+                ["status", "leave_type", "caf_finger_log"], as_dict=True)
+            shown = (f"{att.status} / {att.leave_type or '-'} / "
+                     f"{att.caf_finger_log or '-'}") if att else "-"
+            print(f"  {date:<12}{fl.docstatus:<7}{fl.caf_not_full_day:<6}"
+                  f"{fl.ot_in_hour or 0:<6}{'yes' if lv else '-':<7}{shown:<50}{why}")
 
         roster = frappe.db.exists("Monthly Roster Confirmation",
                                   {"name": ("like", f"%{MONTH}%"), "docstatus": 1})
