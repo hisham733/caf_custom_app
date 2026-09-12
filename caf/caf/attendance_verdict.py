@@ -151,23 +151,91 @@ def create_attendance(doc):
     return att.name
 
 
+def leave_owns_the_day(row):
+    """Is this Attendance row owned by a leave that is STILL APPROVED?
+
+    🔴 ONE PREDICATE, TWO CALL SITES — and it exists because they disagreed.
+    `block_cancel_of_leave_owned_day` (the D-12 guard) asked this question;
+    `cancel_attendance` (the Finger Log cascade) did not ask it at all, and
+    switched the guard off instead. **T-44 is that gap**: measured 2026-09-12,
+    a programmatic cancel of a Finger Log took an approved leave's day with it
+    while the Leave Application stayed Approved.
+
+    `re_resolve.reconcile_attendance` has had the equivalent check in BOTH of its
+    branches since D-12 — *"a row carrying a leave_type was decided by a Leave
+    Application. Re-resolve must not touch it."* This makes the third sibling
+    agree with the other two.
+
+    ⚠️ The "still approved" clause is deliberate and is D-12's own: a STRAY row
+    left behind after a leave was cancelled must stay repairable, or the only
+    route to tidy it is closed too.
+
+    `row` may be a Document or any object with `leave_type` / `leave_application`.
+    """
+    la = row.get("leave_application") if hasattr(row, "get") else None
+    leave_type = row.get("leave_type") if hasattr(row, "get") else None
+    if not la and not leave_type:
+        return False                      # a plain day — corrections stay open
+    if not la:
+        return False                      # leave_type with no application: stray
+    return frappe.db.get_value("Leave Application", la, "docstatus") == 1
+
+
 def cancel_attendance(doc):
     """Cancel, never delete — Attendance is submittable and the trail must survive.
 
     Spec §6.6. Used when a Finger Log is cancelled, and by Chunk 4's re-resolve.
+
+    🔴 A LEAVE-OWNED DAY IS LEFT ALONE — fixed 2026-09-12, T-44.
+    ------------------------------------------------------------
+    This used to set `caf_skip_leave_guard = True` unconditionally, on the stated
+    assumption that *"FL-created rows carry no leave_type (FDR4)"*. **That
+    assumption is false**: when a late leave lands on a day whose Attendance is
+    `Absent`, stock reconciles **the same row** to `On Leave` and leaves
+    `caf_finger_log` in place. The row then carries both claims, and this
+    cascade — selecting on exactly that link — cancelled an approved leave's day
+    with nobody told.
+
+    ⚠️ **Measured both ways, 2026-09-12.** Through the DESK it never fired:
+    Frappe's *"Cancel All Documents"* cascade calls a plain `att.cancel()`, so
+    D-12 refused and the Finger Log stayed submitted. It fired only on the
+    PROGRAMMATIC route — `doc.cancel()` from re-resolve, the API or `bench` —
+    which is the one nobody watches.
+
+    ⭐ **Skips, never throws**, matching `re_resolve`'s *"left alone (leave)"*:
+    a bulk cancel over a month must not abort on one day that a leave owns.
+
+    🔴 **This does NOT close T-44 itself.** The row still carries `caf_finger_log`
+    AND `leave_type`, so `test_chunk3_decisions` FDR4 stays red. Whether the link
+    should be CLEARED when leave takes the day is a design decision about which
+    source owns a day, and it is MG's.
     """
-    cancelled = []
-    for row in frappe.get_all("Attendance",
-                              filters={"caf_finger_log": doc.name, "docstatus": 1},
-                              fields=["name"]):
+    cancelled, left_alone = [], []
+    for row in frappe.get_all(
+            "Attendance",
+            filters={"caf_finger_log": doc.name, "docstatus": 1},
+            fields=["name", "leave_type", "leave_application"]):
+        if leave_owns_the_day(row):
+            left_alone.append((row.name, row.leave_application))
+            continue
         att = frappe.get_doc("Attendance", row.name)
         att.flags.ignore_permissions = True
-        # D-12 (2026-08-15) — this is a machine cancel (FL cascade); the
-        # leave-owned guard must not fire on it. FL-created rows carry no
-        # leave_type (FDR4), but the flag keeps the cascade immune regardless.
+        # D-12 — a machine cancel of a day this Finger Log genuinely decided.
+        # The guard would otherwise refuse a plain-day correction.
         att.flags.caf_skip_leave_guard = True
         att.cancel()
         cancelled.append(row.name)
+
+    if left_alone:
+        # Silence is what made T-44 dangerous. Say it where a person can see it.
+        frappe.msgprint(
+            _("{0} was cancelled, but {1} for that day is owned by an approved "
+              "leave ({2}) and has been left standing. Cancel the leave "
+              "application if the day should go back to what was punched."
+              ).format(frappe.bold(doc.name),
+                       frappe.bold(", ".join(n for n, _la in left_alone)),
+                       ", ".join(la for _n, la in left_alone)),
+            title=_("The leave keeps its day"), indicator="orange")
     return cancelled
 
 
@@ -185,13 +253,14 @@ def block_cancel_of_leave_owned_day(doc, method=None):
     if doc.flags.caf_skip_leave_guard:
         return
 
+    # ⭐ The same predicate `cancel_attendance` now asks (2026-09-12, T-44). The
+    # two used to disagree, and the disagreement was the hole: this one asked,
+    # the cascade did not. It covers both earlier clauses — a plain day, and a
+    # stray row whose leave has since been cancelled, both stay correctable.
+    if not leave_owns_the_day(doc):
+        return
+
     la = doc.get("leave_application")
-    if not la and not doc.get("leave_type"):
-        return  # not a leave-owned row — plain-day corrections stay open
-
-    if not la or frappe.db.get_value("Leave Application", la, "docstatus") != 1:
-        return  # stray row after a leave cancel — the repair route stays open
-
     frappe.throw(
         _("Attendance {0} belongs to Leave Application {1}, which is still approved. "
           "Cancel the leave application instead - it restores the day from its "
