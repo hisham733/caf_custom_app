@@ -826,7 +826,7 @@
         "working_hours_threshold_for_absent": 0.0,
         "working_hours_threshold_for_half_day": 0.0
       },
-      "label": "8-5 Alt Sat 1st-3rd",
+      "label": "8-5 Alt Sat A",
       "mirror_code": "ALTSAT_85_B"
     },
     {
@@ -865,7 +865,7 @@
         "working_hours_threshold_for_absent": 0.0,
         "working_hours_threshold_for_half_day": 0.0
       },
-      "label": "8-5 Alt Sat 2nd-4th",
+      "label": "8-5 Alt Sat B",
       "mirror_code": "ALTSAT_85_A"
     },
     {
@@ -943,7 +943,7 @@
         "working_hours_threshold_for_absent": 0.0,
         "working_hours_threshold_for_half_day": 0.0
       },
-      "label": "8:30am Alt Sat 1st-3rd",
+      "label": "8:30am Alt Sat A",
       "mirror_code": "ALTSAT_830_B"
     },
     {
@@ -982,7 +982,7 @@
         "working_hours_threshold_for_absent": 0.0,
         "working_hours_threshold_for_half_day": 0.0
       },
-      "label": "8:30am Alt Sat 2nd-4th",
+      "label": "8:30am Alt Sat B",
       "mirror_code": "ALTSAT_830_A"
     },
     {

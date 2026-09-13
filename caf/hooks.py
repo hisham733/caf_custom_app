@@ -623,9 +623,12 @@ doc_events = {
     # the alternate-Saturday calendars with it, or the sequence "runs away" —
     # OD-71's hazard. Measured (§6.13a): only a SATURDAY holiday moves the
     # sequence, and it flips every Saturday after it to year end, reversibly.
-    # ⚠️ The handler repoints Shift Types deliberately: a flip can swing the
-    # list's own NAME between `1st-3rd` and `2nd-4th`, and a shift left on the old
-    # name would silently receive its MIRROR's calendar.
+    # ⚠️ The handler repoints Shift Types deliberately, so the year in play is
+    # always the list they hold. It used to be described as a NAME trap — a flip
+    # swinging the list between `1st-3rd` and `2nd-4th` — but the repoint is keyed
+    # on the anchor, so no shift could ever reach its mirror's calendar. T-47
+    # retired the swinging names on 2026-09-13; the letters come from
+    # `caf_shift_code` now.
     "Holiday List": {
         "on_update": "caf.caf.holiday_lists.on_public_holidays_changed",
     },

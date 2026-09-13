@@ -23,10 +23,10 @@ import frappe
 from caf.caf import shift_swap
 
 # Group A rests 1st+3rd, group B rests 2nd+4th — HR's split, confirmed 2026-08-12.
-A1 = "HR-EMP-00003"        # Too Poh Chin      — 8:30am Alt Sat 1st-3rd
-A2 = "HR-EMP-00005"        # Nur Najwa         — 8:30am Alt Sat 1st-3rd
-B1 = "HR-EMP-00004"        # Afiza             — 8:30am Alt Sat 2nd-4th
-PROD = "HR-EMP-00042"      # Nur Ezzatul       — 8-5 Alt Sat 2nd-4th (other family)
+A1 = "HR-EMP-00003"        # Too Poh Chin      — 8:30am Alt Sat A
+A2 = "HR-EMP-00005"        # Nur Najwa         — 8:30am Alt Sat A
+B1 = "HR-EMP-00004"        # Afiza             — 8:30am Alt Sat B
+PROD = "HR-EMP-00042"      # Nur Ezzatul       — 8-5 Alt Sat B (other family)
 PLAIN = "HR-EMP-00016"     # 8am Schedule      — not an alternating shift at all
 
 D_SAT = "2026-06-13"       # a June Saturday, clear of AWAL MUHARRAM (§F1c)

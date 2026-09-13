@@ -37,8 +37,8 @@ import frappe
 
 from caf.caf import shift_swap
 
-ALT_A = "HR-EMP-00009"       # Seow Zi Ying — 8:30am Alt Sat 1st-3rd
-ALT_B = "HR-EMP-00010"       # Hazwani      — 8:30am Alt Sat 2nd-4th (her mirror)
+ALT_A = "HR-EMP-00009"       # Seow Zi Ying — 8:30am Alt Sat A
+ALT_B = "HR-EMP-00010"       # Hazwani      — 8:30am Alt Sat B (her mirror)
 
 L_FROM, L_TO = "2026-06-08", "2026-06-12"     # Mon–Fri
 D_MID = "2026-06-10"                          # Wednesday, inside the leave

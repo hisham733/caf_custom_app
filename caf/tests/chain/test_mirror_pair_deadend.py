@@ -17,8 +17,8 @@ frozen** — that is OD-89, and the rule is correct while the outcome is impossi
 MG, 2026-09-13: *"dont understand"* — so, concretely:
 
     both halves have a 60-minute lunch. HR wants 45.
-      save the 1st-3rd half with 45  ->  REFUSED, "2nd-4th still has 60"
-      save the 2nd-4th half with 45  ->  REFUSED, "1st-3rd still has 60"
+      save the A half with 45  ->  REFUSED, "B still has 60"
+      save the B half with 45  ->  REFUSED, "A still has 60"
       …and there is no third move.
 
 **This suite asserts the dead end rather than routing around it.** A rule that is

@@ -56,8 +56,8 @@ import frappe
 from caf.caf import shift_swap
 from caf.caf.shift_resolution import resolve_day_type
 
-A = "HR-EMP-00009"          # Seow Zi Ying — 8:30am Alt Sat 1st-3rd
-B = "HR-EMP-00010"          # Hazwani      — 8:30am Alt Sat 2nd-4th (her mirror)
+A = "HR-EMP-00009"          # Seow Zi Ying — 8:30am Alt Sat A
+B = "HR-EMP-00010"          # Hazwani      — 8:30am Alt Sat B (her mirror)
 
 SAT = "2026-09-05"          # A rests it, B works it
 FROM = "2026-08-31"         # Mon .. Sat = 6 calendar days; 31 Aug is Merdeka Day

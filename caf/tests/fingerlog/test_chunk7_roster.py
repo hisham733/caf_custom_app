@@ -36,8 +36,8 @@ from caf.caf.shift_resolution import by_code
 
 # Deliberately NOT the employees the other alt-Saturday suites use (00003 /
 # 00004 / 00005 / 00042), so a failure here is about this screen.
-ALT_A = "HR-EMP-00009"       # Seow Zi Ying   — 8:30am Alt Sat 1st-3rd
-ALT_B = "HR-EMP-00010"       # Hazwani        — 8:30am Alt Sat 2nd-4th
+ALT_A = "HR-EMP-00009"       # Seow Zi Ying   — 8:30am Alt Sat A
+ALT_B = "HR-EMP-00010"       # Hazwani        — 8:30am Alt Sat B
 PLAIN = "HR-EMP-00020"       # Chan Wai Khong — 8am Schedule, not alternating
 
 EMP_USER = "seriramulu@caffood.com"          # role Employee
@@ -453,7 +453,7 @@ def run():
             # ⚠️ NOT a failure — the FIXTURE has gone, not the behaviour.
             #
             # This branch went red on 2026-09-07 when Noor Arifah moved from
-            # `8-5 Alt Sat 2nd-4th` to `1st-3rd` (MG's instruction), splitting
+            # `8-5 Alt Sat B` to `8-5 Alt Sat A` (MG's instruction), splitting
             # that pair from 0/2 into 1/1. There is now no 2-person group resting
             # on this date, so the "weak evidence" label has nothing to label.
             #

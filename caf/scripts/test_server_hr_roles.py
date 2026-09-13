@@ -42,8 +42,8 @@ TEST_PASSWORD = "abc@123"
 TEST_CAST = {
     # ── office chain — LEAVE, appraisal, alternate-Saturday ──
     "too@caffood.com": "Too Poh Chin (HR-EMP-00003) — SUPERVISOR of the three below",
-    "wawa@caffood.com": "Nur Najwa Farhana (HR-EMP-00005) — alt-Sat 1st-3rd",
-    "farah@caffood.com": "Nurfarahayu (HR-EMP-00007) — alt-Sat 2nd-4th; ABSENT 9+10 Jul",
+    "wawa@caffood.com": "Nur Najwa Farhana (HR-EMP-00005) — alt-Sat A",
+    "farah@caffood.com": "Nurfarahayu (HR-EMP-00007) — alt-Sat B; ABSENT 9+10 Jul",
     "seow@caffood.com": "Seow Zi Ying (HR-EMP-00009) — 3 allocations",
     # ── production chain — OVERTIME and final OT ──
     "production1@caffood.com": "Ow Yong Nin Geet (HR-EMP-00008) — PRODUCTION MANAGER, "

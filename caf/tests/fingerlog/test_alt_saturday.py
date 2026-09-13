@@ -168,9 +168,9 @@ def run():
         # The idempotency claim does not need the repoint: it is about the LIST
         # CONTENT being stable across regenerations. Repointing is asserted
         # separately below, and put back.
-        before_rows = frappe.db.count("Holiday", {"parent": "CAF Alt Sat 1st-3rd 2026"})
+        before_rows = frappe.db.count("Holiday", {"parent": "CAF Alt Sat A 2026"})
         holiday_lists.generate_holiday_lists(2026, repoint=False)
-        after_rows = frappe.db.count("Holiday", {"parent": "CAF Alt Sat 1st-3rd 2026"})
+        after_rows = frappe.db.count("Holiday", {"parent": "CAF Alt Sat A 2026"})
         check("ALT-IDEM", before_rows == after_rows and before_rows > 0,
               f"regenerating is stable: {before_rows} rows ➜ {after_rows}. "
               f"January's re-run must not shift anybody's Saturdays")
@@ -366,10 +366,11 @@ def hook_tests():
               f"the first on {first} — on or after the holiday, never before it")
 
         # -------------------------------------------------- ALT-HOOK-POINT 🔴
-        # The trap. `alt_label()` names the list from the first rest Saturday, so
-        # a flip can swing it 1st-3rd <-> 2nd-4th. A shift left on the old name
-        # would silently receive its MIRROR's calendar — work and rest inverted
-        # for every employee on it, for the rest of the year, raising nothing.
+        # ✅ The trap this guarded is gone (2026-09-13, T-47): `alt_label()` used
+        # to name the list from the first rest Saturday, so a flip could swing it
+        # `1st-3rd` <-> `2nd-4th`. It now reads `caf_shift_code`, which a calendar
+        # cannot move. The assertion stays — it is the one that proves the
+        # repoint and FDR6's flow-down survive a regeneration at all.
         stale = [s for s, lst in sat_pointers.items()
                  if not frappe.db.exists("Holiday List", lst)]
         emp_bad = frappe.get_all(

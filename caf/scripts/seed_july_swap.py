@@ -9,10 +9,10 @@ derived:
 
                        04 Jul   11 Jul   18 Jul   25 Jul
     GROUP A  Too Poh     ---      IN       IN      ---     <- off pattern
-    1st-3rd  Najwa        IN     ---       IN      ---
+    Alt Sat A  Najwa      IN     ---       IN      ---
              Seow         IN     ---       IN      ---
     GROUP B  Afiza       ---      IN      ---       IN
-    2nd-4th  Nurfarahayu  IN     ---      ---       IN     <- off pattern
+    Alt Sat B  Nurfarahayu IN    ---      ---       IN     <- off pattern
              Hazwani     ---      IN      ---       IN
 
 Group A works the 4th and 18th, group B the 11th and 25th — a clean alternation,
@@ -48,8 +48,8 @@ from caf.caf import shift_swap
 
 # Both are on the 8:30am family, on opposite mirrors, so `plan()` reads Swap
 # from `caf_sat_mirror` without being told.
-A = "HR-EMP-00003"          # Too Poh Chin    — 8:30am Alt Sat 1st-3rd
-B = "HR-EMP-00007"          # Nurfarahayu     — 8:30am Alt Sat 2nd-4th
+A = "HR-EMP-00003"          # Too Poh Chin    — 8:30am Alt Sat A
+B = "HR-EMP-00007"          # Nurfarahayu     — 8:30am Alt Sat B
 DATES = ["2026-07-04", "2026-07-11"]
 
 

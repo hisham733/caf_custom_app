@@ -10,7 +10,7 @@ production as here.
 
 WHY THIS EXISTS
 ---------------
-MG, 2026-09-07: *"8-5 Alt Sat 1st-3rd — move Noor Arifah Binti Ibrahim into this
+MG, 2026-09-07: *"8-5 Alt Sat A — move Noor Arifah Binti Ibrahim into this
 shift_type."*
 
 It exists as a script rather than as two clicks because **a permanent shift move

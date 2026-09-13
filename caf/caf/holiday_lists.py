@@ -230,21 +230,51 @@ def alt_saturday_rest_days(year: int, anchor_date, anchor_rests: bool) -> set:
     return rest
 
 
-def alt_label(rest_saturdays: set) -> str:
-    """'1st-3rd' or '2nd-4th', from the first Saturday the pattern rests on.
+def alt_label(owners, anchor_date=None, anchor_rests=None) -> str:
+    """'Alt Sat A' or 'Alt Sat B', from the group's own `caf_shift_code`.
 
-    ⚠️ NOMINAL, and deliberately so. MG's decision: the numbers name the Saturdays
-    the shift **RESTS** on — matching production's own `Alternate First Saturday
-    Off` lists, so the two systems cannot invert against each other. But after the
-    year's first Saturday public holiday the label stops being literally true,
-    which is exactly why `caf_sat_mirror` and `caf_shift_code` are what the code
-    reads and the name is documentation only.
+    🔴 REWRITTEN 2026-09-13 — T-47, MG's Decision §1. The old label was
+    `1st-3rd` / `2nd-4th`, read from the first Saturday the pattern RESTS on, to
+    match production's own `Alternate First/Second Saturday Off` lists. Two
+    things killed it:
+
+        · it SWINGS. One Saturday public holiday flips every Saturday after it,
+          so the first rest Saturday moves and the label follows. **2027 already
+          contradicts 2026 on this site** — `8:30am Alt Sat 2nd-4th` generates
+          `CAF Alt Sat 1st-3rd 2027`. Nothing is mis-pointed (the group key is
+          the ANCHOR, not the name), but a human reading the two names together
+          is told a lie, and the register's own §6.13a warning was written in
+          that belief.
+        · the thing it was matching is NOMINAL TOO. Framework §1: production's
+          `Alternate First/Second Saturday Off 2026` are **~55% wrong** against
+          what Ingress recorded. Agreeing with them buys nothing.
+
+    ⭐ So the letter comes from `caf_shift_code` (`ALTSAT_85_A` -> `A`), which is
+    the one identity on the shift that **no calendar operation can rewrite**.
+    `caf_sat_anchor` cannot be used: the documented re-anchor habit is *"set each
+    half's side from what actually happened"*, so moving the anchor one Saturday
+    flips Work/Rest — a label derived from it would swing exactly like the old
+    one. The code is assigned by a human, once.
+
+    ⚠️ Every shift in a group shares an anchor and a side, so their codes must
+    end in the same letter. If they disagree — or carry no code — the fallback
+    names the anchor, which is unique per group by construction.
     """
-    if not rest_saturdays:
-        return "Alt Sat"
-    first = min(rest_saturdays)
-    nth = (first.day - 1) // 7 + 1
-    return "Alt Sat 1st-3rd" if nth % 2 else "Alt Sat 2nd-4th"
+    letters = set()
+    for shift in owners or []:
+        code = frappe.db.get_value("Shift Type", shift, "caf_shift_code") or ""
+        tail = code.rsplit("_", 1)[-1]
+        if len(tail) == 1 and tail.isalpha():
+            letters.add(tail.upper())
+
+    if len(letters) == 1:
+        return "Alt Sat %s" % letters.pop()
+
+    # No usable code, or a group whose codes disagree. Never fall back to
+    # something two groups could share — that would write two different
+    # calendars to one Holiday List, which is the accident T-47 was about.
+    side = "rest" if anchor_rests else "work"
+    return "Alt Sat %s-%s" % (anchor_date, side) if anchor_date else "Alt Sat"
 
 
 def _write_list(name: str, year: int, rows: list):
@@ -282,7 +312,22 @@ def generate_holiday_lists(year: int, repoint: bool = True,
     ph_dates = {r["holiday_date"] for r in public}
 
     if rewrite_public:
-        _write_list(PH_LIST.format(year=year), year, list(public))
+        # 🔴 THIS SAVE COMES BACK ROUND. `CAF Public Holidays <year>`.on_update is
+        # `on_public_holidays_changed`, which regenerates the same year with
+        # **repoint=True** — overriding whatever `repoint` this call was given.
+        # In `regenerate(years="2026,2027", current_year=2026)` that pointed every
+        # live Shift Type at the 2027 calendar, because 2027 was generated last;
+        # `Employee.holiday_list` follows, and stock then reads a calendar in which
+        # no 2026 date is a holiday. Measured 2026-09-13, not theorised.
+        # ⭐ Claim the flag so the hook knows this write is ours. The desk path is
+        # unaffected: it enters the hook first, sets the flag itself, and passes
+        # rewrite_public=False so it never reaches here.
+        was = frappe.flags.get("caf_regenerating")
+        frappe.flags.caf_regenerating = True
+        try:
+            _write_list(PH_LIST.format(year=year), year, list(public))
+        finally:
+            frappe.flags.caf_regenerating = was
 
     ph_desc = {r["holiday_date"]: r["description"] for r in public}
 
@@ -308,17 +353,27 @@ def generate_holiday_lists(year: int, repoint: bool = True,
             key = ("plain", working_week(s))
         groups.setdefault(key, []).append(s.name)
 
-    made = {}
+    made, claimed_by = {}, {}
     for key, owners in sorted(groups.items(), key=lambda kv: str(kv[0])):
         pattern = key[1]
         if key[0] == "alt":
             rest_saturdays = alt_saturday_rest_days(year, key[2], key[3])
-            label = alt_label(rest_saturdays)
+            label = alt_label(owners, key[2], key[3])
         else:
             rest_saturdays = None
             label = pattern_label(pattern)
 
         name = PATTERN_LIST.format(label=label, year=year)
+
+        # 🔴 Two groups must never land on one list name — that writes two
+        # different calendars to one document and the second silently wins.
+        if label in claimed_by:
+            frappe.throw(
+                f"Two shift groups both want the Holiday List '{name}': "
+                f"{claimed_by[label]} and {owners}. They have different "
+                f"working weeks or anchors, so they need different calendars. "
+                f"Give each group a distinct caf_shift_code suffix "
+                f"(…_A, …_B) and run this again.")
 
         rows = []
         for d in _dates_in_year(year):
@@ -345,10 +400,19 @@ def generate_holiday_lists(year: int, repoint: bool = True,
 
         _write_list(name, year, rows)
         made[label] = name
+        claimed_by[label] = owners
 
         if repoint:
             for shift in owners:
                 frappe.db.set_value("Shift Type", shift, "holiday_list", name)
+
+    # FDR6 — a shift's list is nothing until it reaches the employee, which is
+    # what every stock function actually reads. This used to happen only because
+    # the public-holiday save bounced back through `on_public_holidays_changed`;
+    # that re-entry is now suppressed (see the flag above), so the flow-down is
+    # done here, where the repoint that needs it happens.
+    if repoint:
+        sync_employee_holiday_lists(year)
 
     return made
 
@@ -513,12 +577,19 @@ def on_public_holidays_changed(doc, method=None):
           Measured: inserting one moved 33 of them.
         · and it is SYMMETRIC — removing it restores the calendar exactly.
 
-    ⚠️ **`repoint` must stay True, and this is the trap.** The list's NAME comes
-    from `alt_label()`, which reads the first Saturday the pattern rests on. A
-    flip moves that Saturday, so the label can swing `1st-3rd` ⇄ `2nd-4th` — and
-    a Shift Type left pointing at its old name would silently receive its
-    MIRROR's calendar. Every employee on it would have work and rest inverted for
-    the rest of the year, with nothing raised anywhere.
+    ✅ **The trap this used to warn about is GONE (2026-09-13, T-47).** It read:
+    the list's name comes from `alt_label()`, a flip moves the first rest
+    Saturday, so the label swings `1st-3rd` ⇄ `2nd-4th` and a shift left pointing
+    at the old name receives its MIRROR's calendar. **Two things were wrong with
+    it.** The repoint is keyed on the group — the ANCHOR — so a shift could only
+    ever be pointed at its own group's list; no mis-pointing was reachable. And
+    the label no longer swings at all: it is now the `caf_shift_code` letter,
+    which a calendar cannot touch. What was real is that the NAMES lied to the
+    reader, and 2027's already did.
+
+    ⚠️ **`repoint` must still stay True** — for the plain reason, not the scary
+    one: the year's lists are created by this call, and a shift pointed at last
+    year's list is pointed at a calendar that stops in December.
 
     ⚠️ **It does NOT re-resolve anything.** Regenerating can move hundreds of
     past Saturdays; rewriting that many submitted Finger Logs from a `Holiday

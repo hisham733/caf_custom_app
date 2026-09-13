@@ -82,9 +82,10 @@ def _saturdays(first, last):
 
 
 def alt_shifts():
-    """The mirror pairs. Read from `caf_alt_sat`, never from the shift name —
-    the names carry 1st-3rd / 2nd-4th as documentation and go stale after the
-    year's first public holiday (§6.9, I1)."""
+    """The mirror pairs. Read from `caf_alt_sat`, never from the shift name
+    (§6.9, I1). The names carry `A` / `B` since T-47; before that they carried
+    `1st-3rd` / `2nd-4th` and went stale after the year's first Saturday public
+    holiday, which is why reading them was never allowed."""
     return frappe.get_all(
         "Shift Type",
         filters={"caf_alt_sat": 1},

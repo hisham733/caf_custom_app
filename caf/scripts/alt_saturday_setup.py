@@ -11,10 +11,15 @@ WHAT A MIRROR PAIR IS, AND WHY IT IS NOT A NAME
 Two Shift Types with identical times and rules, differing **only** in which
 Saturdays their Holiday List marks as rest. `caf_sat_mirror` links each to the
 other, and **that link — never the name — is what the swap validation reads**
-(§6.9). The names carry `1st-3rd` / `2nd-4th` because MG asked for the Saturdays
-to be visible, but they are documentation: after the first public holiday of a
-year the numbers stop being literally true, because a holiday does not advance
-the sequence.
+(§6.9). The names carry **`A` / `B`**, matching the `caf_shift_code` suffix.
+
+⚠️ They used to carry `1st-3rd` / `2nd-4th` — MG's early request that the rested
+Saturdays be visible in the name. **That rule was RETIRED on 2026-09-13 (T-47)**:
+a Saturday public holiday does not advance the sequence, so it flips every
+Saturday after it, and the numbers stop being true partway through a year.
+`alt_label()` computed the Holiday List's name the same way, and on this site
+2027's lists had already crossed over 2026's. The letters cannot go stale because
+nothing computes them.
 
 THE SEQUENCE, VERIFIED IN THE DATA
 ----------------------------------
@@ -190,10 +195,10 @@ ANCHOR = "2026-04-11"
 #
 # (code, seed name used only at creation, source code, rests on the anchor)
 SHIFTS = [
-    ("ALTSAT_85_A",  "8-5 Alt Sat 1st-3rd",    "SPECIAL_8_5",     False),
-    ("ALTSAT_85_B",  "8-5 Alt Sat 2nd-4th",    "SPECIAL_8_5",     True),
-    ("ALTSAT_830_A", "8:30am Alt Sat 1st-3rd", "8_30AM_SCHEDULE", False),
-    ("ALTSAT_830_B", "8:30am Alt Sat 2nd-4th", "8_30AM_SCHEDULE", True),
+    ("ALTSAT_85_A",  "8-5 Alt Sat A",    "SPECIAL_8_5",     False),
+    ("ALTSAT_85_B",  "8-5 Alt Sat B",    "SPECIAL_8_5",     True),
+    ("ALTSAT_830_A", "8:30am Alt Sat A", "8_30AM_SCHEDULE", False),
+    ("ALTSAT_830_B", "8:30am Alt Sat B", "8_30AM_SCHEDULE", True),
 ]
 
 MIRRORS = [("ALTSAT_85_A", "ALTSAT_85_B"),
@@ -513,20 +518,20 @@ def ensure_company_holidays() -> int:
 #
 # ⚠️ The production pair go on the SAME shift, by MG's decision. That reproduces
 # what they actually do — Ingress shows them off together or working together on
-# 24 of 32 Saturdays, mirroring only in June — so `8-5 Alt Sat 2nd-4th` is not a
+# 24 of 32 Saturdays, mirroring only in June — so `8-5 Alt Sat B` is not a
 # covering pair for them. Its mirror exists so a COVER can be expressed: moving
 # one of them to the other shift for a date makes him work while the other rests.
 ASSIGNMENTS = {
     # management six — 8:30am Schedule
-    "HR-EMP-00003": ("8:30am Alt Sat 1st-3rd", "Too Poh Chin"),
-    "HR-EMP-00005": ("8:30am Alt Sat 1st-3rd", "Nur Najwa Farhana"),
-    "HR-EMP-00009": ("8:30am Alt Sat 1st-3rd", "Seow Zi Ying"),
-    "HR-EMP-00004": ("8:30am Alt Sat 2nd-4th", "Afiza binti Mustafa"),
-    "HR-EMP-00007": ("8:30am Alt Sat 2nd-4th", "Nurfarahayu Binti Ahmad"),
-    "HR-EMP-00010": ("8:30am Alt Sat 2nd-4th", "Hazwani Farhana"),
+    "HR-EMP-00003": ("8:30am Alt Sat A", "Too Poh Chin"),
+    "HR-EMP-00005": ("8:30am Alt Sat A", "Nur Najwa Farhana"),
+    "HR-EMP-00009": ("8:30am Alt Sat A", "Seow Zi Ying"),
+    "HR-EMP-00004": ("8:30am Alt Sat B", "Afiza binti Mustafa"),
+    "HR-EMP-00007": ("8:30am Alt Sat B", "Nurfarahayu Binti Ahmad"),
+    "HR-EMP-00010": ("8:30am Alt Sat B", "Hazwani Farhana"),
     # production pair — Special 8-5, both on the same side
-    "HR-EMP-00042": ("8-5 Alt Sat 2nd-4th", "Nur Ezzatul Allieya"),
-    "HR-EMP-00096": ("8-5 Alt Sat 2nd-4th", "Noor Arifah Binti Ibrahim"),
+    "HR-EMP-00042": ("8-5 Alt Sat B", "Nur Ezzatul Allieya"),
+    "HR-EMP-00096": ("8-5 Alt Sat B", "Noor Arifah Binti Ibrahim"),
 }
 
 

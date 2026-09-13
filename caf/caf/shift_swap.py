@@ -31,10 +31,12 @@ reason the two are named differently in the payload and on screen.
 
 WHAT THE VALIDATION READS
 -------------------------
-`caf_sat_mirror`, never the shift name. The names carry `1st-3rd` / `2nd-4th`
-because MG asked for the Saturdays to be visible, but they are documentation: a
-public holiday does not advance the alternation, so after the year's first one the
-numbers stop being literally true. A link cannot drift that way.
+`caf_sat_mirror`, never the shift name — a link cannot drift.
+
+⚠️ The names once carried `1st-3rd` / `2nd-4th`, and *those* could drift: a public
+holiday does not advance the alternation, so after the year's first Saturday one
+the numbers stopped being true. **Retired 2026-09-13 (T-47)** — the names now
+carry `A` / `B`, taken from `caf_shift_code`, which nothing recomputes.
 """
 
 import frappe
