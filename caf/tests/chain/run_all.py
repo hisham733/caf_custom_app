@@ -6,16 +6,17 @@
 own data, so the order does not matter, but each one is slower than a per-doctype
 suite because it walks a real sequence.
 
-🔴 TWO OF THESE ASSERT BEHAVIOUR THAT IS WRONG ON PURPOSE, and the file says so at
-the assertion:
+🔴 THREE OF THESE ASSERT BEHAVIOUR THAT IS WRONG, OR IMPOSSIBLE, ON PURPOSE — and
+each file says so at the assertion itself:
 
     LLS3-T44-LINK-KEPT          T-44 — the row claims two sources
     SWP5-T46-OT-FALLS-SILENTLY  T-46 — approved overtime falls in silence
+    MPD3-DEAD-END               OD-89 — a rule that admits no legal move
 
-Both are decisions MG has not taken. They assert **what is true today** so the code
-and the register agree; when either is fixed the assertion goes RED, and that red
-is the signal to retire it — not a regression. **Do not "fix" them by editing the
-expectation.**
+The first two are decisions MG has not taken; the third is a dead end nobody has
+solved. They assert **what is true today** so the code and the register agree.
+**When any of them is fixed the assertion goes RED, and that red is the signal to
+retire it — not a regression. Do not "fix" them by editing the expectation.**
 """
 
 import traceback
@@ -33,6 +34,13 @@ SUITES = (
      "a Shift Assignment filed over a past, submitted day"),
     ("joiner_bar", "caf.tests.chain.test_joiner_bar",
      "annual leave under a year — WHICH guard speaks, and what it says"),
+    # ── the rungs L3/L4 owed, built 2026-09-13 ─────────────────────────────
+    ("swap_reaches_appraisal", "caf.tests.chain.test_swap_reaches_appraisal",
+     "a backdated swap reaching a SUBMITTED appraisal — L3 rung 3.8"),
+    ("mirror_pair_deadend", "caf.tests.chain.test_mirror_pair_deadend",
+     "OD-89 — a rule that is right and admits no legal move, asserted as one"),
+    ("roster_holidays", "caf.tests.chain.test_roster_holidays",
+     "cancelling a roster confirmation does NOT take its holidays back"),
 )
 
 
