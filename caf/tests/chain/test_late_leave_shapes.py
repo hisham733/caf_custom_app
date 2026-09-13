@@ -154,19 +154,29 @@ def run():
         # against a perfectly good message. Two suites hit this in one hour,
         # which is why it is one shared predicate.
         named = dataset.names_date(err, present_day)
+        who = frappe.db.get_value("Employee", emp, "employee_name")
         check("LLS4-PRESENT-DAY-REFUSED",
-              la3 is None and "already marked" in err.lower() and named
+              la3 is None and named and who in err
+              and "worked" in err.lower()
               and after and after.status == "Present",
-              f"over a day he WORKED the leave is REFUSED by stock — "
-              f"{err[:130]!r} — and the day is untouched ({after and after.status}). "
-              f"⚠️ hrms `validate_attendance()` filters on Present / Work From "
-              f"Home, which is why ONLY an Absent day is silently taken over")
-        check("LLS4-REFUSAL-IS-BARE",
-              la3 is None and not any(w in err.lower() for w in
-                                      ("cancel", "instead", "correct")),
-              f"⚠️ and the refusal offers NO remedy — it names the date and the "
-              f"row and stops. Manual row A20 exists because HR meets this "
-              f"whenever somebody brings an MC for a day they clocked in on")
+              f"over a day he WORKED the leave is REFUSED, naming him and the "
+              f"day — {err[:130]!r} — and the day is untouched "
+              f"({after and after.status}). ⚠️ hrms `validate_attendance()` filters "
+              f"on Present / Work From Home, which is why ONLY an Absent day is "
+              f"silently taken over")
+        # ⭐ FLIPPED 2026-09-13 — T-45 finding F5 is fixed. This used to assert
+        # that the refusal offered NO remedy, which was true of stock's message
+        # and was the finding. `leave_worked_day.explain_worked_day` now speaks
+        # first (a `before_validate` hook, because doc_events run after the
+        # controller's own validate) and tells her what to do instead.
+        check("LLS4-REFUSAL-OFFERS-A-WAY-OUT",
+              la3 is None and "ingress" in err.lower()
+              and "half" in err.lower(),
+              f"⭐ **and it now says what to do** — correct the punches in "
+              f"**Ingress** and re-import, or file it as a **half day**, and it "
+              f"warns that cancelling the attendance will not work while the day "
+              f"belongs to a submitted Finger Log. Stock's version named the date "
+              f"and stopped, leaving HR in a loop with no exit (manual row A20)")
 
     except Exception:
         print(traceback.format_exc())

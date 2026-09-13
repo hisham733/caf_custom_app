@@ -112,6 +112,36 @@ def _employee_name(employee):
     return frappe.db.get_value("Employee", employee, "employee_name") or employee
 
 
+ROSTER_ROLES = ("HR Manager", "System Manager")
+
+
+def _only_hr(action):
+    """The roster tool is HR's, and the refusal must SAY so — T-45 finding F13.
+
+    🔴 `frappe.only_for()` raises `PermissionError` **with no text at all**.
+    Measured 2026-09-12: a supervisor who opens the roster screen and tries to
+    file a Saturday trade is told nothing — not the rule, not who can, not what
+    to do. Every other refusal in this framework names the person, the document
+    and the next step; this one named nothing.
+
+    ⚠️ **The RULE is unchanged** — the same two roles, plus Administrator, exactly
+    as `frappe.only_for` allowed. Only the message is new.
+    """
+    user = frappe.session.user
+    if user == "Administrator":
+        return
+    if set(ROSTER_ROLES) & set(frappe.get_roles(user)):
+        return
+    frappe.throw(
+        _("Only the <b>HR Manager</b> can {0}. Saturday trades move two people's "
+          "rosters at once, so they are filed centrally rather than by either "
+          "person's supervisor."
+          "<br><br>You can SEE the roster and who is trading — ask HR to file "
+          "the change.").format(action),
+        title=_("The roster is HR's to change"),
+        exc=frappe.PermissionError)
+
+
 @frappe.whitelist()
 def plan(work_date, employee_a, employee_b=None):
     """What WOULD happen, without doing it. Drives the dialog's preview.
@@ -119,7 +149,7 @@ def plan(work_date, employee_a, employee_b=None):
     Separated from `create()` so HR sees the consequence before agreeing to it —
     the same reason the cancel dialog names the partner rather than acting.
     """
-    frappe.only_for(["HR Manager", "System Manager"])
+    _only_hr(_("preview a Saturday trade"))
     work_date = getdate(work_date)
 
     shift_a = get_shift_for_date(employee_a, work_date)
@@ -206,7 +236,7 @@ def create(work_date, employee_a, employee_b=None, shift=None):
     a validation stock refuses — the first must not survive, or the tool has
     created exactly the half-done state it exists to prevent.
     """
-    frappe.only_for(["HR Manager", "System Manager"])
+    _only_hr(_("file a Saturday trade"))
     work_date = getdate(work_date)
     detail = plan(work_date, employee_a, employee_b)
 
@@ -389,7 +419,7 @@ def partner_of(assignment):
 @frappe.whitelist()
 def cancel_both(assignment):
     """Cancel this row and its partner. Only reached when HR chose it."""
-    frappe.only_for(["HR Manager", "System Manager"])
+    _only_hr(_("cancel a Saturday trade"))
     info = partner_of(assignment)
     names = [assignment]
     if info.get("partner") and info["partner"].get("docstatus") == 1:

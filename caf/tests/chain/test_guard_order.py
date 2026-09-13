@@ -161,12 +161,22 @@ def run():
         dataset._approval(emp, day, 3.0)
         frappe.db.commit()
         msg = _submit(log.name)
+        # ⚠️ Match the BODY. *"Not a full day"* is the dialog TITLE now, and
+        # `str(e)` returns only the message — the same trap ORD3 hit.
         check("ORD2-HELD-SECOND",
-              "not a full day" in msg.lower() and str(day) in msg,
+              "missing" in msg.lower() and dataset.names_date(msg, day)
+              and who in msg and "punch" in msg.lower(),
               f"once the overtime is approved the next refusal is OD-58's "
-              f"incomplete-punch guard, naming the date — {msg[:90]!r}. ⚠️ It "
-              f"cannot name WHICH punch (T-45 finding F1): `_missing` is set in a "
-              f"branch `validate()` skips on the submit path")
+              f"incomplete-punch guard — {msg[:110]!r}")
+        check("ORD2-NAMES-THE-PUNCH",
+              "lunch-in" in msg.lower() and "ingress" in msg.lower(),
+              f"⭐ **T-45 finding F1 is FIXED (09-13)** — it now names WHICH punch "
+              f"(the LUNCH-IN one, on a shift that needs four) and sends HR to "
+              f"**Ingress**, which is the only place a punch can actually be "
+              f"corrected. It used to say *'is missing a punch'* and could never "
+              f"do better: `_missing` was set in a branch `validate()` skips on "
+              f"the submit path, so the fallback was the only text she could ever "
+              f"see. `_missing_punches_html()` recomputes it at the refusal")
 
         # ── 3 · the leave clash, still before_submit() ─────────────────────
         fix = frappe.get_doc("Finger Log", log.name)

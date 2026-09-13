@@ -98,9 +98,15 @@ class FingerLog(Document):
         # submitted freely, because validate() never looked at the punches.
         if self.caf_not_full_day:
             frappe.throw(_(
-                "Not a full day: {0} is missing {1}. Correct the punches, or file "
-                "half-day leave — a Finger Log may not decide that half a day was worked."
-            ).format(self.work_date, ", ".join(getattr(self, "_missing", None) or ["a punch"])))
+                "{0} on {1} is missing {2}."
+                "<br><br>The punches cannot be corrected here — every punch field "
+                "on this form is read-only, because the punches are what the "
+                "machine saw. <b>Correct them in Ingress and re-import the day</b>, "
+                "or file half-day leave."
+                "<br><br>A Finger Log may not decide that half a day was worked — "
+                "that decision belongs to a Leave Application."
+            ).format(self._who(), self._day(), self._missing_punches_html()),
+                title=_("Not a full day"))
 
         # Refuse a day that is already decided, BEFORE the docstatus is written.
         assert_no_clash(self)
@@ -274,7 +280,19 @@ class FingerLog(Document):
             # at 0 rather than inventing a number; caf_not_full_day carries the
             # meaning and HR resolves it (OD-58).
             self.caf_work_hours = work or 0
-            self.short = short if short is not None else 0
+            # 🔴 NOTHING IS SHORT ON A DAY NOBODY WAS ROSTERED FOR (2026-09-13).
+            # The all-zero branch above has said this since it was written —
+            # *"On a Restday or Holiday nothing was scheduled, so nothing is
+            # short"* — and this branch never applied it. Measured by the L3
+            # climb: a Saturday moved onto a no-Saturday shift reported
+            # `short = 1.0`, and the hour was **his lunch**, because that shift
+            # budgets `caf_lunch_minutes = 0` (so `net` keeps the full span)
+            # while `compute()` still deducts the lunch he actually took.
+            # ⭐ `work` keeps the deduction — he genuinely was not working over
+            # lunch — but there is nothing to be SHORT of when nothing was
+            # scheduled. FBR90/F1: a rest day has no contracted day to serve.
+            self.short = (short if short is not None else 0) \
+                if self.day_type == "Workday" else 0
 
     def det_ot_in_hour(self):
         # The OT rules are per-SHIFT (FBR36 / FDR7), never per-department. The
@@ -333,6 +351,36 @@ class FingerLog(Document):
         if self.name and not self.is_new():
             return _link(f"/app/finger-log/{self.name}", self.work_date)
         return f"<b>{self.work_date}</b>"
+
+    # Human names for the four punches. `resume` is the one people call
+    # "lunch in", and "resume" on its own has sent HR looking for a field.
+    PUNCH_LABEL = {"time_in": _("the IN punch"), "break": _("the LUNCH-OUT punch"),
+                   "resume": _("the LUNCH-IN punch"), "out": _("the OUT punch")}
+
+    def _missing_punches_html(self):
+        """WHICH punch is missing — recomputed here, and that is the point.
+
+        🔴 T-45 finding F1, fixed 2026-09-13. This message used to read
+        *"is missing **a punch**"* on a shift that needs four, and it could
+        NEVER do better: `_missing` is set in `det_work_hours()`, which
+        `validate()` runs **only when `docstatus != 1`** — and on the submit path
+        Frappe has already set it to 1, so the attribute is never populated and
+        the `["a punch"]` fallback was the only text HR could ever see.
+
+        ⚠️ Recomputing is cheap and correct. The alternative — carrying the value
+        across a save — is exactly the kind of state that goes stale.
+        """
+        from caf.caf import work_hours
+
+        missing = work_hours.missing_punches(self, get_shift_params(self.shift_type))
+        if not missing:
+            missing = getattr(self, "_missing", None) or []
+        names = [self.PUNCH_LABEL.get(f, f) for f in missing]
+        if not names:
+            return _("a punch")
+        if len(names) == 1:
+            return frappe.bold(names[0])
+        return frappe.bold(", ".join(names[:-1]) + _(" and ") + names[-1])
 
     def check_ot_approval(self):
         """Does a submitted OT Approval cover this day's overtime? FBR11.

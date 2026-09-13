@@ -248,10 +248,42 @@ def _run_body():
           + f"   [list: {counted}]")
 
     # ---------------------------------------------------------------- FDR4
-    leaked = frappe.db.sql("""select count(*) from tabAttendance
-                              where ifnull(caf_finger_log,'')<>'' and ifnull(leave_type,'')<>''""")[0][0]
-    check("FDR4", leaked == 0,
-          f"Attendance rows created by Finger Log carrying a leave_type: {leaked} (must be 0)")
+    # 🔴 NARROWED 2026-09-13 — MG's decision, and his reasoning overturned mine.
+    #
+    # This used to assert that NO Attendance row may carry both `caf_finger_log`
+    # and `leave_type`, and it sat red for a day against 2 rows that were telling
+    # the truth: a Finger Log created the day, and a late leave then took it over.
+    # MG asked the right question — *"is this issue not solvable by deduction?"*
+    # It is, completely:
+    #
+    #     finger-log link only   -> the clock record decided this day
+    #     leave link only        -> the leave created it (the log was a draft)
+    #     BOTH                   -> the log created it, the leave took it over
+    #     neither                -> somebody keyed it by hand (FBR69 says never)
+    #
+    # ⭐ So the pair is a two-step HISTORY, not a contradiction, and clearing the
+    # link would DESTROY the fact that the machine saw the day first. The other
+    # reason for clearing it — that a cascade selected on the link and could take
+    # an approved leave's day with it — was closed on 09-12 and is held by
+    # `caf.tests.chain.test_leave_owned_day`.
+    #
+    # What FDR4 actually protects is that **an OBSERVATION is never written as a
+    # DECISION**: the Finger Log path must never write `leave_type` itself. That
+    # is what is asserted now, and it is the thing that produced 39 mislabelled
+    # days (OD-21) when it was violated.
+    bad = frappe.db.sql("""select count(*) from tabAttendance
+                            where ifnull(caf_finger_log,'')<>''
+                              and ifnull(leave_type,'')<>''
+                              and ifnull(leave_application,'')=''""")[0][0]
+    both = frappe.db.sql("""select count(*) from tabAttendance
+                             where ifnull(caf_finger_log,'')<>''
+                               and ifnull(leave_type,'')<>''""")[0][0]
+    check("FDR4", bad == 0,
+          f"no Attendance row carries a leave_type that no Leave Application put "
+          f"there: {bad} (must be 0). ⭐ {both} row(s) DO carry both links, and "
+          f"that is their history — a Finger Log created the day and a leave took "
+          f"it over. The DECIDER is the leave application if present, else the "
+          f"finger log")
 
     # ---------------------------------------------------------------- OD-45
     fl = make(EMP_OT, D % 8, time_in="08:00:00", **{"break": "12:00:00",

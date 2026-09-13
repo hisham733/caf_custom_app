@@ -151,20 +151,26 @@ def run():
               "exception reached the caller. One disputed day must never abort a "
               "month's worth of re-resolution")
 
-        # ── 🔴 T-46, asserted as it is TODAY ───────────────────────────────
+        # ── ✅ T-46 — FIXED 2026-09-13, and this assertion FLIPPED ─────────
+        # It used to assert the silence, deliberately, while MG decided. He
+        # decided (§1a, build the hook), so it now asserts the flag. **This is
+        # what the flip was for.**
         fell = float(before.final_ot or 0) > float(after.final_ot or 0)
-        silent = not after.caf_hr_review and not (after.caf_hr_review_note or "")
+        note = after.caf_hr_review_note or ""
         appr_alive = frappe.db.get_value("OT Approval", appr.name,
                                          "docstatus") == 1
-        check("SWP5-T46-OT-FALLS-SILENTLY", fell and silent and appr_alive,
-              f"🔴 **T-46, ASSERTED AS IT IS TODAY, NOT AS IT SHOULD BE** — "
-              f"final_ot {before.final_ot} ➜ {after.final_ot} while OT Approval "
-              f"{appr.name} is still submitted, and caf_hr_review is "
-              f"{after.caf_hr_review} with an empty note. ⭐ `_ot_coverage()` only "
-              f"asks whether clocked OT is COVERED, and 0 always is — it never "
-              f"asks whether approved OT DISAPPEARED. **When that downward check "
-              f"is built this assertion flips, and the flip is the signal to "
-              f"retire it.** Not fixed here: it changes what somebody is PAID")
+        check("SWP5-T46-OT-FALL-IS-FLAGGED",
+              fell and appr_alive and after.caf_hr_review == 1
+              and str(before.final_ot) in note and str(after.final_ot) in note,
+              f"✅ **T-46 FIXED** — final_ot {before.final_ot} ➜ {after.final_ot} "
+              f"while OT Approval {appr.name} is still submitted, and the day is "
+              f"now **FLAGGED** (caf_hr_review={after.caf_hr_review}) with a note "
+              f"carrying BOTH figures: {frappe.utils.strip_html(note)[:120]!r}. "
+              f"⭐ `_ot_coverage()` only ever asked whether clocked OT is COVERED, "
+              f"and 0 always is; the missing question was whether approved OT "
+              f"DISAPPEARED. ⚠️ The NUMBER is not held back — 0 really is right on "
+              f"a shift that forbids OT (FBR36/FDR7) — **what changed is that a "
+              f"person is told**")
 
         # ── ⚠️ F11, asserted as it is today ────────────────────────────────
         check("SWP6-F11-ATT-SHIFT-STALE",

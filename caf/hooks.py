@@ -647,6 +647,19 @@ doc_events = {
         "validate": "caf.caf.overrides.shift_type.validate",
         "on_update": "caf.caf.overrides.shift_type.on_update",
     },
+    # T-48 (2026-09-13) - the wire that was missing. Leave Application, Shift
+    # Assignment and Finger Log all reach back into the days they affect; OT
+    # Approval reached nothing, so a SPECIAL approval filed after a log was
+    # submitted left that log paying the old number, pointing at a row FBR71 had
+    # just cancelled, with no flag anywhere. Measured: 2.5 h stood while the
+    # approvals in force came to 1.0.
+    #   It FLAGS and never rewrites - `final_ot` is what somebody is paid, and
+    #   changing it behind a submitted document would be the same silence in the
+    #   other direction. See caf/caf/ot_approval_scope.py.
+    "OT Approval": {
+        "on_submit": "caf.caf.ot_approval_scope.refresh_affected_logs",
+        "on_cancel": "caf.caf.ot_approval_scope.refresh_affected_logs",
+    },
     "Finger Log": {
         "before_submit": "caf.caf.doctype.monthly_roster_confirmation"
                          ".monthly_roster_confirmation.require_confirmed_month",
@@ -672,6 +685,13 @@ doc_events = {
         # recounts its days. `validate`, not `before_submit`, because the Leave
         # Approver files for their report (OD-82) — the refusal has to arrive
         # while the form is open, not after somebody was told their leave is booked.
+        # T-45 finding F5 (2026-09-13) - stock refuses a leave over a day already
+        # marked Present with a message that names the date and NOTHING else,
+        # while the obvious remedy (cancel the attendance) is refused by D-12.
+        # ⚠️ `before_validate`, NOT `validate`: stock's own check lives in the
+        # controller's validate, and doc_events run AFTER the controller's method
+        # of the same name - so a `validate` hook would always speak second.
+        "before_validate": "caf.caf.leave_worked_day.explain_worked_day",
         "validate": [
             "caf.caf.leave_service_bar.check_service_bar",
             "caf.caf.leave_days.recount_leave_days",

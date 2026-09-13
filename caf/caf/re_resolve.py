@@ -183,13 +183,43 @@ def re_resolve_finger_log(name: str, reason: str = "") -> dict:
             if day_type == "Workday" else 0
     else:
         doc.caf_work_hours = work or 0
-        doc.short = short if short is not None else 0
+        # 🔴 Same rule as `det_work_hours` — nothing is short on a day nobody was
+        # rostered for. The two branches must agree or a re-resolve would
+        # reintroduce the figure the submit path just stopped writing.
+        doc.short = (short if short is not None else 0) \
+            if doc.day_type == "Workday" else 0
 
     doc.ot_in_hour = apply_ot_rules(doc.overtime, params)
     final_ot, approval, overwrite, problem = _ot_coverage(doc)
     doc.final_ot = final_ot
     doc.ot_approval_id = approval
     doc.has_overwrite = overwrite
+
+    # 🔴 T-46 (2026-09-13) — `_ot_coverage` only ever asks whether the CLOCKED
+    # overtime is COVERED, and **zero is always covered**. So a re-resolve onto a
+    # shift that forbids overtime took `final_ot` 2.5 ➜ 0.0 with `problem = None`,
+    # no flag and an empty note, while the approval sat there still submitted.
+    # Measured by the L3 climb, 2026-09-12.
+    #
+    # The missing question is the other direction: **did the figure this document
+    # is carrying stop matching what the approvals say?** A fall is the one that
+    # costs somebody money, and it was the one nothing could see.
+    #
+    # ⚠️ The number itself is NOT held back — FBR36/FDR7 mean 0 really is the
+    # right answer on a shift that forbids OT. What changes is that a person is
+    # told, on the report they already read.
+    before_final = float(before.get("final_ot") or 0)
+    now_final = float(final_ot or 0)
+    if not problem and abs(before_final - now_final) >= 0.001:
+        problem = _(
+            "Overtime changed with the shift: <b>{0} h</b> ➜ <b>{1} h</b> on "
+            "{2}. The punches are unchanged — the new shift's overtime rules "
+            "produce a different figure. {3}"
+        ).format(before_final, now_final, doc.work_date,
+                 _("The approval that covered it is {0}.").format(
+                     frappe.bold(before.get("ot_approval_id")))
+                 if before.get("ot_approval_id")
+                 else _("No approval covered the old figure."))
 
     # S3 — flag, do not throw. A background batch must survive a bad row.
     doc.caf_hr_review = 1 if problem else 0

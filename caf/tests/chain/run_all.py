@@ -41,6 +41,11 @@ SUITES = (
      "OD-89 — a rule that is right and admits no legal move, asserted as one"),
     ("roster_holidays", "caf.tests.chain.test_roster_holidays",
      "cancelling a roster confirmation does NOT take its holidays back"),
+    # ── MG's decisions of 2026-09-13 ───────────────────────────────────────
+    ("ot_approval_reaches_days", "caf.tests.chain.test_ot_approval_reaches_days",
+     "T-48 — an OT Approval must reach the days it covers"),
+    ("lunch_outside_shift", "caf.tests.chain.test_lunch_outside_shift",
+     "a lunch punched after the shift ends, on a shift that pays no overtime"),
 )
 
 
