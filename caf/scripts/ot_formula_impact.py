@@ -85,6 +85,152 @@ def fbr85_hours(row, p):
     return _gate_and_round(raw, p)
 
 
+def _approval_row(emp, work_date):
+    """The submitted OT Approval row covering this person on this day, if any."""
+    rows = frappe.get_all("OT Approval Table",
+                          filters={"emp_id": emp, "work_date": work_date,
+                                   "docstatus": 1},
+                          fields=["parent", "start_work", "ot_end", "ot_duration"],
+                          order_by="creation desc")
+    return rows[0] if rows else None
+
+
+def i1_hours(row, p, restday_rule="FBR91"):
+    """FBR85 **plus I1**: the early portion counts when an approval sanctions it.
+
+        raw = max(0, out - shift_end)                        the late portion
+            + max(0, shift_start - max(in, start_work))      the EARLY portion
+
+    ⭐ `max(in, start_work)` is the control. The credit reaches back only as far
+    as the SANCTIONED start, never as far as the punch — somebody who turns up at
+    06:00 against a 07:00 sanction is paid from 07:00. Measured: 06:00 and 06:53
+    both yield 1.50 h; arriving at 07:15 yields 1.00 h, from the real arrival.
+
+    ⚠️ `restday_rule` exists because FBR85 and FBR91 DISAGREE, and FBR91 is the
+    one HR signed off. FBR85 step 5 deducts the lunch actually punched; FBR91
+    deducts **exactly one hour** whenever both lunch punches exist. On the 12
+    rest days that rise, the difference is +7.5 h against +1.5 h.
+    """
+    if not p or not p.get("caf_allow_ot"):
+        return 0.0
+    if (p.get("caf_required_punches") or "") == "In OR Out only":
+        return 0.0
+
+    t_in, t_out = _mins(row.time_in), _mins(row.out)
+    if t_in is None or t_out is None:
+        return None
+    if t_out <= t_in:
+        t_out += 24 * 60
+
+    if row.day_type != "Workday":
+        brk, res = _mins(row.get("break")), _mins(row.resume)
+        if restday_rule == "FBR91":
+            lunch = 60 if (brk is not None and res is not None) else 0
+        else:
+            lunch = (res - brk) if (brk is not None and res is not None
+                                    and res > brk) else 0
+        return _gate_and_round(max(0, (t_out - t_in) - lunch), p)
+
+    start, end = _mins(p.get("start_time")), _mins(p.get("end_time"))
+    if start is None or end is None:
+        return None
+    if end <= start:
+        end += 24 * 60
+
+    late = max(0, t_out - end)
+    early = 0
+    c = _approval_row(row.employee, row.work_date)
+    if c:
+        sw = _mins(c.start_work)
+        if sw is not None and sw < start:
+            early = max(0, start - max(t_in, sw))
+    return _gate_and_round(late + early, p)
+
+
+def i1_report(detail=10):
+    """FBR85 + I1 + FBR91 against what is paid today, over every submitted log.
+
+        bench --site <site> execute caf.scripts.ot_formula_impact.i1_report
+
+    This is the number the FBR85 decision should be taken on — not `report()`'s,
+    which measures FBR85 with **no** route for a sanctioned early start.
+    """
+    from caf.caf.shift_resolution import get_shift_params
+
+    logs = frappe.get_all(
+        "Finger Log", filters={"docstatus": 1},
+        fields=["name", "employee", "employee_name", "shift_type", "work_date",
+                "day_type", "time_in", "`break`", "resume", "out",
+                "overtime", "ot_in_hour"], order_by="work_date")
+
+    params, same, up, down, held, barred = {}, 0, [], [], 0, 0
+    for r in logs:
+        if r.shift_type not in params:
+            params[r.shift_type] = get_shift_params(r.shift_type)
+        p = params[r.shift_type]
+        if not p or not p.get("caf_allow_ot"):
+            barred += 1
+            continue
+        new = i1_hours(r, p)
+        if new is None:
+            held += 1
+            continue
+        delta = round(new - flt(r.ot_in_hour or 0), 4)
+        if abs(delta) < 0.001:
+            same += 1
+        elif delta > 0:
+            up.append((delta, r))
+        else:
+            down.append((delta, r))
+
+    eligible = same + len(up) + len(down)
+    print("=" * 74)
+    print("FBR85 + I1 + FBR91 — overtime computed in ERPNext, with a route for")
+    print("the planner's sanctioned early start")
+    print("=" * 74)
+    print("  OT-ELIGIBLE, compared              %6d" % eligible)
+    print("     unchanged                       %6d   %5.1f%%"
+          % (same, 100.0 * same / eligible if eligible else 0))
+    print("     RISE                            %6d   %+7.1f h"
+          % (len(up), sum(d for d, _ in up)))
+    print("     FALL                            %6d   %+7.1f h"
+          % (len(down), sum(d for d, _ in down)))
+    print("  net                                        %+7.1f h"
+          % (sum(d for d, _ in up) + sum(d for d, _ in down)))
+    print("  (held, a punch missing %d · on a no-OT shift %d)" % (held, barred))
+
+    print("\n  EVERY REMAINING DIFFERENCE, and why — these are the whole worklist")
+    print("    %-11s %-22s %-9s %-9s %-6s %-6s %s"
+          % ("date", "employee", "day", "sanction", "now", "I1", "what it means"))
+    for delta, r in sorted(down + up, key=lambda x: x[0])[:cint(detail)]:
+        c = _approval_row(r.employee, r.work_date)
+        p = params.get(r.shift_type) or {}
+        sw = _mins(c.start_work) if c else None
+        start = _mins(p.get("start_time"))
+        # ⚠️ The early-start test applies to a WORKDAY only. On a rest day the
+        # whole day is overtime and `start_work` decides nothing — labelling such
+        # a row "the approval does not sanction an early start" reads as a
+        # finding when it is not one.
+        if r.day_type != "Workday":
+            why = "rest day — FBR91's flat lunch hour, not an early start"
+        elif not c:
+            why = "no OT Approval covers the day"
+        elif sw is None:
+            why = "approval has no start_work"
+        elif start is not None and sw >= start:
+            why = "the approval does NOT sanction an early start"
+        else:
+            why = "sanctioned — check the punches"
+        print("    %-11s %-22s %-9s %-9s %-6.2f %-6.2f %s"
+              % (r.work_date, (r.employee_name or "")[:22], r.day_type,
+                 str(c.start_work)[:8] if c else "-",
+                 flt(r.ot_in_hour or 0), flt(r.ot_in_hour or 0) + delta, why))
+
+    return {"eligible": eligible, "same": same, "up": len(up),
+            "up_hours": round(sum(d for d, _ in up), 2), "down": len(down),
+            "down_hours": round(sum(d for d, _ in down), 2)}
+
+
 def report(detail=8):
     """Every submitted log, today's figure against FBR85's."""
     from caf.caf.shift_resolution import get_shift_params
