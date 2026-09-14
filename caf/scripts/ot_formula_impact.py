@@ -122,20 +122,36 @@ def i1_hours(row, p, restday_rule="FBR91"):
     if t_out <= t_in:
         t_out += 24 * 60
 
-    if row.day_type != "Workday":
-        brk, res = _mins(row.get("break")), _mins(row.resume)
-        if restday_rule == "FBR91":
-            lunch = 60 if (brk is not None and res is not None) else 0
-        else:
-            lunch = (res - brk) if (brk is not None and res is not None
-                                    and res > brk) else 0
-        return _gate_and_round(max(0, (t_out - t_in) - lunch), p)
-
     start, end = _mins(p.get("start_time")), _mins(p.get("end_time"))
     if start is None or end is None:
         return None
     if end <= start:
         end += 24 * 60
+
+    if row.day_type != "Workday":
+        # 🔴 MEASURED 2026-09-14 against every submitted non-workday log:
+        # Ingress' own rest-day figure is `(out − max(in, shift_start)) − 60`,
+        # reproduced to the minute on **39 of 40**, and the single exception is
+        # the one person who arrived LATE — for whom the punch wins, which is
+        # what `max()` already says. The rest day is therefore measured from the
+        # SHIFT, exactly like a workday; the early arrival is unpaid on both.
+        # ⚠️ This does NOT contradict FBR90/F1 ("rest-day work is entirely
+        # overtime") — that rule is about CLASSIFICATION, not about when the day
+        # starts. And FBR91's flat lunch hour is kept: it is the −60 here.
+        brk, res = _mins(row.get("break")), _mins(row.resume)
+        both = brk is not None and res is not None
+        if restday_rule == "FBR91":
+            lunch = 60 if both else 0
+        else:
+            lunch = (res - brk) if (both and res > brk) else 0
+
+        begin = max(t_in, start)
+        c = _approval_row(row.employee, row.work_date)
+        if c:                                   # I1 applies here too
+            sw = _mins(c.start_work)
+            if sw is not None and sw < start:
+                begin = max(t_in, sw)
+        return _gate_and_round(max(0, (t_out - begin) - lunch), p)
 
     late = max(0, t_out - end)
     early = 0
