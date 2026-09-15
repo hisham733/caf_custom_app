@@ -537,4 +537,5 @@ fixtures = [
         "dt": "Workflow Action Master",
         "filters": [["name", "in", ["Submit", "Approve", "Reject"]]],
     },
+    {"dt": "Print Format", "filters": [["name", "=", "Training Event Print Formate"]]},
 ]
