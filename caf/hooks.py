@@ -272,7 +272,7 @@ scheduler_events = {
 # Apps
 # ------------------
 
-required_apps = ["erpnext@15", "hrms@16"]
+required_apps = ["erpnext@15", "hrms@15"]
 
 # Each item in the list will be shown as an app in the apps page
 # add_to_apps_screen = [
