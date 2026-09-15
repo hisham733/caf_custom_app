@@ -162,6 +162,30 @@ def is_all_zero(doc) -> bool:
     return not any(has_punch(doc.get(f)) for f in ("time_in", "break", "resume", "out"))
 
 
+# 🔴 ONE set of words for the four punches, 2026-09-15. These labels used to
+# live only on `FingerLog.PUNCH_LABEL`, so the SUBMIT REFUSAL said *"the LUNCH-IN
+# punch"* while `Attendance Follow-Up` — the worklist HR works from — printed the
+# raw field name, *"no resume was recorded"*. Two vocabularies for one fact is
+# how a reader concludes they are two different problems.
+PUNCH_LABEL = {
+    "time_in": "the IN punch",
+    "break": "the LUNCH-OUT punch",
+    "resume": "the LUNCH-IN punch",
+    "out": "the OUT punch",
+}
+
+
+def name_punches(missing, bold=False) -> str:
+    """'the IN punch and the OUT punch' — the reader's words, never fieldnames."""
+    from frappe import _
+    names = [_(PUNCH_LABEL.get(f, f)) for f in (missing or [])]
+    if not names:
+        return _("a punch")
+    joined = names[0] if len(names) == 1 else \
+        ", ".join(names[:-1]) + _(" and ") + names[-1]
+    return frappe.bold(joined) if bold else joined
+
+
 def missing_punches(doc, params) -> list:
     """The punches this shift needed and did not get. Empty means complete."""
     if is_all_zero(doc):

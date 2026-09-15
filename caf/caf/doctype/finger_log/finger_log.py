@@ -375,12 +375,10 @@ class FingerLog(Document):
         missing = work_hours.missing_punches(self, get_shift_params(self.shift_type))
         if not missing:
             missing = getattr(self, "_missing", None) or []
-        names = [self.PUNCH_LABEL.get(f, f) for f in missing]
-        if not names:
-            return _("a punch")
-        if len(names) == 1:
-            return frappe.bold(names[0])
-        return frappe.bold(", ".join(names[:-1]) + _(" and ") + names[-1])
+        # ⭐ One vocabulary, shared with `Attendance Follow-Up` — the worklist HR
+        # actually works from used to print raw fieldnames for the same fact.
+        from caf.caf.work_hours import name_punches
+        return name_punches(missing, bold=True)
 
     def check_ot_approval(self):
         """Does a submitted OT Approval cover this day's overtime? FBR11.
