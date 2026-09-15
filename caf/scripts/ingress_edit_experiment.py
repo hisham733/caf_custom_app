@@ -178,10 +178,16 @@ def after():
                     any_change = True
                     print("   %s · %-8s %-12s %r  ->  %r"
                           % (key, side, f, bb.get(f), nn.get(f)))
-        if (b.get("raw_taps") or []) != (n.get("raw_taps") or []):
+        # ⚠️ Compare as LISTS. json.dump turns every tuple into a list, so a
+        # baseline read back from disk holds [['t', 4]] while a fresh capture
+        # holds [('t', 4)] — and a naive `!=` reports every single day as
+        # "RAW TAPS changed" when nothing did. That false positive was in the
+        # first run of this script; it is the diff's bug, not a finding.
+        b_taps = [list(t) for t in (b.get("raw_taps") or [])]
+        n_taps = [list(t) for t in (n.get("raw_taps") or [])]
+        if b_taps != n_taps:
             any_change = True
-            print("   %s · RAW TAPS changed — %s -> %s"
-                  % (key, b.get("raw_taps"), n.get("raw_taps")))
+            print("   %s · RAW TAPS changed — %s -> %s" % (key, b_taps, n_taps))
     if not any_change:
         print("   nothing changed on either side.")
     print("\n  🔴 The row that matters: did ERPNEXT change for a day whose")

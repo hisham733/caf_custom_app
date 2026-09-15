@@ -105,7 +105,10 @@ def _rows(filters):
     # made almost entirely of days nobody has processed yet.
     to_date = getdate(filters.get("to_date") or add_days(nowdate(), -7))
     from_date = getdate(filters.get("from_date") or add_months(to_date, -3))
-    threshold = int(filters.get("minutes_early") or 60)
+    # ⭐ 30 by default — MG's call: it is the OT gate, so below it an early start
+    # cannot change pay at all, and 30 is therefore the first level at which an
+    # unsanctioned early start could have meant money.
+    threshold = int(filters.get("minutes_early") or 30)
     show_sanctioned = bool(filters.get("include_sanctioned"))
 
     logs = frappe.get_all(

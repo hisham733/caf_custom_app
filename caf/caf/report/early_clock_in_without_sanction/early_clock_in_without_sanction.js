@@ -25,13 +25,19 @@ frappe.query_reports["Early Clock-In Without Sanction"] = {
 			),
 		},
 		{
+			// ⭐ 30, not 60 — MG, 2026-09-15: "30 happens to be the OT gate, so
+			// anything earlier than 30 min, HR sees it and verifies with the
+			// planner IF no OT Approval was submitted." Below the gate the
+			// arithmetic cannot move pay anyway, so 30 is the first threshold
+			// where an unsanctioned early start could have meant money.
+			// Measured: >15 min unsanctioned = 241 days · >30 = 44 · >60 = 10.
 			fieldname: "minutes_early",
 			label: __("More than this many minutes early"),
 			fieldtype: "Int",
-			default: 60,
+			default: 30,
 			description: __(
-				"91.7% of days start early by a minute or two. 60 is the level " +
-				"at which somebody was probably asked to come in."
+				"30 matches the overtime gate: below it an early start cannot " +
+				"change pay at all. 91.7% of days start early by a minute or two."
 			),
 		},
 		{
