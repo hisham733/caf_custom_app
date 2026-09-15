@@ -70,12 +70,11 @@ def _columns():
          "fieldtype": "Data", "width": 190},
         {"label": _("Waiting"), "fieldname": "age",
          "fieldtype": "Data", "width": 80},
-        {"label": _("Why"), "fieldname": "why",
-         "fieldtype": "Data", "width": 260},
-        # 🔴 Added 2026-09-15. 24% of drafts carry a SECOND reason, and before
-        # this column HR met it only after fixing the first and pressing Submit.
-        {"label": _("And then"), "fieldname": "also",
-         "fieldtype": "Data", "width": 300},
+        # 🔴 ONE column, not two — MG, 2026-09-15: *"two col, why need 2 cols?"*
+        # Every reason is concatenated into one sentence, in the order Submit
+        # will raise them, and the documents inside it are clickable.
+        {"label": _("Why it cannot submit"), "fieldname": "why",
+         "fieldtype": "Data", "width": 520},
         # 🔴 The column the manifest cannot give: the document that has to change
         # before this day can move. A Dynamic Link so one column can point at an
         # OT Approval or a Leave Application, whichever is blocking.
@@ -90,6 +89,20 @@ def _columns():
         {"label": _("OT (h)"), "fieldname": "ot_in_hour",
          "fieldtype": "Float", "width": 70, "precision": 2},
     ]
+
+
+def _link(doctype, name):
+    """A clickable document inside the sentence — MG, 2026-09-15: *"some text,
+    if possible, hyperlinked to the doc.name deemed related to the block."*
+
+    ⚠️ A query report renders a `Data` cell as HTML, so this works here. It does
+    NOT work in the submit refusal's plain-text manifest line — see `_reason()`
+    on Finger Log, which is why that one keeps the links in COLUMNS instead.
+    """
+    if not name:
+        return ""
+    slug = doctype.lower().replace(" ", "-")
+    return '<a href="/app/%s/%s">%s</a>' % (slug, name, name)
 
 
 def _leave_on(employee, day):
@@ -122,7 +135,7 @@ def _roster_gap(log):
                                {"month_start": month, "docstatus": 1}, "name")
     if name:
         return None
-    return (_("the roster for {0} is not confirmed yet").format(
+    return (_("{0} roster not confirmed yet").format(
         formatdate(month, "MMMM yyyy")), "Monthly Roster Confirmation", None)
 
 
@@ -169,17 +182,30 @@ def _reasons(log):
                      "docstatus": 1},
             fields=["parent", "ot_duration"], order_by="creation desc", limit=1)
         if not row:
-            reasons.append(
-                _("{0} h of overtime, and no approval covers this day").format(
-                    log.ot_in_hour))
+            reasons.append(_("{0} h of overtime, and no approval")
+                           .format(log.ot_in_hour))
         else:
             approved, parent = row[0].ot_duration, row[0].parent
             if log.ot_in_hour > approved:
-                reasons.append(_("{0} h of overtime, but only {1} h is approved")
-                               .format(log.ot_in_hour, approved))
+                # ⚠️ `approved = 0` is real and common: 493 of 45,667 submitted
+                # child rows carry ot_duration = 0, nearly all of them
+                # `special_approve` filed with start_work == ot_end (FBR92 —
+                # that type never runs check_ot_duration, so nothing computes
+                # the figure). Saying "only 0.0 h is approved" is truthful but
+                # reads like a fault, so the zero case gets its own sentence.
+                if not approved:
+                    reasons.append(
+                        _("{0} h of overtime, but {1} approves none").format(
+                            log.ot_in_hour, _link("OT Approval", parent)))
+                else:
+                    reasons.append(
+                        _("{0} h of overtime, but {1} approves only {2} h")
+                        .format(log.ot_in_hour, _link("OT Approval", parent),
+                                approved))
                 blocker_type, blocker = "OT Approval", parent
             elif frappe.db.get_value("OT Approval", parent, "docstatus") != 1:
-                reasons.append(_("the overtime approval has not been submitted"))
+                reasons.append(_("{0} has not been submitted")
+                               .format(_link("OT Approval", parent)))
                 blocker_type, blocker = "OT Approval", parent
 
     # ── 2 ── the punches ──────────────────────────────────────────────────────
@@ -194,8 +220,8 @@ def _reasons(log):
     # ── 3 ── an approved leave already owns the day ───────────────────────────
     leave = _leave_on(log.employee, log.work_date)
     if leave:
-        reasons.append(_("this day is already taken as leave ({0})")
-                       .format(leave.leave_type))
+        reasons.append(_("{0} is approved for this day ({1})").format(
+            _link("Leave Application", leave.name), leave.leave_type))
         if not blocker:
             blocker_type, blocker = "Leave Application", leave.name
 
@@ -251,10 +277,10 @@ def _rows(filters):
             "work_date": log.work_date,
             "employee_name": log.employee_name,
             "age": _("{0} days").format(days) if days else _("today"),
-            "why": reasons[0],
-            # what Submit will say NEXT, once the first is dealt with
-            "also": _("then: {0}").format("; ".join(reasons[1:]))
-                    if len(reasons) > 1 else "",
+            # ⚠️ Blank when nothing is blocking — MG: *"if there is no block,
+            # better just to have a blank field."* An empty cell in a worklist
+            # reads as "nothing to do here" faster than any sentence can.
+            "why": "" if status == READY else ", then ".join(reasons),
             "blocker": blocker,
             "blocker_type": blocker_type,
             "finger_log": log.name,
