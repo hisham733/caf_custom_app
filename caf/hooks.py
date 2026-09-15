@@ -522,6 +522,7 @@ doc_events = {
 # }
 
 # after_migrate = ["caf.setup.add_manufacturing_fields"]
+after_migrate = ["caf.setup.add_training_workspace_card"]
 
 # Fixtures
 fixtures = [
